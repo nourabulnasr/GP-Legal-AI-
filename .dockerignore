@@ -1,0 +1,43 @@
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE / system files
+.vscode/
+.idea/
+.DS_Store
+
+# Build caches
+dist/
+build/
+*.egg-info/
+
+# Notebooks / tests
+*.ipynb
+notebooks/
+tests/
+
+# Heavy ML model files
+*.pt
+*.pth
+*.h5
+*.onnx
+*.ckpt
+checkpoints/
+models/
+runs/
+wandb/
+
+# Temporary files
+*.log
+*.tmp
+
+# Important notes:
+# لا تتجاهل JSON ولا TXT لأن القوانين والـ rules تعتمد عليهم
+# لا تتجاهل Dockerfile

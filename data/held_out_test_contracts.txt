@@ -1,0 +1,5 @@
+# Held-out test contracts for stricter evaluation (one per line, no .pdf)
+# Train ML model EXCLUDING these; evaluate ONLY on these for unbiased metrics.
+# Option A: 2 easier contracts (had acc 0.85 in prior eval)
+Labor contract (8)
+Labor contract (9)

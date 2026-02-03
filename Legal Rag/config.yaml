@@ -1,0 +1,69 @@
+# Legal RAG System Configuration
+
+# Model Configuration
+embeddings:
+  model_name: "aubmindlab/bert-base-arabertv2"
+  fallback_model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+  device: "cuda"  # or "cpu" for CPU-only systems
+  batch_size: 32
+
+llm:
+  model_name: "LiquidAI/LFM2.5-1.2B-Instruct"
+  device: "cuda"  # or "cpu" for CPU-only systems
+  load_in_8bit: false  # set true for quantized inference (requires bitsandbytes)
+  max_new_tokens: 1024
+  temperature: 0.1  # low for consistent legal analysis
+  top_p: 0.9
+  do_sample: true
+  repetition_penalty: 1.1
+
+# ChromaDB Configuration
+vector_store:
+  persist_directory: "./chroma_db"
+  collection_name: "egyptian_labor_laws"
+  distance_metric: "cosine"
+  embedding_function: "arabic"  # uses aubmindlab/bert-base-arabertv2
+
+# RAG Configuration
+rag:
+  section_top_k: 10  # retrieve top-10 chunks per section
+  clause_top_k: 5    # retrieve top-5 chunks per clause
+  min_similarity_score: 0.5  # minimum cosine similarity threshold
+  use_mmr: true  # use Maximum Marginal Relevance for diversity
+  mmr_diversity: 0.3
+
+# Contract Parsing
+parsing:
+  supported_formats: ["pdf", "docx", "txt"]
+  max_file_size_mb: 10
+  preserve_structure: true
+  detect_sections: true
+  min_clause_length: 20  # minimum characters for a valid clause
+
+# Output Configuration
+output:
+  formats: ["json", "html", "pdf"]
+  default_format: "json"
+  language: "ar"
+  include_law_references: true
+  reports_directory: "./reports"
+
+# Data Configuration
+data:
+  labor_law_file: "./data/labor14_2025_chunks.cleaned.jsonl"
+  sample_contracts_dir: "./data/sample_contracts"
+
+# API Configuration (for FastAPI mode)
+api:
+  host: "0.0.0.0"
+  port: 8000
+  enable_cors: true
+  allowed_origins: ["*"]
+  max_upload_size_mb: 10
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "legal_rag.log"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  console_output: true

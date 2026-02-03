@@ -1,0 +1,37 @@
+# LegalAI – backend + frontend
+# Usage: docker compose up --build
+# Backend API: http://localhost:8000
+# Frontend:    http://localhost:5173
+
+services:
+  backend:
+    build: .
+    container_name: legalai-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist SQLite DB (optional)
+      - legalai_db:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./legalai-frontend/legalai-frontend
+      dockerfile: Dockerfile
+    container_name: legalai-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  legalai_db:

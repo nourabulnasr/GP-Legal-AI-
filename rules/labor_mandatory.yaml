@@ -1,0 +1,251 @@
+# rules/labor_mandatory.yaml
+
+- id: LABOR25_EMPLOYER_INFO
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  article: "1"
+  severity: "high"
+  description: "يجب أن يتضمن عقد العمل بيانات صاحب العمل (الاسم/العنوان/مقر ممارسة النشاط)."
+  rationale: "بيانات صاحب العمل جزء أساسي من تكوين عقد العمل وتحديد المسؤوليات."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'اسم\s+صاحب\s+العمل\s*:'
+      - pattern: 'عنوان\s+(?:العمل|صاحب\s+العمل)\s*:'
+      - pattern: 'مقر\s+ممارسة\s+النشاط\s*:'
+      - pattern: 'ويشار\s+إليه\s+فيما\s+يلي\s+ب\s*["“”]?\s*صاحب\s+العمل'
+
+- id: LABOR25_EMPLOYER_PLACEHOLDER
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "error"
+  description: "بيانات صاحب العمل ما زالت placeholders كنقاط (...) وليست بيانات حقيقية."
+  rationale: "وجود label + نقاط فقط يعني أن البيانات لم تُملأ بعد."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'اسم\s+صاحب\s+العمل\s*:\s*[\.·\-ـ]{3,}'
+      - pattern: 'عنوان\s+(?:العمل|صاحب\s+العمل)\s*:\s*[\.·\-ـ]{3,}'
+      - pattern: 'صاحب\s+العمل\s*[\.·\-ـ]{3,}'
+      - pattern: 'شركة\s*[\.·\-ـ]{3,}'
+
+- id: LABOR25_EMPLOYEE_INFO
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "high"
+  description: "يجب ذكر بيانات العامل (الاسم/المهنة/الرقم القومي أو التأمين/محل الإقامة)."
+  rationale: "الهوية الواضحة للعامل ضرورية لحماية الحقوق."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'اسم\s+(?:العامل|الموظف)\s*:'
+      - pattern: 'المهنة\s*:|مهنة\s*:|المسمى\s+الوظيفي\s*:|الوظيفة\s*:'
+      - pattern: 'رقم\s+(?:بطاقة\s+الرقم\s+القومي|قومي|التأمين)\s*:'
+      - pattern: 'محل\s+(?:الإقامة|إقامت(?:ه|ھ))\s*:'
+      - pattern: 'ويشار\s+إليه\s+فيما\s+يلي\s+ب\s*["“”]?\s*(?:العامل|الموظف)'
+
+- id: LABOR25_EMPLOYEE_PLACEHOLDER
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "error"
+  description: "بيانات العامل ما زالت placeholders كنقاط (...) وليست بيانات حقيقية."
+  rationale: "النموذج غير صالح للتنفيذ طالما بيانات العامل لم تُستكمل."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'اسم\s+(?:العامل|الموظف)\s*:\s*[\.·\-ـ]{3,}'
+      - pattern: 'المهنة\s*:\s*[\.·\-ـ]{3,}'
+      - pattern: 'محل\s+(?:الإقامة|إقامت(?:ه|ھ))\s*:\s*[\.·\-ـ]{3,}'
+      - pattern: 'رقم\s+(?:بطاقة\s+الرقم\s+القومي|قومي|التأمين)\s*:\s*[\.·\-ـ]{3,}'
+
+- id: LABOR25_JOB_NATURE
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "info"
+  description: "تم العثور على مؤشرات لمكان/طبيعة العمل (عن بعد/مقر الشركة) أو وصف العمل."
+  rationale: "تحديد مكان وطبيعة العمل يساعد على تفسير الالتزامات."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'طبيعة\s+العمل\s*:|وصف\s+العمل\s*:|مهام\s+العمل\s*:'
+      - pattern: '\b(remote|work\s+from\s+home)\b'
+      - pattern: 'عن\s+ب\s*عد|عمل\s+عن\s+ب\s*عد|من\s+المنزل'
+      - pattern: 'في\s+المكتب|مقر\s+الشركة|office'
+
+- id: LABOR25_SALARY
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "high"
+  description: "يجب تحديد الأجر وطريقة الصرف وأي مزايا مالية."
+  rationale: "وضوح الأجر يمنع نزاعات المطالبة بالحقوق المالية."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'الأجر|الراتب|يتقاضى\s+العامل|الأجر\s+الأساسي|البدلات'
+      - pattern: 'طريقة\s+(?:الصرف|القبض)|تحويل\s+بنكي|نقد[اًa]?'
+      - pattern: 'حوافز|مزايا|مكاف[أةاة]|عمولة|bonus'
+
+- id: LABOR25_PROBATION_PRESENCE
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "info"
+  description: "ذكر فترة الاختبار (إن وجدت)."
+  rationale: "فترة الاختبار يجب أن تكون موضحة صراحة في العقد."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'فترة\s+الاختبار|مدة\s+الاختبار|تحت\s+ال[اأإآ]?ختبار'
+
+- id: LABOR25_PROBATION_LIMIT
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "error"
+  description: "فترة الاختبار لا يجوز أن تزيد عن 3 أشهر."
+  rationale: "القانون يسمح بحد أقصى فترة اختبار 3 أشهر."
+  match:
+    flags: "iu"
+    any:
+      - pattern: '(?:فترة\s+الاختبار|تحت\s+الاختبار|مدة\s+الاختبار).{0,120}?(?:([4-9]|1[0-9])\s*(?:شهر|أشهر|شهور))'
+      - pattern: '(?:فترة\s+الاختبار|تحت\s+الاختبار|مدة\s+الاختبار).{0,120}?(?:أربع(?:ة)?|خم(?:س|سة)|ست(?:ة)?|سبع(?:ة)?|ثمان(?:ية)?|تسع(?:ة)?)\s*(?:شهر|أشهر|شهور)'
+
+- id: LABOR25_WORKING_HOURS_PRESENCE
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "high"
+  description: "يجب ذكر ساعات العمل اليومية أو الأسبوعية."
+  rationale: "تحديد ساعات العمل ضروري لحساب الأجر الإضافي والراحة."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'ساعات\s+العمل|عدد\s+ساعات\s+العمل|دوام'
+      - pattern: '\b\d+\s*ساعات?\b'
+
+- id: LABOR25_WORKING_HOURS_VIOLATION
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "error"
+  description: "ساعات العمل اليومية الصافية لا يجوز أن تتجاوز 8 ساعات."
+  rationale: "أي نص يحدد عدد ساعات عمل يومية بعد خصم الراحة أكبر من 8 يعتبر مخالفة."
+  match: {}
+
+- id: LABOR25_CONTRACT_DURATION
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "high"
+  description: "يجب تحديد مدة العقد (محدد/غير محدد) مع ذكر بداية ونهاية العقد إن كان محددًا."
+  rationale: "مدة العقد تحدد التزامات الأطراف."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'مدة\s+(?:هذا\s+)?العقد'
+      - pattern: 'محدد\s+المدة|غير\s+محدد\s+المدة'
+      - pattern: 'تبدأ\s+من\s+تاريخ|تاريخ\s+بدء|تاريخ\s+انتهاء|تنتهي'
+
+- id: LABOR25_ANNUAL_LEAVE_PRESENCE
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "high"
+  description: "يجب ذكر الإجازة السنوية."
+  rationale: "الإجازة السنوية من الحقوق الأساسية للعامل."
+  match:
+    flags: "iu"
+    any:
+      - pattern: 'إجازة\s+سنوية|الإجازة\s+السنوية|annual\s+leave'
+
+- id: LABOR25_ANNUAL_LEAVE_VIOLATION
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "error"
+  description: "الإجازة السنوية لا تقل عن 15 يومًا سنويًا."
+  rationale: "الحد الأدنى للإجازة السنوية يجب أن يكون 15 يومًا على الأقل."
+  match: {}
+
+- id: LABOR25_ANNUAL_LEAVE_WAIVER
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "error"
+  description: "شرط يسقط/يلغي حق الإجازة السنوية أو مقابلها أو يحرم العامل منها (مخالفة)."
+  rationale: "الإجازة السنوية وبدلها حق أصيل لا يجوز إسقاطه أو تعليقه بمشيئة صاحب العمل."
+  match:
+    flags: "ius"
+    any:
+      # (1) حرمان/نفي الاستحقاق بشكل صريح
+      - pattern: "(?:لا\\s*يستحق|لا\\s*يحق|يحرم|محروم)(?:[\\s\\S]{0,40})(?:إجاز(?:ة|ات)\\s*سنوي(?:ة|ه)|الإجاز(?:ة|ات)\\s*السنوي(?:ة|ه))"
+
+      # (2) نفي التزام الشركة بمنح الإجازة (صيغة واضحة)
+      - pattern: "(?:لا\\s*تلتزم\\s*(?:الشركة|الطرف\\s*الأول)|غير\\s*ملزم(?:ة)?)(?:[\\s\\S]{0,60})(?:ب(?:إعطاء|منح|تمكين)\\s*(?:العامل|الموظف)?)(?:[\\s\\S]{0,30})(?:إجاز(?:ة|ات)\\s*سنوي(?:ة|ه)|الإجاز(?:ة|ات)\\s*السنوي(?:ة|ه))"
+
+      # (3) إسقاط مقابل/بدل الإجازة (ده لوحده كفاية كمخالفة)
+      - pattern: "يسقط\\s*حق(?:ه|ها)(?:[\\s\\S]{0,80})(?:اقتضاء\\s*)?(?:مقابل(?:ها|ه)|بدل(?:ها|ه)|تعويض(?:ها|ه)?)"
+
+
+- id: LABOR25_ANNUAL_LEAVE_DEFERRAL
+  scope: "labor"
+  severity: "info"
+  description: "تنظيم أو تأجيل استحقاق الإجازة السنوية (غير مخالف)."
+  match:
+    flags: "ius"
+    any:
+      - pattern: "بعد\\s*إتمام\\s*سنة"
+      - pattern: "بعد\\s*مرور\\s*سنة"
+      - pattern: "في\\s*السنة\\s*الأولى\\s*لا\\s*يستحق"
+      - pattern: "تبدأ\\s*الإجازة\\s*بعد"
+
+
+- id: LABOR25_SALARY_VALUE_PRESENT
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "info"
+  description: "تم العثور على قيمة أجر فعلية (رقم/عملة). | Salary amount detected."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(?:قدر[هها]|اجماليا|إجماليا|الراتب|الأجر)\\s*[:\\-]?\\s*\\d{3,}"
+      - pattern: "\\b\\d{3,}\\s*(?:جنيه|ج\\.م|egp|usd|eur|gbp|aed|sar|دولار|يورو|درهم|ريال)\\b"
+
+- id: LABOR25_EMPLOYER_NAME_FILLED
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "info"
+  description: "تم العثور على اسم صاحب عمل مُكتمل (ليس نقاط). | Employer name appears filled."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(?:بين\\s+كل\\s+من|طرف\\s+أول|أولاً|اولا|/ا)\\s*[:\\-]?[\\s\\S]{0,120}?شركة\\s+(?![\\.·\\-ـ]{3,})(?!\\s)([\\u0600-\\u06FFA-Za-z0-9][\\u0600-\\u06FFA-Za-z0-9\\s\\-]{2,60})"
+
+- id: LABOR25_EMPLOYEE_NAME_FILLED
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "info"
+  description: "تم العثور على اسم موظف مُكتمل (ليس نقاط). | Employee name appears filled."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(?:ثاني(?:اً)?|/ثانيا|طرف\\s+ثان)\\s*[:\\-]?[\\s\\S]{0,120}?السيد\\s*/\\s*(?![\\.·\\-ـ]{3,})([\\u0600-\\u06FFA-Za-z][\\u0600-\\u06FFA-Za-z\\s]{2,60})"
+
+- id: LABOR25_PART_TIME_LABEL
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "info"
+  description: "العقد مصنف كدوام جزئي."
+  contract_type: ["part_time"]
+  match:
+    flags: "iu"
+    any:
+      - pattern: "part[- ]?time"
+      - pattern: "دوام\\s+جزئي"
+      - pattern: "عمل\\s+جزئي"
+
+- id: LABOR25_REMOTE_WORK
+  scope: "labor"
+  law: "قانون العمل رقم 14 لسنة 2025"
+  severity: "info"
+  description: "العقد مصنف كعمل عن بعد."
+  contract_type: ["remote"]
+  match:
+    flags: "iu"
+    any:
+      - pattern: "remote"
+      - pattern: "work\\s+from\\s+home"
+      - pattern: "عن\\s+ب\\s*عد"
+      - pattern: "عمل\\s+عن\\s+ب\\s*عد"

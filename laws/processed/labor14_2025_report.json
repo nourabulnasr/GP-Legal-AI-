@@ -1,0 +1,17 @@
+{
+  "articles_in": 293,
+  "articles_out": 293,
+  "chunks_out_lines": 298,
+  "chunks_split_count": 2,
+  "chunks_empty_dropped": 0,
+  "chunks_duplicates_removed": 0,
+  "notes": [
+    "✅ Built chunks from articles (not legacy chunks file)",
+    "✅ Added NFKC normalization (fixes Arabic presentation forms مثل ﻣﺎﺩﺓ -> مادة)",
+    "✅ Normalized Arabic/Persian digits (۱۳۲ / ١٣٢ -> 132)",
+    "Removed diacritics/tatweel/RTL marks, collapsed spaces",
+    "Clamped chunks to <= ~1800 chars, split on paragraph/sentences",
+    "Added strong metadata: law/article/title/source for better RAG",
+    "Deduped by normalized_text for better RAG indexing"
+  ]
+}

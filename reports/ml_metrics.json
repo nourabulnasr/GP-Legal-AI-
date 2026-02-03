@@ -1,0 +1,10 @@
+{
+  "n_rules": 33,
+  "n_files_used": 20,
+  "n_train": 16,
+  "n_val": 4,
+  "micro_f1": 0.8888888888888888,
+  "macro_f1": 0.44733044733044736,
+  "micro_precision": 0.8275862068965517,
+  "micro_recall": 0.96
+}

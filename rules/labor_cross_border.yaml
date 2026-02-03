@@ -1,0 +1,161 @@
+# rules/labor_cross_border.yaml
+
+# ------------------------------------------------------------
+# Cross-border detection + indicators (UAE + general)
+# scope MUST be cross_border so it runs when law_scope=["cross_border"]
+# ------------------------------------------------------------
+
+- id: CROSSBORDER_DETECTED_GENERIC
+  scope: "cross_border"
+  severity: "info"
+  description: "تم اكتشاف مؤشرات عقد دولي/خارج مصر. | Cross-border indicators detected."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(خارج\\s*مصر|بالخارج|دولي(?:ة)?|international|abroad|outside\\s+egypt|non-?egypt)"
+
+- id: CROSSBORDER_GEO_INDICATOR
+  scope: "cross_border"
+  severity: "info"
+  description: "مؤشر جغرافي لعمل/جهة خارج مصر. | Geo indicator for outside-Egypt work/employer."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(uae|dubai|ksa|saudi|qatar|kuwait|germany|uk|usa|canada|europe|الامارات|الإمارات|دبي|السعودية|قطر|الكويت|ألمانيا|اوروبا|أوروبا|انجلترا|إنجلترا|أمريكا)"
+
+- id: CROSSBORDER_PAYMENT_RAILS
+  scope: "cross_border"
+  severity: "info"
+  description: "مؤشر دفع/تحويل دولي (IBAN/SWIFT/Wise...). | Payment rails indicator (IBAN/SWIFT/Wise...)."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(iban|swift|wise|payoneer|wire\\s+transfer|bank\\s+transfer|تحويل\\s+بنكي|تحويل\\s+دولي|حوالة\\s+بنكية)"
+
+- id: CROSSBORDER_CURRENCY_INDICATOR
+  scope: "cross_border"
+  severity: "info"
+  description: "مؤشر عملة (USD/EUR/...) أو EGP. | Currency indicator (USD/EUR/...) or EGP."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(usd|eur|gbp|aed|sar|egp|دولار|يورو|جنيه\\s*إسترليني|درهم|در[هـ]م|ريال|جنيه|جنيه\\s*مصري)"
+
+# ------------------------------------------------------------
+# UAE-specific strong detector
+# ------------------------------------------------------------
+
+- id: CROSSBORDER_UAE_DETECTED
+  scope: "cross_border"
+  severity: "info"
+  description: "العقد يبدو خارج مصر (الإمارات)."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "الإمارات|دولة الإمارات|الامارات|UAE|United Arab Emirates"
+      - pattern: "MOHRE|وزارة الموارد البشرية(?:\\s+والتوطين)?|التوطين"
+      - pattern: "قانون العمل الإماراتي|المرسوم\\s+بقانون\\s+اتحادي|اتحادي\\s+رقم\\s*\\(?33\\)?\\s*لسنة\\s*2021"
+      - pattern: "(?:درهم|در[هـ]م|AED)"
+      - pattern: "محاكم الإمارات|المحاكم الإماراتية"
+
+# ------------------------------------------------------------
+# Recommended cross-border clauses checks
+# ------------------------------------------------------------
+
+- id: CROSSBORDER_GOVERNING_LAW_PRESENT
+  scope: "cross_border"
+  severity: "high"
+  description: "يُفضل ذكر القانون واجب التطبيق في العقود الدولية. | Governing law should be stated in cross-border contracts."
+  match:
+    flags: "iu"
+    any:
+      # صيغ صريحة
+      - pattern: "(القانون\\s+واجب\\s+التطبيق|القانون\\s+الحاكم|applicable\\s+law|governing\\s+law)"
+
+      # governed by / subject to
+      - pattern: "(governed\\s+by\\s+the\\s+laws?\\s+of|subject\\s+to\\s+the\\s+laws?\\s+of)"
+
+      # ✅ يخضع لقانون ... (tolerant)
+      - pattern: "يخضع\\s+(?:هذا\\s+)?(?:العقد\\s+)?(?:لأحكام\\s+)?قانون"
+
+      # ✅ الصيغة اللي عندك: يخضع لقانون الدولة التي بها المقر (OCR tolerant)
+      - pattern: "يخضع\\s+لقانون\\s+الدولة\\s+(?:التي|الذى|الذي)\\s+(?:بها|به|فيها|يقع\\s+بها)\\s*(?:ال)?مقر(?:\\s*الشركة)?"
+      
+      # ✅ English HQ-state variant
+      - pattern: "(laws?\\s+of\\s+the\\s+country\\s+of\\s+(?:its\\s+)?headquarters|law\\s+of\\s+the\\s+state\\s+of\\s+headquarters)"
+      
+
+
+# ✅ Jurisdiction: العقد ده غالباً مش بيذكرها، بس نخلي القاعدة مرنة
+- id: CROSSBORDER_JURISDICTION_PRESENT
+  scope: "cross_border"
+  severity: "high"
+  description: "يُفضل تحديد جهة/محكمة الاختصاص القضائي في العقود الدولية. | Jurisdiction/court should be defined for cross-border contracts."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(الاختصاص\\s+القضائي|فض\\s+المنازعات|جهة\\s+الاختصاص)"
+      - pattern: "(تختص\\s+محاكم|المحاكم(?:\\s+\\S+){0,3}\\s+المختصة|المحكمة(?:\\s+\\S+){0,3}\\s+المختصة)"
+      - pattern: "(exclusive\\s+jurisdiction|jurisdiction|court\\s+of\\s+competent|competent\\s+court|dispute\\s+resolution|arbitration)"
+
+# ✅ Payment currency: أضفنا EGP + جنيه/جنيه مصري عشان عقدك بيكتب كده
+- id: CROSSBORDER_PAYMENT_CURRENCY_PRESENT
+  scope: "cross_border"
+  severity: "warning"
+  description: "يُفضل تحديد العملة في العقود الدولية (USD/EUR/...) أو توضيح EGP. | Payment currency should be stated."
+  match:
+    flags: "iu"
+    any:
+      # العملات الأجنبية
+      - pattern: "(usd|eur|gbp|aed|sar|dollar|euro|pound\\s*sterling|dirham|riyal)"
+      # ✅ EGP + جنيه + OCR variants
+      - pattern: "(egp|جنيه|ج\\.م|جم|جنيه\\s*(?:مصري|مصرى|مصى|مصي)|جميه|جميه\\s*(?:مصري|مصرى|مصى|مصي))"
+
+
+- id: CROSSBORDER_PAYMENT_METHOD_INTERNATIONAL
+  scope: "cross_border"
+  severity: "warning"
+  description: "يُفضل تحديد طريقة التحويل/الدفع (IBAN/SWIFT/Wise...). | Payment method (IBAN/SWIFT/Wise) should be defined."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(تحويل\\s+بنكي|iban|swift|wise|payoneer|bank\\s+transfer|wire\\s+transfer)"
+
+- id: CROSSBORDER_TRANSFER_FEES_CLARITY
+  scope: "cross_border"
+  severity: "info"
+  description: "يفضل توضيح من يتحمل رسوم التحويل الدولي. | Clarify who pays international transfer fees."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(رسوم\\s+التحويل|fees|transfer\\s+fees|bank\\s+charges|عمولات\\s+بنكية)"
+
+- id: CROSSBORDER_TAX_INSURANCE_CLARITY
+  scope: "cross_border"
+  severity: "info"
+  description: "يفضل توضيح الضرائب/التأمينات في حالة العمل مع جهة خارجية. | Clarify taxes/social insurance responsibilities for cross-border work."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(ضرائب|tax|taxes|تأمينات|social\\s+insurance|تأمين\\s+اجتماعي|insurance)"
+
+- id: CROSSBORDER_REMOTE_TOOLS_SECURITY
+  scope: "cross_border"
+  severity: "info"
+  description: "يفضل ذكر أدوات العمل عن بعد وسياسات السرية/حماية البيانات. | Mention remote tools and confidentiality/data protection."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(حاسوب|إنترنت|internet|laptop|software|برمجيات|سرية|confidential|حماية\\s+البيانات|data\\s+protection|nda)"
+
+- id: CROSSBORDER_LAW_REFERENCE_WEAK
+  scope: "cross_border"
+  severity: "info"
+  description: "إشارة عامة لوجود مرجعية قانونية بدون تحديد دولة (ضعيفة). | Generic legal reference without specifying a country (weak)."
+  match:
+    flags: "iu"
+    any:
+      - pattern: "(طبق(?:اً|ا)?\\s+ل(?:هذا\\s+)?قانون|وفق(?:اً|ا)?\\s+ل(?:هذا\\s+)?قانون|بموجب\\s+قانون)"
+      - pattern: "(طبق(?:اً|ا)?\\s+للقانون|وفق(?:اً|ا)?\\s+للقانون|بموجب\\s+القانون)"
+      - pattern: "(طبق(?:اً|ا)?\\s+لقانون\\s+العمل|وفق(?:اً|ا)?\\s+لقانون\\s+العمل|بموجب\\s+قانون\\s+العمل)"
+
