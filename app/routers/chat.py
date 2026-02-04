@@ -66,6 +66,16 @@ class ChatResponse(BaseModel):
     analysis_id: int
 
 
+class AssistantChatRequest(BaseModel):
+    """General AI assistant (no contract context)."""
+    message: str = Field(..., description="User message")
+    history: Optional[List[ChatMessage]] = Field(default=None, description="Conversation history")
+
+
+class AssistantChatResponse(BaseModel):
+    content: str
+
+
 class DocumentChatRequest(BaseModel):
     """Request for document chat using local LFM. Provide either analysis_id or document_context."""
     message: str = Field(..., description="User message")
@@ -113,6 +123,53 @@ def _build_context(result: Dict[str, Any]) -> str:
         parts.append("## Cross-Border Summary\n" + cb_str)
 
     return "\n\n".join(parts) if parts else "No analysis context available."
+
+
+@router.post("/assistant", response_model=AssistantChatResponse)
+def chat_assistant(
+    payload: AssistantChatRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """General AI assistant chat (no contract context). Uses Gemini with a legal-assistant system prompt."""
+    client_or_legacy = _get_gemini_client()
+    if not client_or_legacy:
+        return AssistantChatResponse(
+            content="Chat is not configured. Set GEMINI_API_KEY in the environment to enable the assistant.",
+        )
+    system_prompt = (
+        "You are a helpful legal assistant for Legato. Answer general questions about contracts, "
+        "labor law, compliance, and legal terminology concisely. If the user asks about a specific contract, "
+        "suggest they use the contract-specific chat with an analysis selected."
+    )
+    history_str = ""
+    if payload.history:
+        for m in payload.history[-10:]:
+            role = "User" if (m.role or "").lower() == "user" else "Assistant"
+            history_str += f"{role}: {m.content}\n"
+    full_prompt = f"{system_prompt}\n\n{history_str}User: {payload.message}\n\nAssistant:"
+    try:
+        if isinstance(client_or_legacy, tuple) and client_or_legacy[0] == "legacy":
+            _, model = client_or_legacy
+            response = model.generate_content(full_prompt)
+            content = response.text if hasattr(response, "text") else str(response)
+        else:
+            response = client_or_legacy.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=full_prompt,
+            )
+            content = getattr(response, "text", None)
+            if not content and getattr(response, "candidates", None) and len(response.candidates):
+                c = response.candidates[0]
+                if getattr(c, "content", None) and getattr(c.content, "parts", None) and len(c.content.parts):
+                    content = getattr(c.content.parts[0], "text", None)
+            content = content or str(response)
+    except Exception as e:
+        err_str = str(e).lower()
+        if "429" in err_str or "resource_exhausted" in err_str or ("resource" in err_str and "exhausted" in err_str) or "quota" in err_str or "rate limit" in err_str:
+            content = "The AI chat has reached its usage limit for now. Please try again in a few minutes, or check your API plan and billing."
+        else:
+            content = "Sorry, the chat request failed. Please try again."
+    return AssistantChatResponse(content=content)
 
 
 @router.post("/message", response_model=ChatResponse)
@@ -168,8 +225,14 @@ Be concise. Cite sections or rule IDs when relevant. If the answer is not in the
                     content = getattr(c.content.parts[0], "text", None)
             content = content or str(response)
     except Exception as e:
-        content = f"Sorry, the chat request failed: {str(e)}"
-
+        err_str = str(e).lower()
+        if "429" in err_str or "resource_exhausted" in err_str or ("resource" in err_str and "exhausted" in err_str) or "quota" in err_str or "rate limit" in err_str:
+            content = (
+                "The AI chat has reached its usage limit for now. "
+                "Please try again in a few minutes, or check your API plan and billing."
+            )
+        else:
+            content = f"Sorry, the chat request failed. Please try again."
     return ChatResponse(content=content, analysis_id=payload.analysis_id)
 
 
@@ -211,6 +274,15 @@ def _get_lfm_document_reply(document_context: str, message: str, max_new_tokens:
             return generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
         except Exception:
             return f"[Local LLM error: {e1!r}]"
+
+
+@router.get("/document")
+def chat_document_get():
+    """GET is not supported. Use POST with JSON body: document_context, message (and optional history)."""
+    raise HTTPException(
+        status_code=405,
+        detail="Method not allowed. Use POST to send a chat message with document_context and message.",
+    )
 
 
 @router.post("/document", response_model=DocumentChatResponse)

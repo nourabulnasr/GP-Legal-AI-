@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models import Analysis, User
-from app.schemas.analyses import AnalysisCreateRequest, AnalysisResponse, AnalysisDetailResponse
+from app.schemas.analyses import (
+    AnalysisCreateRequest,
+    AnalysisResponse,
+    AnalysisDetailResponse,
+    AdminUpdateRoleRequest,
+)
 from app.core.deps import get_current_user, require_admin  # ✅ IMPORTANT
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
@@ -102,6 +107,44 @@ def admin_list_user_analyses(
         .all()
     )
     return [AnalysisResponse(id=r.id, filename=r.filename, created_at=r.created_at) for r in rows]
+
+
+@router.get("/admin/users", response_model=list[dict])
+def admin_list_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """List all users (id, email, role) for admin. Synced with real user credentials."""
+    rows = db.query(User).order_by(User.id.desc()).all()
+    return [
+        {"id": u.id, "email": u.email or "", "role": getattr(u, "role", "user")}
+        for u in rows
+    ]
+
+
+@router.patch("/admin/users/{user_id}")
+def admin_update_user_role(
+    user_id: int,
+    payload: AdminUpdateRoleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Update a user's role (admin or user). Only admin can call."""
+    role = (payload.role or "").strip().lower()
+    if role not in ("admin", "user"):
+        raise HTTPException(status_code=400, detail="role must be 'admin' or 'user'")
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot change your own role")
+    target.role = role
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    return {"id": target.id, "email": target.email, "role": target.role}
+
+
 @router.delete("/{analysis_id}")
 def delete_analysis(
     analysis_id: int,

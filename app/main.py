@@ -19,9 +19,10 @@ except Exception:
 if "TRANSFORMERS_VERBOSITY" not in os.environ:
     os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from typing import Any, List, Dict, Optional, Generator
 import io
 import json
@@ -389,13 +390,52 @@ app = api  # alias for uvicorn
 # ============================================================
 # CORS — allow frontend (e.g. localhost:5173) to call the API
 # ============================================================
+CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _cors_headers(request: Request) -> dict:
+    """Return CORS headers using request origin if allowed, else first allowed origin."""
+    origin = request.headers.get("origin", "").strip()
+    if origin not in CORS_ORIGINS:
+        origin = CORS_ORIGINS[0]
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "*",
+        "Access-Control-Allow-Headers": "*",
+    }
+
+
+@api.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Ensure 4xx/5xx from FastAPI and security deps include CORS headers."""
+    detail = exc.detail
+    if isinstance(detail, dict):
+        content = detail
+    else:
+        content = {"detail": detail}
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers=_cors_headers(request),
+    )
+
+
+@api.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Ensure unhandled exceptions return 500 with CORS headers."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=_cors_headers(request),
+    )
 
 # ============================================================
 # ✅ Middleware + Routers (SAFE)

@@ -13,7 +13,9 @@ print("BEFORE:", before)
 if before is None:
     print("\nERROR: admin@test.com not found. Register it first using /auth/register.\n")
 else:
-    cur.execute("UPDATE users SET role = 'admin' WHERE email = ?", (EMAIL,))
+    cur.execute(
+        "UPDATE users SET role = 'admin', email_verified = 1 WHERE email = ?", (EMAIL,)
+    )
     con.commit()
     cur.execute("SELECT id, email, role FROM users WHERE email = ?", (EMAIL,))
     after = cur.fetchone()

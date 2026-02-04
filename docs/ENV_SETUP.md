@@ -13,13 +13,15 @@ Edit `.env` with your values.
 
 ---
 
-## 2. SMTP (Password Reset Emails)
+## 2. SMTP (Verification & Password Reset Emails)
+
+**Where SMTP is read:** The backend loads `.env` from the **project root** (same folder as `app/`). Verification emails (signup and "Resend code") and password-reset emails all use these settings. For Gmail, the backend automatically uses `SMTP_USER` as the "From" address so messages are accepted.
 
 ### Gmail
 
 1. Enable 2-Step Verification: [Google Account → Security → 2-Step Verification](https://myaccount.google.com/security)
 2. Create App Password: Security → 2-Step Verification → App passwords → Generate
-3. Add to `.env`:
+3. Add to **project root** `.env` (not the frontend `.env`):
    ```
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=587
@@ -27,16 +29,17 @@ Edit `.env` with your values.
    SMTP_PASSWORD=xxxx xxxx xxxx xxxx
    SMTP_FROM=your-email@gmail.com
    ```
+   For Gmail, `SMTP_FROM` is ignored and `SMTP_USER` is used as From. Ensure `SMTP_USER` and `SMTP_PASSWORD` (App Password) are correct.
 
 ### Other providers (Outlook, Yahoo, etc.)
 
-- Check your provider’s SMTP settings
+- Check your provider's SMTP settings
 - Use the correct host, port (usually 587 for TLS), and credentials
 - Set `SMTP_FROM` to your sender address
 
 ### Dev mode (no SMTP)
 
-- If `SMTP_HOST` and `SMTP_USER` are empty, reset links are printed to the backend console
+- If `SMTP_HOST` and `SMTP_USER` are empty, verification codes and reset links are printed to the backend console. You can still use "Resend code" on the login or register verify step; if SMTP is not configured, the backend will return 503 and you’ll need to configure SMTP in the **project root** `.env`.
 
 ---
 
@@ -62,9 +65,10 @@ If `GEMINI_API_KEY` is not set, the chat page will show: *"Set GEMINI_API_KEY to
 4. Add to `.env`:
    ```
    GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=xxx
+  GOOGLE_CLIENT_SECRET=your-client-secret-here
    GOOGLE_REDIRECT_URI=http://127.0.0.1:8000/auth/google/callback
    ```
+   Use the **Client ID** and **Client secret** from the same OAuth 2.0 Client ID credentials card (not the Gemini API key). The callback reads these at request time from the environment.
 
 ---
 
@@ -74,4 +78,20 @@ If `GEMINI_API_KEY` is not set, the chat page will show: *"Set GEMINI_API_KEY to
 FRONTEND_URL=http://localhost:5173
 ```
 
-Use your actual frontend URL if it’s different.
+Use your actual frontend URL if different.
+
+---
+
+## 6. Document AI (OCR on upload)
+
+When you upload a PDF for analysis, the backend can use **Google Document AI** for better OCR (in `app/DocumentAI.py`). The pipeline in `app/main.py` prefers Document AI when it is configured.
+
+To enable it, set in `.env`:
+
+```
+DOCUMENT_AI_PROJECT_ID=your-gcp-project-id
+DOCUMENT_AI_LOCATION=us
+DOCUMENT_AI_PROCESSOR_ID=your-processor-id
+```
+
+Create a Document AI processor in Google Cloud Console and use its project ID, location, and processor ID. If these are not set, the backend falls back to PyMuPDF/tesseract for PDF text extraction.

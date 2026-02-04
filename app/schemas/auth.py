@@ -31,3 +31,21 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=6)
+
+
+class VerifyResetCodeRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=1)
+
+
+class VerifyResetCodeResponse(BaseModel):
+    reset_token: str
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=1)
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr

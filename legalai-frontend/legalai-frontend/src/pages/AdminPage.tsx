@@ -21,8 +21,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { adminListAll, deleteAnalysis } from "@/lib/api";
-import type { AnalysisDetail } from "@/lib/api";
+import { adminListAll, adminListUsers, adminUpdateUserRole, deleteAnalysis } from "@/lib/api";
+import type { AnalysisDetail, AdminUser } from "@/lib/api";
 import {
   Download,
   Plus,
@@ -77,50 +77,38 @@ function formatRelative(s: string) {
   }
 }
 
-// Derive unique users from analyses (we don't have a users API)
-type DerivedUser = {
-  id: number;
-  email: string;
-  role: string;
+type DerivedUser = AdminUser & {
   tier: string;
   lastActive: string;
   status: string;
 };
 
-function deriveUsersFromAnalyses(
+function mergeUsersWithAnalyses(
+  realUsers: AdminUser[],
   analyses: AnalysisDetail[],
   currentUser: { id: number; email: string; role: string }
 ): DerivedUser[] {
-  const byUser = new Map<number, { latest: string; count: number }>();
+  const byUser = new Map<number, string>();
   for (const a of analyses) {
-    const existing = byUser.get(a.user_id);
     const created = a.created_at;
-    const prevLatest = existing?.latest ?? "";
-    const newLatest = !existing || created > prevLatest ? created : prevLatest;
-    byUser.set(a.user_id, {
-      latest: newLatest,
-      count: (existing?.count ?? 0) + 1,
-    });
+    const prev = byUser.get(a.user_id) ?? "";
+    if (!prev || created > prev) byUser.set(a.user_id, created);
   }
-  const users: DerivedUser[] = [];
-  byUser.forEach((v, id) => {
-    const isCurrent = id === currentUser.id;
-    users.push({
-      id,
-      email: isCurrent ? currentUser.email : `user_${id}@platform.local`,
-      role: isCurrent ? (currentUser.role === "admin" ? "Administrator" : "User") : "User",
-      tier: isCurrent && currentUser.role === "admin" ? "ENTERPRISE" : "BASIC",
-      lastActive: formatRelative(v.latest),
-      status: "Active",
-    });
-  });
-  return users.sort((a, b) => b.id - a.id);
+  return realUsers.map((u) => ({
+    ...u,
+    role: u.id === currentUser.id && currentUser.role === "admin" ? "Administrator" : u.role === "admin" ? "Administrator" : "User",
+    tier: u.role === "admin" ? "ENTERPRISE" : "BASIC",
+    lastActive: formatRelative(byUser.get(u.id) ?? ""),
+    status: "Active",
+  }));
 }
 
 export default function AdminPage({ user, onLogout }: Props) {
   const navigate = useNavigate();
   const [analyses, setAnalyses] = useState<AnalysisDetail[]>([]);
+  const [realUsers, setRealUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [roleUpdating, setRoleUpdating] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"users" | "analyses" | "subscribers">("users");
   const [filterText, setFilterText] = useState("");
@@ -153,8 +141,9 @@ export default function AdminPage({ user, onLogout }: Props) {
     setLoading(true);
     setErr(null);
     try {
-      const data = await adminListAll();
-      setAnalyses(data);
+      const [analysesData, usersData] = await Promise.all([adminListAll(), adminListUsers()]);
+      setAnalyses(analysesData);
+      setRealUsers(usersData);
     } catch (e: unknown) {
       const msg =
         e && typeof e === "object" && "response" in e
@@ -171,8 +160,8 @@ export default function AdminPage({ user, onLogout }: Props) {
   }, []);
 
   const derivedUsers = useMemo(
-    () => deriveUsersFromAnalyses(analyses, user),
-    [analyses, user]
+    () => mergeUsersWithAnalyses(realUsers, analyses, user),
+    [realUsers, analyses, user]
   );
 
   const filteredUsers = useMemo(() => {
@@ -449,8 +438,9 @@ export default function AdminPage({ user, onLogout }: Props) {
 
         {/* Content */}
         {loading ? (
-          <div className="rounded-lg border p-12 text-center text-muted-foreground">
-            Loading...
+          <div className="rounded-lg border p-12 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+            <div className="h-10 w-10 rounded-full border-4 border-primary border-t-transparent animate-spin" aria-hidden />
+            <p className="text-sm">Loading admin data…</p>
           </div>
         ) : err ? (
           <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-6 text-destructive">
@@ -495,9 +485,9 @@ export default function AdminPage({ user, onLogout }: Props) {
                           </div>
                           <div>
                             <p className="font-medium">
-                              {u.id === user.id ? user.email.split("@")[0] : `User #${u.id}`}
+                              {u.email ? u.email.split("@")[0] : `User #${u.id}`}
                             </p>
-                            <p className="text-sm text-muted-foreground">{u.email}</p>
+                            <p className="text-sm text-muted-foreground">{u.email || `user_${u.id}@platform.local`}</p>
                           </div>
                         </div>
                       </TableCell>
@@ -529,15 +519,65 @@ export default function AdminPage({ user, onLogout }: Props) {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => window.open(`mailto:${u.email}`)}>
-                              Contact user
+                            <DropdownMenuItem
+                              onSelect={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(u.email || "");
+                                  alert("Email copied to clipboard.");
+                                } catch {
+                                  window.open(`mailto:${u.email}`);
+                                }
+                              }}
+                            >
+                              Contact user (copy email)
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => navigate("/history")}>
+                            <DropdownMenuItem onSelect={() => navigate(`/history?user_id=${u.id}`)}>
                               View analyses
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => alert("Assign role API coming soon.")}>
-                              Change role
-                            </DropdownMenuItem>
+                            {u.id !== user.id && (
+                              <>
+                                <DropdownMenuItem
+                                  onSelect={async () => {
+                                    if (!confirm(`Set ${u.email} as Admin?`)) return;
+                                    setRoleUpdating(u.id);
+                                    try {
+                                      await adminUpdateUserRole(u.id, "admin");
+                                      await fetchAll();
+                                    } catch (e: unknown) {
+                                      const msg = e && typeof e === "object" && "response" in e
+                                        ? (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+                                        : null;
+                                      alert(typeof msg === "string" ? msg : "Failed to update role");
+                                    } finally {
+                                      setRoleUpdating(null);
+                                    }
+                                  }}
+                                  disabled={roleUpdating === u.id}
+                                >
+                                  Set as Admin
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={async () => {
+                                    if (!confirm(`Set ${u.email} as User?`)) return;
+                                    setRoleUpdating(u.id);
+                                    try {
+                                      await adminUpdateUserRole(u.id, "user");
+                                      await fetchAll();
+                                    } catch (e: unknown) {
+                                      const msg = e && typeof e === "object" && "response" in e
+                                        ? (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+                                        : null;
+                                      alert(typeof msg === "string" ? msg : "Failed to update role");
+                                    } finally {
+                                      setRoleUpdating(null);
+                                    }
+                                  }}
+                                  disabled={roleUpdating === u.id}
+                                >
+                                  Set as User
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

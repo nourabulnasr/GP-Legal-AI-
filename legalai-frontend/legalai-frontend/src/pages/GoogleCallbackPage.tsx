@@ -1,10 +1,11 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { api } from "@/lib/api";
 
 /**
  * Handles redirect from backend after Google OAuth.
  * Backend sends: /auth/google/callback?token=<jwt>
- * We store the token and reload to trigger App's me() check.
+ * We store the token, fetch user to determine role, then redirect.
  */
 export default function GoogleCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -18,7 +19,15 @@ export default function GoogleCallbackPage() {
     }
     if (token) {
       localStorage.setItem("access_token", token);
-      window.location.href = "/analyze";
+      api
+        .get<{ id: number; email: string; role: string }>("/auth/me")
+        .then((res) => {
+          const user = res.data;
+          window.location.href = user?.role === "admin" ? "/admin" : "/analyze";
+        })
+        .catch(() => {
+          window.location.href = "/analyze";
+        });
       return;
     }
     window.location.href = "/login?error=google_no_token";

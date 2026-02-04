@@ -1,10 +1,10 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 600000 ,
+  timeout: 600000,
 });
 
 api.interceptors.request.use((config) => {
@@ -14,6 +14,18 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    // If token is expired/invalid, clear it so the app can recover cleanly.
+    if (status === 401) {
+      localStorage.removeItem("access_token");
+    }
+    return Promise.reject(error);
+  }
+);
 
 // ---- OCR + Check endpoint ----
 export async function analyzeContract(
@@ -40,7 +52,7 @@ export async function analyzeContract(
 
   const { data } = await api.post("/ocr_check_and_search", form, {
     headers: { "Content-Type": "multipart/form-data" },
-    timeout: 180000,
+    timeout: 600000,
   });
   return data;
 }
@@ -65,8 +77,20 @@ export async function deleteAnalysis(id: number): Promise<{ status: string; dele
 }
 
 // ---- Admin ----
+export type AdminUser = { id: number; email: string; role: string };
+
 export async function adminListAll(): Promise<AnalysisDetail[]> {
   const { data } = await api.get<AnalysisDetail[]>("/analyses/admin/all");
+  return data;
+}
+
+export async function adminListUsers(): Promise<AdminUser[]> {
+  const { data } = await api.get<AdminUser[]>("/analyses/admin/users");
+  return data;
+}
+
+export async function adminUpdateUserRole(userId: number, role: "admin" | "user"): Promise<AdminUser> {
+  const { data } = await api.patch<AdminUser>(`/analyses/admin/users/${userId}`, { role });
   return data;
 }
 
@@ -85,13 +109,23 @@ export async function chatMessage(payload: {
   return data;
 }
 
-// ---- Chat with document (LFM) ----
-export async function chatWithDocument(payload: {
-  document_context: string;
+// ---- General assistant chat (no contract context) ----
+export async function chatAssistant(payload: {
   message: string;
   history?: { role: string; content: string }[];
 }): Promise<{ content: string }> {
-  const { data } = await api.post<{ content: string }>("/chat/document", payload, { timeout: 120000 });
+  const { data } = await api.post<{ content: string }>("/chat/assistant", payload);
+  return data;
+}
+
+// ---- Chat with document (LFM) ----
+export async function chatWithDocument(payload: {
+  document_context?: string;
+  analysis_id?: number;
+  message: string;
+  history?: { role: string; content: string }[];
+}): Promise<{ content: string }> {
+  const { data } = await api.post<{ content: string }>("/chat/document", payload, { timeout: 300000 });
   return data;
 }
 

@@ -25,51 +25,6 @@ import {
   Send,
 } from "lucide-react";
 
-const MOCK_FALLBACK = {
-  contract_type: "employment",
-  law_scope_used: ["labor"],
-  cross_border_summary: { status: "not_applicable" },
-  labor_summary: {
-    probation: { status: "ok" },
-    termination_notice: { status: "violation" },
-    overtime: { status: "needs_review" },
-    leave: { status: "ok" },
-  },
-  rule_hits: [
-    {
-      rule_id: "LAB_TERMINATION_NOTICE_MIN_DAYS",
-      severity: "error",
-      description: "Termination notice is below the minimum required days.",
-      article: "Article 120",
-      chunk_id: "page_0",
-      matched_text: "Termination notice clause below minimum",
-    },
-    {
-      rule_id: "LAB_OVERTIME_PAY",
-      severity: "high",
-      description: "Overtime pay clause is missing or unclear.",
-      article: "Article 104",
-      chunk_id: "page_1",
-      matched_text: "Overtime pay clause missing",
-    },
-    {
-      rule_id: "LAB_LEAVE_WAIVER",
-      severity: "info",
-      description: "Leave waiver clause detected; requires review.",
-      article: "Article 91",
-      chunk_id: "p7-c3",
-    },
-  ],
-  ocr_chunks: [
-    { id: "page_0", page: 0, normalized_text: "Mock OCR text — page 1. Termination notice clause below minimum." },
-    { id: "page_1", page: 1, normalized_text: "Mock OCR text — page 2. Overtime pay clause missing." },
-  ],
-  rag_legal_hits: [
-    { score: 0.912, text: "Mock RAG hit — relevant legal article excerpt...", metadata: { article: "120" } },
-    { score: 0.871, text: "Mock RAG hit — another excerpt...", metadata: { article: "104" } },
-  ],
-};
-
 type User = { id: number; email: string; role: string };
 type Props = { user: User; onLogout?: () => void };
 
@@ -80,7 +35,6 @@ export default function AnalyzePage({ user, onLogout }: Props) {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [usedMock, setUsedMock] = useState(false);
 
   const [complianceCheck, setComplianceCheck] = useState(true);
   const [riskAssessment, setRiskAssessment] = useState(true);
@@ -175,7 +129,6 @@ export default function AnalyzePage({ user, onLogout }: Props) {
 
   const analyze = useCallback(async () => {
     setErr(null);
-    setUsedMock(false);
     if (!file) {
       setErr("Choose a contract file first.");
       return;
@@ -201,10 +154,9 @@ export default function AnalyzePage({ user, onLogout }: Props) {
       let msg: string;
       if (typeof dataDetail === "string") msg = dataDetail;
       else if (Array.isArray(dataDetail) && dataDetail.length) msg = dataDetail.map((x: { msg?: string }) => x?.msg ?? "").filter(Boolean).join("; ") || "Validation error";
-      else msg = res?.status === 401 ? "Please log in to save analysis." : res?.status === 503 ? "Backend not fully configured (DB or services)." : "Analysis failed. Using demo data.";
+      else msg = res?.status === 401 ? "Please log in to save analysis." : res?.status === 503 ? "Backend not fully configured (DB or services)." : "Analysis failed. Please try again or check your connection.";
       setErr(msg);
-      setData(MOCK_FALLBACK as unknown as Record<string, unknown>);
-      setUsedMock(true);
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -293,10 +245,14 @@ export default function AnalyzePage({ user, onLogout }: Props) {
         e && typeof e === "object" && "response" in e
           ? (e as { response?: { data?: { detail?: string }; status?: number } }).response?.data?.detail
           : null;
+      const isTimeout =
+        e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "ECONNABORTED";
       const errMsg =
         typeof msg === "string"
           ? msg
-          : "Document chat failed. Is the local LFM model available?";
+          : isTimeout
+            ? "Request timed out. The first message can take 1–2 minutes while the model loads. Try again."
+            : "Document chat failed. Is the local LFM model available?";
       setDocumentChatError(errMsg);
       setDocumentChatMessages((prev) => [
         ...prev,
@@ -320,7 +276,7 @@ export default function AnalyzePage({ user, onLogout }: Props) {
       onLogout={onLogout}
       title="Contract Analysis"
       subtitle="Analyze enterprise legal agreements with precision LLMs"
-      right={usedMock ? <Badge variant="secondary">Demo Mode</Badge> : undefined}
+      right={loading ? <span className="text-sm text-muted-foreground">Analysis in progress…</span> : undefined}
     >
       <div className="grid gap-6 lg:grid-cols-5">
         {/* Left Pane: Upload & Settings */}
@@ -750,7 +706,7 @@ export default function AnalyzePage({ user, onLogout }: Props) {
                 <TabsContent value="document-chat" className="mt-0">
                   <div className="flex flex-col rounded-lg border h-[500px]">
                     <p className="text-xs text-muted-foreground px-4 py-2 border-b">
-                      Chat with this document using the local LFM model. Ask questions about the contract.
+                      Chat with this document using the local LFM model. Ask questions about the contract. First message may take 1–2 minutes while the model loads.
                     </p>
                     <ScrollArea className="flex-1 p-4">
                       <div className="space-y-4">

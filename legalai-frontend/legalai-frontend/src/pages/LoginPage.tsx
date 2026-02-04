@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { login, me } from "@/lib/auth";
+import { api } from "@/lib/api";
 import AuthLayout from "@/components/ui/layout/AuthLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+
+const VERIFY_EMAIL_MSG = "Please verify your email first. Check your inbox for the verification code.";
 
 type User = { id: number; email: string; role: string };
 
@@ -18,6 +21,11 @@ export default function LoginPage({ onLogin }: Props) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifySuccess, setVerifySuccess] = useState<string | null>(null);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
+  const showVerifyBlock = error === VERIFY_EMAIL_MSG;
 
   useEffect(() => {
     const err = searchParams.get("error");
@@ -52,9 +60,65 @@ export default function LoginPage({ onLogin }: Props) {
         err && typeof err === "object" && "response" in err
           ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
           : null;
-      setError(typeof msg === "string" ? msg : "Login failed");
+      const errStr = typeof msg === "string" ? msg : "Login failed";
+      setError(errStr);
+      // When login fails with "verify your email first", auto-send the code so user gets it without clicking Resend
+      if (errStr === VERIFY_EMAIL_MSG && email.trim()) {
+        try {
+          await api.post("/auth/resend-verification", { email: email.trim().toLowerCase() });
+          setResendMessage("A verification code was sent to your email.");
+        } catch {
+          // Ignore resend errors; user can still click "Resend code"
+        }
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resendCode = async () => {
+    if (!email.trim()) return;
+    setResendMessage(null);
+    setError(null);
+    try {
+      await api.post("/auth/resend-verification", { email: email.trim().toLowerCase() });
+      setResendMessage("A new code was sent to your email.");
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : null;
+      setError(typeof msg === "string" ? msg : "Could not resend code");
+    }
+  };
+
+  const submitVerify = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!email.trim() || !verificationCode.trim()) return;
+    setVerifyLoading(true);
+    setError(null);
+    setVerifySuccess(null);
+    setResendMessage(null);
+    try {
+      await api.post("/auth/verify-email", { email: email.trim().toLowerCase(), code: verificationCode.trim() });
+      setVerifySuccess("Email verified. Signing you in…");
+      setVerificationCode("");
+      await login(email, password);
+      const user = await me();
+      onLogin?.(user);
+      if (user.role === "admin") {
+        nav("/admin");
+      } else {
+        nav("/analyze");
+      }
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : null;
+      setError(typeof msg === "string" ? msg : "Verification failed");
+    } finally {
+      setVerifyLoading(false);
     }
   };
 
@@ -113,6 +177,58 @@ export default function LoginPage({ onLogin }: Props) {
             {error && (
               <div className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
                 {error}
+              </div>
+            )}
+
+            {showVerifyBlock && (
+              <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                <p className="text-sm font-medium text-foreground">
+                  Enter the 6-character code from your email
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="e.g. a1b2c3"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Avoid submitting the outer login form when pressing Enter in the code field
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        submitVerify();
+                      }
+                    }}
+                    maxLength={6}
+                    autoComplete="one-time-code"
+                    className="flex-1 rounded-md h-10 font-mono"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => submitVerify()}
+                    disabled={verifyLoading || !verificationCode.trim()}
+                    className="rounded-md h-10 shrink-0"
+                  >
+                    {verifyLoading ? "Verifying…" : "Verify email"}
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-sm text-muted-foreground"
+                  onClick={resendCode}
+                >
+                  Resend code
+                </Button>
+                {resendMessage && (
+                  <p className="text-sm text-green-600 dark:text-green-400">{resendMessage}</p>
+                )}
+              </div>
+            )}
+
+            {verifySuccess && (
+              <div className="text-sm text-green-600 dark:text-green-400 bg-green-500/10 rounded-md px-3 py-2">
+                {verifySuccess}
               </div>
             )}
 

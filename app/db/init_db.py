@@ -23,6 +23,12 @@ def init_db() -> None:
             col_names = {c[1] for c in cols}  # (cid, name, type,...)
             if "role" not in col_names:
                 conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'user';"))
+            if "email_verified" not in col_names:
+                conn.execute(text("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 1;"))
+            # Seed admin account: always treat as verified so it can log in without email verification
+            conn.execute(
+                text("UPDATE users SET email_verified = 1 WHERE email = 'admin@test.com';")
+            )
     except Exception:
         pass
 

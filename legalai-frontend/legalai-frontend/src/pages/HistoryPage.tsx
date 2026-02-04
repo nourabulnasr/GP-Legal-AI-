@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AppShell from "@/components/ui/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { listAnalyses, getAnalysis, deleteAnalysis } from "@/lib/api";
+import { listAnalyses, adminListUserAnalyses, getAnalysis, deleteAnalysis } from "@/lib/api";
 import type { AnalysisItem } from "@/lib/api";
 import {
   BarChart3,
@@ -64,6 +64,8 @@ function getFileIcon(filename: string | null) {
 
 export default function HistoryPage({ user, onLogout }: Props) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const userIdParam = searchParams.get("user_id");
   const [items, setItems] = useState<AnalysisItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -75,8 +77,15 @@ export default function HistoryPage({ user, onLogout }: Props) {
     setLoading(true);
     setErr(null);
     try {
-      const data = await listAnalyses();
-      setItems(data);
+      const isAdmin = user.role === "admin";
+      const userId = userIdParam ? parseInt(userIdParam, 10) : null;
+      if (isAdmin && userId != null && !isNaN(userId)) {
+        const data = await adminListUserAnalyses(userId);
+        setItems(data);
+      } else {
+        const data = await listAnalyses();
+        setItems(data);
+      }
     } catch (e: unknown) {
       const msg =
         e && typeof e === "object" && "response" in e
@@ -91,7 +100,7 @@ export default function HistoryPage({ user, onLogout }: Props) {
 
   useEffect(() => {
     fetchAnalyses();
-  }, []);
+  }, [userIdParam]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return items;
@@ -241,8 +250,9 @@ export default function HistoryPage({ user, onLogout }: Props) {
 
         {/* Table */}
         {loading ? (
-          <div className="rounded-lg border p-8 text-center text-muted-foreground">
-            Loading...
+          <div className="rounded-lg border p-12 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+            <div className="h-10 w-10 rounded-full border-4 border-primary border-t-transparent animate-spin" aria-hidden />
+            <p className="text-sm">Loading analyses…</p>
           </div>
         ) : err ? (
           <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-6 text-destructive">

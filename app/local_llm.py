@@ -92,9 +92,22 @@ def generate(
     with torch.no_grad():
         out = model.generate(**inputs, **gen_kwargs)
     text = tokenizer.decode(out[0], skip_special_tokens=True)
-    # Return only the generated part (after prompt)
-    if prompt.strip() in text:
-        text = text.split(prompt.strip())[-1].strip()
+    # Return only the generated part (reasoning/explanation), not the prompt
+    prompt_clean = prompt.strip()
+    if prompt_clean in text:
+        text = text.split(prompt_clean)[-1].strip()
+    # Fallback: strip by last instruction line so we don't show prompt
+    for sentinel in (
+        "الشرح والتصحيح المقترح (بناءً على النصوص أعلاه فقط):",
+        "explanation and suggested correction (based only on the texts above):",
+        "الشرح والتصحيح",
+        "explanation and suggested correction",
+    ):
+        if sentinel in text:
+            parts = text.split(sentinel, 1)
+            if len(parts) > 1 and parts[-1].strip():
+                text = parts[-1].strip()
+                break
     return text.strip()
 
 

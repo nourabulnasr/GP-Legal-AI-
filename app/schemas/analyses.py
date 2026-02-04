@@ -25,3 +25,7 @@ class AnalysisResponse(BaseModel):
 class AnalysisDetailResponse(AnalysisResponse):
     user_id: int
     result_json: str
+
+
+class AdminUpdateRoleRequest(BaseModel):
+    role: str = Field(..., description="Must be 'admin' or 'user'")

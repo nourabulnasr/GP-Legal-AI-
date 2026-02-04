@@ -66,3 +66,78 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Loader / spinner (boxes animation) */
+.loader-boxes {
+  --size: 32px;
+  --duration: 800ms;
+  height: calc(var(--size) * 2);
+  width: calc(var(--size) * 3);
+  position: relative;
+  transform-style: preserve-3d;
+  transform-origin: 50% 50%;
+  margin: 0 auto;
+  transform: rotateX(60deg) rotateZ(45deg);
+}
+.loader-boxes .loader-box {
+  width: var(--size);
+  height: var(--size);
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-style: preserve-3d;
+}
+.loader-boxes .loader-box:nth-child(1) {
+  transform: translate(100%, 0);
+  animation: loader-box1 var(--duration) linear infinite;
+}
+.loader-boxes .loader-box:nth-child(2) {
+  transform: translate(0, 100%);
+  animation: loader-box2 var(--duration) linear infinite;
+}
+.loader-boxes .loader-box:nth-child(3) {
+  transform: translate(100%, 100%);
+  animation: loader-box3 var(--duration) linear infinite;
+}
+.loader-boxes .loader-box:nth-child(4) {
+  transform: translate(200%, 0);
+  animation: loader-box4 var(--duration) linear infinite;
+}
+.loader-boxes .loader-box > div {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: hsl(217 91% 60%);
+  opacity: 0.9;
+  top: 0;
+  left: 0;
+  transform: rotateY(0deg) rotateX(0deg) translateZ(calc(var(--size) / 2));
+}
+.loader-boxes .loader-box > div:nth-child(2) {
+  background: hsl(217 91% 55%);
+  right: 0;
+  left: auto;
+  transform: rotateY(90deg) translateZ(calc(var(--size) / 2));
+}
+.loader-boxes .loader-box > div:nth-child(3) {
+  background: hsl(217 91% 50%);
+  transform: rotateX(-90deg) translateZ(calc(var(--size) / 2));
+}
+@keyframes loader-box1 {
+  0%, 50% { transform: translate(100%, 0); }
+  100% { transform: translate(200%, 0); }
+}
+@keyframes loader-box2 {
+  0% { transform: translate(0, 100%); }
+  50% { transform: translate(0, 0); }
+  100% { transform: translate(100%, 0); }
+}
+@keyframes loader-box3 {
+  0%, 50% { transform: translate(100%, 100%); }
+  100% { transform: translate(0, 100%); }
+}
+@keyframes loader-box4 {
+  0% { transform: translate(200%, 0); }
+  50% { transform: translate(200%, 100%); }
+  100% { transform: translate(100%, 100%); }
+}

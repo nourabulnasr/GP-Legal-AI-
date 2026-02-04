@@ -60,8 +60,14 @@ def create_access_token(subject: str | None = None, *, sub: str | None = None, r
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-def decode_access_token(token: str) -> Dict[str, Any]:
+def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Decode JWT access token.
+
+    Returns payload dict if valid, otherwise None (expired/invalid).
+    This prevents expired tokens from causing 500s in dependencies.
+    """
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError as e:
-        raise ValueError(f"Invalid token: {e}") from e
+    except JWTError:
+        return None

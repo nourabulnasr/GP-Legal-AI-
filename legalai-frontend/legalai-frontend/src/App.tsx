@@ -26,7 +26,8 @@ import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import GoogleCallbackPage from "@/pages/GoogleCallbackPage";
 import ProtectedRoute from "@/components/ui/auth/ProtectedRoute";
-import { me } from "@/lib/auth"; // you will fill auth.ts
+import LoadingScreen from "@/components/ui/LoadingScreen";
+import { me } from "@/lib/auth";
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -34,6 +35,12 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      const token = localStorage.getItem("access_token");
+      if (!token) {
+        setUser(null);
+        setReady(true);
+        return;
+      }
       try {
         const u = await me();
         setUser(u);
@@ -45,7 +52,7 @@ export default function App() {
     })();
   }, []);
 
-  if (!ready) return null; // simple loading for now
+  if (!ready) return <LoadingScreen />;
 
   return (
     <BrowserRouter>
