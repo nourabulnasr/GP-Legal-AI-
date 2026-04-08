@@ -1,0 +1,95 @@
+# =========================
+# Secrets and env
+# =========================
+.env
+.env.local
+.env.*.local
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# =========================
+# Databases and local state
+# =========================
+*.db
+*.sqlite3
+legalai.db
+legalai_backup.db
+
+# =========================
+# Chroma / vector stores
+# =========================
+chroma_legal/
+chroma_db/
+Legal Rag/chroma_db/
+Legal Rag/Legal Rag/chroma_db/
+
+# =========================
+# IDE and editor
+# =========================
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs and temp
+# =========================
+*.log
+logs/
+*.tmp
+*.temp
+
+# =========================
+# Large binaries and wheels
+# =========================
+wheels/
+*.whl
+
+# =========================
+# Large model (download separately; remove this line to track the model)
+# =========================
+LFM2.5-1.2B-Instruct/
+
+# =========================
+# Jupyter and testing
+# =========================
+.ipynb_checkpoints/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Optional: raw data (uncomment to avoid pushing large PDFs)
+# =========================
+# data/raw/
+# data/contracts_raw/

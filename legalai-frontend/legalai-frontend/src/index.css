@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem
+  }
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Loader / spinner (boxes animation) */
+.loader-boxes {
+  --size: 32px;
+  --duration: 800ms;
+  height: calc(var(--size) * 2);
+  width: calc(var(--size) * 3);
+  position: relative;
+  transform-style: preserve-3d;
+  transform-origin: 50% 50%;
+  margin: 0 auto;
+  transform: rotateX(60deg) rotateZ(45deg);
+}
+.loader-boxes .loader-box {
+  width: var(--size);
+  height: var(--size);
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-style: preserve-3d;
+}
+.loader-boxes .loader-box:nth-child(1) {
+  transform: translate(100%, 0);
+  animation: loader-box1 var(--duration) linear infinite;
+}
+.loader-boxes .loader-box:nth-child(2) {
+  transform: translate(0, 100%);
+  animation: loader-box2 var(--duration) linear infinite;
+}
+.loader-boxes .loader-box:nth-child(3) {
+  transform: translate(100%, 100%);
+  animation: loader-box3 var(--duration) linear infinite;
+}
+.loader-boxes .loader-box:nth-child(4) {
+  transform: translate(200%, 0);
+  animation: loader-box4 var(--duration) linear infinite;
+}
+.loader-boxes .loader-box > div {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: hsl(217 91% 60%);
+  opacity: 0.9;
+  top: 0;
+  left: 0;
+  transform: rotateY(0deg) rotateX(0deg) translateZ(calc(var(--size) / 2));
+}
+.loader-boxes .loader-box > div:nth-child(2) {
+  background: hsl(217 91% 55%);
+  right: 0;
+  left: auto;
+  transform: rotateY(90deg) translateZ(calc(var(--size) / 2));
+}
+.loader-boxes .loader-box > div:nth-child(3) {
+  background: hsl(217 91% 50%);
+  transform: rotateX(-90deg) translateZ(calc(var(--size) / 2));
+}
+@keyframes loader-box1 {
+  0%, 50% { transform: translate(100%, 0); }
+  100% { transform: translate(200%, 0); }
+}
+@keyframes loader-box2 {
+  0% { transform: translate(0, 100%); }
+  50% { transform: translate(0, 0); }
+  100% { transform: translate(100%, 0); }
+}
+@keyframes loader-box3 {
+  0%, 50% { transform: translate(100%, 100%); }
+  100% { transform: translate(0, 100%); }
+}
+@keyframes loader-box4 {
+  0% { transform: translate(200%, 0); }
+  50% { transform: translate(200%, 100%); }
+  100% { transform: translate(100%, 100%); }
+}

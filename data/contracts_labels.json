@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "n_labels": 12,
+  "labels": [
+    {
+      "label": "EMPLOYER_INFO",
+      "rule_id": "LABOR25_EMPLOYER_INFO",
+      "arabic": "اسم صاحب العمل + عنوان الشغل",
+      "details": "Employer name and workplace address."
+    },
+    {
+      "label": "EMPLOYEE_INFO",
+      "rule_id": "LABOR25_EMPLOYEE_INFO",
+      "arabic": "اسم العامل + المهنة + محل الإقامة",
+      "details": "Employee name, profession, and residence."
+    },
+    {
+      "label": "INSURANCE_NUMBER",
+      "rule_id": "CROSSBORDER_TAX_INSURANCE_CLARITY",
+      "arabic": "رقم التأمين الخاص بالعامل",
+      "details": "Insurance/tax details clarity (closest existing rule)."
+    },
+    {
+      "label": "JOB_DESCRIPTION",
+      "rule_id": "LABOR25_JOB_DESCRIPTION",
+      "arabic": "بيان الوظيفة/المهام",
+      "details": "Job duties / role description."
+    },
+    {
+      "label": "WORK_LOCATION_REMOTE_OR_ONSITE",
+      "rule_id": "LABOR25_WORK_LOCATION",
+      "arabic": "نوع الشغل ومكانه (عن بُعد/مقر الشركة)",
+      "details": "Work location and whether remote/on-site."
+    },
+    {
+      "label": "SALARY_AND_PAYMENT",
+      "rule_id": "LABOR25_SALARY_STRUCTURE",
+      "arabic": "الأجر/الراتب المتفق عليه وطريقة الصرف",
+      "details": "Salary structure and payment method."
+    },
+    {
+      "label": "BENEFITS",
+      "rule_id": "LABOR25_BENEFITS",
+      "arabic": "المزايا التي يحصل عليها العامل",
+      "details": "Benefits/allowances."
+    },
+    {
+      "label": "PROBATION_MAX_3_MONTHS",
+      "rule_id": "LABOR25_PROBATION_PERIOD",
+      "arabic": "مدة الاختبار لا تزيد عن 3 شهور",
+      "details": "Probation period constraints."
+    },
+    {
+      "label": "WORK_HOURS_LIMITS",
+      "rule_id": "LABOR25_WORK_HOURS",
+      "arabic": "ساعات العمل: 8 يوميًا + راحة + 48 أسبوعيًا",
+      "details": "Working hours limits and breaks."
+    },
+    {
+      "label": "CONTRACT_DURATION_AND_START",
+      "rule_id": "LABOR25_CONTRACT_DURATION",
+      "arabic": "مدة العقد وتاريخ البداية",
+      "details": "Contract term and start date."
+    },
+    {
+      "label": "ANNUAL_LEAVE_15_21",
+      "rule_id": "LABOR25_ANNUAL_LEAVE",
+      "arabic": "الإجازات السنوية 15 ثم 21 يوم",
+      "details": "Annual leave entitlements."
+    },
+    {
+      "label": "CONFIDENTIALITY_DATA_PROTECTION",
+      "rule_id": "CROSSBORDER_REMOTE_TOOLS_SECURITY",
+      "arabic": "سرية المعلومات/حماية البيانات",
+      "details": "Confidentiality & data protection (esp. remote work)."
+    }
+  ],
+  "rule_inventory": {
+    "labor_mandatory": 20,
+    "labor_cross_border": 13,
+    "total": 33
+  }
+}

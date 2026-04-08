@@ -1,0 +1,31 @@
+{
+  "mode": "law_aware",
+  "n_train": 704,
+  "n_val": 239,
+  "n_test": 174,
+  "n_contracts_train": 12,
+  "n_contracts_val": 3,
+  "n_contracts_test": 4,
+  "threshold": 0.30000000000000004,
+  "precision": 0.9325153374233128,
+  "recall": 0.9934640522875817,
+  "f1": 0.9620253164556962,
+  "roc_auc": 0.9377528789293494,
+  "pr_auc": 0.9910834415173433,
+  "confusion_matrix": [
+    [
+      10,
+      11
+    ],
+    [
+      1,
+      152
+    ]
+  ],
+  "tn": 10,
+  "fp": 11,
+  "fn": 1,
+  "tp": 152,
+  "group_kfold_f1_mean": 0.938270258268225,
+  "group_kfold_f1_std": 0.0037518987288232405
+}

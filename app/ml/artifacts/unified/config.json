@@ -1,0 +1,5 @@
+{
+  "law_aware": true,
+  "top_k_law": 3,
+  "seed": 42
+}
