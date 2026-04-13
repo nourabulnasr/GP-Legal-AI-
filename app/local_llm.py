@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 _BASE = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = _BASE / "LFM2.5-1.2B-Instruct"
-MAX_PROMPT_CHARS = 6000
+MAX_PROMPT_CHARS = 12000
 
 _tokenizer = None
 _model = None
@@ -83,32 +83,21 @@ def generate(
 
     import torch
 
-    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
-    if hasattr(model, "device") and next(model.parameters()).device.type != "cpu":
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+    device = next(model.parameters()).device
+    max_ctx = 4096
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_ctx)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
     gen_kwargs = {"max_new_tokens": max_new_tokens, "do_sample": do_sample, "pad_token_id": tokenizer.eos_token_id}
     if do_sample:
         gen_kwargs["temperature"] = temperature
     with torch.no_grad():
         out = model.generate(**inputs, **gen_kwargs)
-    text = tokenizer.decode(out[0], skip_special_tokens=True)
-    # Return only the generated part (reasoning/explanation), not the prompt
-    prompt_clean = prompt.strip()
-    if prompt_clean in text:
-        text = text.split(prompt_clean)[-1].strip()
-    # Fallback: strip by last instruction line so we don't show prompt
-    for sentinel in (
-        "الشرح والتصحيح المقترح (بناءً على النصوص أعلاه فقط):",
-        "explanation and suggested correction (based only on the texts above):",
-        "الشرح والتصحيح",
-        "explanation and suggested correction",
-    ):
-        if sentinel in text:
-            parts = text.split(sentinel, 1)
-            if len(parts) > 1 and parts[-1].strip():
-                text = parts[-1].strip()
-                break
-    return text.strip()
+    input_len = inputs["input_ids"].shape[1]
+    gen_ids = out[0][input_len:]
+    if gen_ids.numel() == 0:
+        return ""
+    text = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
+    return text
 
 
 # Prompt template: violation explanation from rule + matched text + RAG articles only

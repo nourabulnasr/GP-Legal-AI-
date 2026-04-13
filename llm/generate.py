@@ -1,9 +1,15 @@
+"""LFM inference entrypoints; load weights in ``lfm_model.py`` — attach LoRA/adapter training here."""
 from typing import Any, Dict, List
 
 from .lfm_model import load_model, is_available as _model_available
 from .prompt import SYSTEM_PROMPT_AR
 
-MAX_PROMPT_CHARS = 6000
+MAX_PROMPT_CHARS = 12000
+"""Match ``app.lfm_runtime`` / long compare prompts; tokenizer still truncates by tokens."""
+
+
+def _model_device(model):
+    return next(model.parameters()).device
 
 
 def generate_answer(context, question):
@@ -19,17 +25,26 @@ Question:
 {question}
 
 Answer:
-""".strip()
+    """.strip()
 
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    max_ctx = 4096
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_ctx)
+    device = _model_device(model)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    gen_kwargs = {"max_new_tokens": 300, "do_sample": False}
-    if gen_kwargs["do_sample"]:
-        gen_kwargs["temperature"] = 0.1
-    output = model.generate(**inputs, **gen_kwargs)
+    gen_kwargs = {
+        "max_new_tokens": 300,
+        "do_sample": False,
+        "pad_token_id": tokenizer.eos_token_id,
+    }
+    with torch.no_grad():
+        output = model.generate(**inputs, **gen_kwargs)
 
-    text = tokenizer.decode(output[0], skip_special_tokens=True)
-    return text.split("Answer:")[-1].strip()
+    input_len = inputs["input_ids"].shape[1]
+    gen_ids = output[0][input_len:]
+    if gen_ids.numel() == 0:
+        return ""
+    return tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
 
 
 def generate(
@@ -38,10 +53,11 @@ def generate(
     temperature: float = 0.1,
     do_sample: bool = False,
 ) -> str:
-    """Generate text from prompt. Used for explanation only (violation + matched text + RAG)."""
+    """Generate text from prompt. Returns **new** tokens only (no prompt echo)."""
     if not prompt or not prompt.strip():
         return ""
-    prompt = (prompt[:MAX_PROMPT_CHARS] + "...") if len(prompt) > MAX_PROMPT_CHARS else prompt
+    raw = prompt.strip()
+    prompt_trunc = (raw[:MAX_PROMPT_CHARS] + "...") if len(raw) > MAX_PROMPT_CHARS else raw
 
     try:
         tokenizer, model = load_model()
@@ -50,18 +66,20 @@ def generate(
 
     import torch
 
-    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
-    if hasattr(model, "device") and next(model.parameters()).device.type != "cpu":
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+    max_ctx = 4096
+    inputs = tokenizer(prompt_trunc, return_tensors="pt", truncation=True, max_length=max_ctx)
+    device = _model_device(model)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
     gen_kwargs = {"max_new_tokens": max_new_tokens, "do_sample": do_sample, "pad_token_id": tokenizer.eos_token_id}
     if do_sample:
         gen_kwargs["temperature"] = temperature
     with torch.no_grad():
         out = model.generate(**inputs, **gen_kwargs)
-    text = tokenizer.decode(out[0], skip_special_tokens=True)
-    if prompt.strip() in text:
-        text = text.split(prompt.strip())[-1].strip()
-    return text.strip()
+    input_len = inputs["input_ids"].shape[1]
+    gen_ids = out[0][input_len:]
+    if gen_ids.numel() == 0:
+        return ""
+    return tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
 
 
 EXPLANATION_SYSTEM = """أنت مساعد قانوني. مهمتك فقط شرح سبب مخالفة البند للقانون واستنتاج تصحيح بناءً على النصوص المقدمة.

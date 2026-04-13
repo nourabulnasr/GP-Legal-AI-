@@ -170,7 +170,7 @@ try:
 except Exception as e:
     init_db = None
     _HAS_DB = False
-    print("❌ Failed to import init_db:", repr(e))
+    print("[ERR] Failed to import init_db:", repr(e))
 
 # --- Auth router (optional) ---
 try:
@@ -179,7 +179,7 @@ try:
 except Exception as e:
     auth_router = None
     _HAS_AUTH = False
-    print("❌ Failed to import auth_router:", repr(e))
+    print("[ERR] Failed to import auth_router:", repr(e))
 
 # --- Analyses router (optional) ---
 try:
@@ -188,14 +188,14 @@ try:
 except Exception as e:
     analyses_router = None
     _HAS_ANALYSES = False
-    print("❌ Failed to import analyses_router:", repr(e))
+    print("[ERR] Failed to import analyses_router:", repr(e))
 
 chat_router = None
 try:
     from app.routers.chat import router as chat_router  # type: ignore
 except Exception as e:
     chat_router = None
-    print("❌ Failed to import chat_router:", repr(e))
+    print("[ERR] Failed to import chat_router:", repr(e))
 
 # --- Request logging middleware (optional) ---
 try:
@@ -204,7 +204,7 @@ try:
 except Exception as e:
     RequestLoggingMiddleware = None
     _HAS_LOG_MW = False
-    print("❌ Failed to import RequestLoggingMiddleware:", repr(e))
+    print("[ERR] Failed to import RequestLoggingMiddleware:", repr(e))
 
 # --- Rate limiting middleware (optional) ---
 try:
@@ -215,7 +215,7 @@ except Exception as e:
     limiter = None
     SlowAPIMiddleware = None
     _HAS_LIMITER = False
-    print("❌ Failed to import rate limiter middleware:", repr(e))
+    print("[ERR] Failed to import rate limiter middleware:", repr(e))
 
 
 # ============================================================
@@ -257,7 +257,7 @@ try:
             return None
 except Exception as e:
     _HAS_PERSIST = False
-    print("❌ Failed to import DB/Auth deps (get_db/models/deps):", repr(e))
+    print("[ERR] Failed to import DB/Auth deps (get_db/models/deps):", repr(e))
 
     def _missing_db_dep() -> Generator[Any, None, None]:
         raise HTTPException(status_code=503, detail="DB layer not configured / missing imports.")
@@ -449,15 +449,23 @@ if _HAS_LIMITER and limiter and SlowAPIMiddleware:
 
 if _HAS_AUTH and auth_router:
     api.include_router(auth_router)
-    print("✅ Auth router mounted:", getattr(auth_router, "prefix", None))
+    print("[OK] Auth router mounted:", getattr(auth_router, "prefix", None))
 
 if _HAS_ANALYSES and analyses_router:
     api.include_router(analyses_router)
-    print("✅ Analyses router mounted:", getattr(analyses_router, "prefix", None))
+    print("[OK] Analyses router mounted:", getattr(analyses_router, "prefix", None))
 
 if chat_router:
     api.include_router(chat_router)
-    print("✅ Chat router mounted:", getattr(chat_router, "prefix", None))
+    print("[OK] Chat router mounted:", getattr(chat_router, "prefix", None))
+
+try:
+    from app.routers.legato_mobile import router as legato_mobile_router
+
+    api.include_router(legato_mobile_router)
+    print("[OK] Legato mobile features mounted:", getattr(legato_mobile_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Legato mobile router not mounted:", repr(e))
 
 # ============================================================
 # Optional jobs router (SAFE – stub included; mount only if present)
@@ -465,9 +473,9 @@ if chat_router:
 try:
     from app.jobs import router as jobs_router
     api.include_router(jobs_router)
-    print("✅ Jobs router mounted:", getattr(jobs_router, "prefix", None))
+    print("[OK] Jobs router mounted:", getattr(jobs_router, "prefix", None))
 except Exception as e:
-    print("ℹ️ Jobs router not mounted:", repr(e))
+    print("[INFO] Jobs router not mounted:", repr(e))
 
 
 # ============================================================
@@ -544,7 +552,7 @@ def _docx_bytes_to_text(data: bytes) -> str:
         text = "\n".join(parts).strip()
         return text
     except Exception as e:
-        print("❌ DOCX extract failed:", repr(e))
+        print("[ERR] DOCX extract failed:", repr(e))
         return ""
 
 
@@ -569,7 +577,7 @@ def _docx_images_to_text(data: bytes) -> str:
                 except Exception:
                     continue
     except Exception as e:
-        print("❌ DOCX image OCR failed:", repr(e))
+        print("[ERR] DOCX image OCR failed:", repr(e))
         return ""
 
     return "\n".join(texts).strip()
@@ -910,7 +918,7 @@ def check_clause(req: ClauseCheckRequest):
                     if h.get("rule_id") and not h.get("id"):
                         h["id"] = h["rule_id"]
             except Exception as e:
-                print("❌ Model-ML predict error:", repr(e))
+                print("[ERR] Model-ML predict error:", repr(e))
                 ml_used = False
                 ml_predictions = None
                 deduped = []
@@ -961,11 +969,11 @@ def startup():
         try:
             init_db()
             db_ok = True
-            print("✅ DB initialized (SQLite).")
+            print("[OK] DB initialized (SQLite).")
         except Exception as e:
-            print("❌ Failed to init DB:", repr(e))
+            print("[ERR] Failed to init DB:", repr(e))
     else:
-        print("ℹ️ DB not configured (optional).")
+        print("[INFO] DB not configured (optional).")
 
     # RAG init: ChromaDB (Legal RAG) preferred; in-memory retriever fallback
     chroma_count = 0
@@ -980,11 +988,11 @@ def startup():
             device_used = getattr(rag_chromadb, "get_device", lambda: None)()
             embedding_model = getattr(rag_chromadb, "get_embedding_model_name", lambda: None)()
             artifacts_ok = True
-            print(f"✅ ChromaDB RAG ready (Legal RAG corpus): {chroma_count} docs.")
+            print(f"[OK] ChromaDB RAG ready (Legal RAG corpus): {chroma_count} docs.")
         except Exception as e:
-            print("❌ ChromaDB RAG init failed:", repr(e))
+            print("[ERR] ChromaDB RAG init failed:", repr(e))
     else:
-        print("ℹ️ ChromaDB RAG not available (optional).")
+        print("[INFO] ChromaDB RAG not available (optional).")
 
     retriever_docs = 0
     try:
@@ -992,10 +1000,10 @@ def startup():
         retriever = Retriever()  # type: ignore
         retriever.build_index(docs)
         retriever_docs = len(docs)
-        print(f"✅ Retriever initialized with {retriever_docs} docs.")
+        print(f"[OK] Retriever initialized with {retriever_docs} docs.")
     except Exception as e:
         retriever = None
-        print("❌ Failed to init Retriever:", repr(e))
+        print("[ERR] Failed to init Retriever:", repr(e))
 
     # Single consolidated startup report (once per process)
     if not _startup_report_done:

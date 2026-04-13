@@ -93,3 +93,8 @@ htmlcov/
 # =========================
 # data/raw/
 # data/contracts_raw/
+
+# =========================
+# Flutter app (canonical copy lives at C:\dev\legato_mobile1 — open Legato.code-workspace)
+# =========================
+legato_mobile/

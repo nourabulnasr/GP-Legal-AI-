@@ -1,6 +1,8 @@
 """
-Chat router: Gemini-powered chatbot scoped to analysis_id.
-Context: contract OCR text + analysis results.
+Chat router:
+- POST /chat/assistant — lightweight Gemini chatbot (general Q&A only; no deep contract reasoning).
+- POST /chat/message — contract-scoped Q&A via local LFM (same stack as fine-tuning).
+- POST /chat/document — document Q&A via local LFM.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.db.models import Analysis, User
+from app.lfm_runtime import lfm_context_question, lfm_failed_for_http
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -130,16 +133,18 @@ def chat_assistant(
     payload: AssistantChatRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """General AI assistant chat (no contract context). Uses Gemini with a legal-assistant system prompt."""
+    """General assistant only (no uploaded contract). Uses Gemini — keep shallow; deep legal work uses LFM elsewhere."""
     client_or_legacy = _get_gemini_client()
     if not client_or_legacy:
         return AssistantChatResponse(
             content="Chat is not configured. Set GEMINI_API_KEY in the environment to enable the assistant.",
         )
     system_prompt = (
-        "You are a helpful legal assistant for Legato. Answer general questions about contracts, "
-        "labor law, compliance, and legal terminology concisely. If the user asks about a specific contract, "
-        "suggest they use the contract-specific chat with an analysis selected."
+        "You are a lightweight in-app assistant for Legato (not a substitute for counsel). "
+        "Keep replies short: navigation, what each screen does, and high-level terminology only. "
+        "Do NOT perform deep contract analysis, clause-by-clause legal reasoning, or definitive legal conclusions here — "
+        "direct users to run Analyze and use the LFM-powered contract chat and tools for that. "
+        "If asked for detailed labor-law analysis, say that the dedicated analysis pipeline handles it."
     )
     history_str = ""
     if payload.history:
@@ -178,7 +183,7 @@ def chat_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Chat with Gemini about a specific analysis. Context: contract OCR + analysis results."""
+    """Contract-aware chat via local LFM (not Gemini). Context: OCR + rule hits + summaries."""
     row = db.query(Analysis).filter(Analysis.id == payload.analysis_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -193,87 +198,23 @@ def chat_message(
 
     context = _build_context(result)
 
-    client_or_legacy = _get_gemini_client()
-    if not client_or_legacy:
-        return ChatResponse(
-            content="Chat is not configured. Set GEMINI_API_KEY in the environment to enable contract-aware chat.",
-            analysis_id=payload.analysis_id,
-        )
+    instruction = (
+        "You are a legal contract assistant. Answer using ONLY the context below. "
+        "Be concise. Cite rule IDs when relevant. If the answer is not in the context, say so.\n\n"
+        f"Context:\n{context}"
+    )
+    question = payload.message
+    if payload.history:
+        hist_lines = []
+        for m in payload.history[-8:]:
+            role = "User" if (m.role or "").lower() == "user" else "Assistant"
+            hist_lines.append(f"{role}: {m.content}")
+        question = "\n".join(hist_lines) + "\n\nCurrent question: " + payload.message
 
-    system_prompt = f"""You are a legal contract assistant. Answer questions about the contract based ONLY on the context below.
-Context (contract OCR text and analysis results):
-{context}
-
-Be concise. Cite sections or rule IDs when relevant. If the answer is not in the context, say so."""
-
-    full_prompt = f"{system_prompt}\n\nUser: {payload.message}\n\nAssistant:"
-
-    try:
-        if isinstance(client_or_legacy, tuple) and client_or_legacy[0] == "legacy":
-            _, model = client_or_legacy
-            response = model.generate_content(full_prompt)
-            content = response.text if hasattr(response, "text") else str(response)
-        else:
-            response = client_or_legacy.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=full_prompt,
-            )
-            content = getattr(response, "text", None)
-            if not content and getattr(response, "candidates", None) and len(response.candidates):
-                c = response.candidates[0]
-                if getattr(c, "content", None) and getattr(c.content, "parts", None) and len(c.content.parts):
-                    content = getattr(c.content.parts[0], "text", None)
-            content = content or str(response)
-    except Exception as e:
-        err_str = str(e).lower()
-        if "429" in err_str or "resource_exhausted" in err_str or ("resource" in err_str and "exhausted" in err_str) or "quota" in err_str or "rate limit" in err_str:
-            content = (
-                "The AI chat has reached its usage limit for now. "
-                "Please try again in a few minutes, or check your API plan and billing."
-            )
-        else:
-            content = f"Sorry, the chat request failed. Please try again."
+    content = lfm_context_question(instruction, question, max_new_tokens=512)
+    if lfm_failed_for_http(content):
+        raise HTTPException(status_code=503, detail=content)
     return ChatResponse(content=content, analysis_id=payload.analysis_id)
-
-
-# ----- Document chat with local LFM -----
-_MAX_DOCUMENT_CONTEXT_CHARS = 6000
-
-
-def _build_document_chat_prompt(context: str, message: str) -> str:
-    """Build a single prompt for document Q&A (used when generate_answer is not available)."""
-    return f"""أنت مساعد قانوني. أجب على سؤال المستخدم بناءً على النص التالي فقط. إذا لم يكن الجواب في النص فقل ذلك.
-
-النص:
-{context[: _MAX_DOCUMENT_CONTEXT_CHARS]}
-
-سؤال المستخدم:
-{message}
-
-الجواب:"""
-
-
-def _get_lfm_document_reply(document_context: str, message: str, max_new_tokens: int = 256) -> str:
-    """Call local LFM (llm/generate or app/local_llm) for document Q&A. Returns reply or error message."""
-    context = (document_context or "").strip()
-    if len(context) > _MAX_DOCUMENT_CONTEXT_CHARS:
-        context = context[:_MAX_DOCUMENT_CONTEXT_CHARS] + "..."
-    if not context:
-        return "[No document context provided.]"
-    try:
-        from llm.generate import is_available, generate_answer
-        if not is_available():
-            raise RuntimeError("Local LLM not available")
-        return generate_answer(context, message)
-    except Exception as e1:
-        try:
-            from app.local_llm import is_available, generate
-            if not is_available():
-                return "[Local LLM not available. Check LOCAL_LLM_PATH or LFM2.5-1.2B-Instruct folder.]"
-            prompt = _build_document_chat_prompt(context, message)
-            return generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
-        except Exception:
-            return f"[Local LLM error: {e1!r}]"
 
 
 @router.get("/document")
@@ -311,7 +252,7 @@ def chat_document(
     if not context or not (context or "").strip():
         raise HTTPException(status_code=400, detail="Provide document_context or analysis_id")
 
-    content = _get_lfm_document_reply(context, payload.message)
-    if content.startswith("[Local LLM not available") or content.startswith("[Local LLM error") or content.startswith("[LLM load error"):
+    content = lfm_context_question(context, payload.message, max_new_tokens=256)
+    if lfm_failed_for_http(content):
         raise HTTPException(status_code=503, detail=content)
     return DocumentChatResponse(content=content)
