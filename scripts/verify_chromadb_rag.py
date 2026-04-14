@@ -15,6 +15,11 @@ sys.path.insert(0, str(ROOT))
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     print("ChromaDB RAG verification (plan Step 1)...")
     # Prefer Legal Rag bridge (uses Legal Rag/src); fallback to app/rag_chromadb
     search_fn = is_available_fn = get_count_fn = None

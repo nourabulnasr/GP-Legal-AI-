@@ -21,7 +21,17 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { adminListAll, adminListUsers, adminUpdateUserRole, deleteAnalysis } from "@/lib/api";
+import {
+  adminListAll,
+  adminListUsers,
+  adminUpdateUserRole,
+  adminLawPreviewPdf,
+  adminLawUploadPdf,
+  adminLawReindex,
+  adminLawJob,
+  adminLawSyncFromUrl,
+  deleteAnalysis,
+} from "@/lib/api";
 import type { AnalysisDetail, AdminUser } from "@/lib/api";
 import {
   Download,
@@ -110,7 +120,14 @@ export default function AdminPage({ user, onLogout }: Props) {
   const [loading, setLoading] = useState(true);
   const [roleUpdating, setRoleUpdating] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"users" | "analyses" | "subscribers">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "analyses" | "law_rag" | "subscribers">("users");
+  const [lawPdfFile, setLawPdfFile] = useState<File | null>(null);
+  const [lawDisplayName, setLawDisplayName] = useState("");
+  const [lawPreview, setLawPreview] = useState<{ article_count: number; preview: unknown[] } | null>(null);
+  const [lawJobId, setLawJobId] = useState<string | null>(null);
+  const [lawJobInfo, setLawJobInfo] = useState<string>("");
+  const [lawBusy, setLawBusy] = useState(false);
+  const [lawErr, setLawErr] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [usersPage, setUsersPage] = useState(1);
@@ -158,6 +175,27 @@ export default function AdminPage({ user, onLogout }: Props) {
   useEffect(() => {
     fetchAll();
   }, []);
+
+  useEffect(() => {
+    if (!lawJobId) return;
+    setLawBusy(true);
+    const timer = window.setInterval(async () => {
+      try {
+        const j = await adminLawJob(lawJobId);
+        setLawJobInfo(JSON.stringify(j, null, 2));
+        if (j.status === "done" || j.status === "error") {
+          window.clearInterval(timer);
+          setLawBusy(false);
+          if (j.status === "error" && j.error) setLawErr(j.error);
+        }
+      } catch (e: unknown) {
+        setLawErr(e instanceof Error ? e.message : String(e));
+        window.clearInterval(timer);
+        setLawBusy(false);
+      }
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [lawJobId]);
 
   const derivedUsers = useMemo(
     () => mergeUsersWithAnalyses(realUsers, analyses, user),
@@ -218,7 +256,9 @@ export default function AdminPage({ user, onLogout }: Props) {
       const ids =
         activeTab === "users"
           ? paginatedUsers.map((u) => u.id)
-          : paginatedAnalyses.map((a) => a.id);
+          : activeTab === "analyses"
+            ? paginatedAnalyses.map((a) => a.id)
+            : [];
       setSelectedIds(new Set(ids));
     } else {
       setSelectedIds(new Set());
@@ -235,6 +275,7 @@ export default function AdminPage({ user, onLogout }: Props) {
   };
 
   const exportCsv = (onlySelected = false) => {
+    if (activeTab === "law_rag" || activeTab === "subscribers") return;
     const rows =
       activeTab === "users"
         ? (onlySelected && selectedIds.size > 0
@@ -304,7 +345,7 @@ export default function AdminPage({ user, onLogout }: Props) {
         {/* Tabs */}
         <div className="border-b">
           <nav className="flex gap-6">
-            {(["users", "analyses", "subscribers"] as const).map((tab) => (
+            {(["users", "analyses", "law_rag", "subscribers"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -314,7 +355,7 @@ export default function AdminPage({ user, onLogout }: Props) {
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {tab}
+                {tab === "law_rag" ? "Law RAG" : tab}
               </button>
             ))}
           </nav>
@@ -329,8 +370,11 @@ export default function AdminPage({ user, onLogout }: Props) {
               placeholder={
                 activeTab === "users"
                   ? "Filter by name or email..."
-                  : "Filter by filename or user ID..."
+                  : activeTab === "analyses"
+                    ? "Filter by filename or user ID..."
+                    : "Filter…"
               }
+              disabled={activeTab === "law_rag" || activeTab === "subscribers"}
               value={filterText}
               onChange={(e) => {
                 setFilterText(e.target.value);
@@ -795,6 +839,139 @@ export default function AdminPage({ user, onLogout }: Props) {
               )}
             </div>
           </>
+        ) : activeTab === "law_rag" ? (
+          <div className="space-y-4 max-w-2xl">
+            <Card>
+              <CardContent className="p-6 space-y-4">
+                <h2 className="text-lg font-semibold">Labor law corpus and RAG</h2>
+                <p className="text-sm text-muted-foreground">
+                  Upload an official PDF to extract articles, rebuild chunk JSONL, and reindex Chroma plus the
+                  in-memory retriever. Use Preview first to sanity-check article counts.
+                </p>
+                {lawErr && <p className="text-sm text-destructive">{lawErr}</p>}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Law display name (optional)</label>
+                  <input
+                    type="text"
+                    value={lawDisplayName}
+                    onChange={(e) => setLawDisplayName(e.target.value)}
+                    placeholder="قانون العمل رقم 14 لسنة 2025"
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Official PDF</label>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      setLawPdfFile(f ?? null);
+                      setLawPreview(null);
+                      setLawErr(null);
+                    }}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={lawBusy || !lawPdfFile}
+                    onClick={async () => {
+                      if (!lawPdfFile) return;
+                      setLawBusy(true);
+                      setLawErr(null);
+                      try {
+                        const p = await adminLawPreviewPdf(lawPdfFile, lawDisplayName || undefined);
+                        setLawPreview(p);
+                      } catch (e: unknown) {
+                        setLawErr(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setLawBusy(false);
+                      }
+                    }}
+                  >
+                    Preview
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={lawBusy || !lawPdfFile}
+                    onClick={async () => {
+                      if (!lawPdfFile) return;
+                      setLawBusy(true);
+                      setLawErr(null);
+                      setLawJobInfo("");
+                      try {
+                        const r = await adminLawUploadPdf(lawPdfFile, lawDisplayName || undefined);
+                        setLawJobId(r.job_id);
+                      } catch (e: unknown) {
+                        setLawErr(e instanceof Error ? e.message : String(e));
+                        setLawBusy(false);
+                      }
+                    }}
+                  >
+                    Upload and rebuild
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={lawBusy}
+                    onClick={async () => {
+                      setLawBusy(true);
+                      setLawErr(null);
+                      setLawJobInfo("");
+                      try {
+                        const r = await adminLawReindex();
+                        setLawJobId(r.job_id);
+                      } catch (e: unknown) {
+                        setLawErr(e instanceof Error ? e.message : String(e));
+                        setLawBusy(false);
+                      }
+                    }}
+                  >
+                    Reindex only
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={lawBusy}
+                    onClick={async () => {
+                      setLawBusy(true);
+                      setLawErr(null);
+                      setLawJobInfo("");
+                      try {
+                        const r = await adminLawSyncFromUrl();
+                        setLawJobInfo(JSON.stringify(r, null, 2));
+                      } catch (e: unknown) {
+                        setLawErr(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setLawBusy(false);
+                      }
+                    }}
+                  >
+                    Sync from official URL
+                  </Button>
+                </div>
+                {lawPreview && (
+                  <p className="text-sm text-muted-foreground">
+                    Preview: {lawPreview.article_count} articles (showing first {lawPreview.preview.length} in API
+                    response).
+                  </p>
+                )}
+                {lawJobId && (
+                  <div className="rounded-md border bg-muted/30 p-3">
+                    <p className="text-xs font-mono break-all">job_id: {lawJobId}</p>
+                    <pre className="text-xs mt-2 max-h-48 overflow-auto whitespace-pre-wrap">{lawJobInfo || "…"}</pre>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         ) : (
           <div className="rounded-lg border p-12 text-center">
             <p className="text-muted-foreground">Subscriber management coming soon.</p>

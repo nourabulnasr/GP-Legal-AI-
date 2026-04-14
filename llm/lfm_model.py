@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 MODEL_ID_HF = "liquidai/LFM2.5-1.2B-Thinking"
 _BASE = Path(__file__).resolve().parent.parent
 DEFAULT_LOCAL_PATH = _BASE / "LFM2.5-1.2B-Instruct"
+MODEL_UNDER_MODELS = _BASE / "models" / "LFM2.5-1.2B-Instruct"
 
 _tokenizer = None
 _model = None
@@ -21,14 +23,27 @@ def _model_path():
         p = Path(path_env).expanduser().resolve()
         if p.exists():
             return p
-    if DEFAULT_LOCAL_PATH.exists():
-        return DEFAULT_LOCAL_PATH
+    for candidate in (DEFAULT_LOCAL_PATH, MODEL_UNDER_MODELS):
+        if candidate.exists():
+            return candidate
     return None
 
 
 def is_available():
     """True if local model path exists and can be used."""
     return _model_path() is not None
+
+
+def _verify_local_hf_snapshot(model_dir: Path) -> None:
+    cfg = model_dir / "config.json"
+    if not cfg.is_file():
+        raise FileNotFoundError(f"Missing config.json under {model_dir}.")
+    raw = cfg.read_text(encoding="utf-8", errors="replace").strip()
+    if raw.startswith("version https://git-lfs"):
+        raise ValueError(f"{cfg} is a Git LFS pointer; download the real model files.")
+    obj = json.loads(raw)
+    if not obj.get("model_type"):
+        raise ValueError(f"{cfg} has no model_type.")
 
 
 def load_model():
@@ -42,14 +57,16 @@ def load_model():
         return _tokenizer, _model
 
     if use_local:
-        _tokenizer = AutoTokenizer.from_pretrained(path_str, local_files_only=True)
+        _verify_local_hf_snapshot(Path(path_str))
+        torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        _tokenizer = AutoTokenizer.from_pretrained(path_str, local_files_only=True, trust_remote_code=True)
         if torch.cuda.is_available():
             torch.backends.cudnn.benchmark = True  # faster convs when input sizes fixed
         _model = AutoModelForCausalLM.from_pretrained(
             path_str,
             local_files_only=True,
             device_map="auto" if torch.cuda.is_available() else None,
-            dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            torch_dtype=torch_dtype,
             trust_remote_code=True,
         )
         if not torch.cuda.is_available():
@@ -59,7 +76,7 @@ def load_model():
         _model = AutoModelForCausalLM.from_pretrained(
             MODEL_ID_HF,
             device_map="auto",
-            dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         )
     _model.eval()
     _loaded_path = path_str

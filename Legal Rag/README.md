@@ -1,5 +1,7 @@
 # Legal AI RAG System
 
+This folder is the **canonical** Legal RAG package for the monorepo (`Legal Rag/src`, `Legal Rag/data`). A legacy nested copy was removed; always work from this tree.
+
 A Retrieval-Augmented Generation (RAG) system for analyzing employment contracts against Egyptian labor laws.
 
 ## Overview
@@ -29,9 +31,9 @@ This system uses:
 
 ### Setup
 
-1. Clone the repository
+1. Clone the repository and go to the **repository root** (parent of `Legal Rag/`), not only into `Legal Rag/`.
 ```bash
-cd "Legal Rag"
+cd /path/to/GP-Legal-AI-
 ```
 
 2. Create and activate virtual environment

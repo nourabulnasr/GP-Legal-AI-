@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 _BASE = Path(__file__).resolve().parent.parent
 _LEGAL_RAG_ROOT = _BASE / "Legal Rag"
@@ -172,3 +172,45 @@ def get_collection_name() -> Optional[str]:
         return getattr(getattr(cfg, "vector_store", None), "collection_name", None)
     except Exception:
         return None
+
+
+def reset_for_reindex() -> None:
+    """Clear lazy singletons so a new VectorStore / reingest can run."""
+    global _config, _vector_store, _initialized, _init_error
+    _config = None
+    _vector_store = None
+    _initialized = False
+    _init_error = None
+
+
+def reindex_from_corpus(corpus_jsonl: Optional[Path] = None) -> Tuple[bool, str]:
+    """
+    Delete Legal Rag Chroma collection and re-ingest from JSONL (default: config labor_law_file).
+    Returns (success, message).
+    """
+    global _vector_store, _initialized, _init_error
+    reset_for_reindex()
+    try:
+        from src.data_ingestion import DataIngestion
+
+        config = _get_config()
+        if corpus_jsonl is not None and Path(corpus_jsonl).is_file():
+            config.data.labor_law_file = str(Path(corpus_jsonl).resolve())
+
+        labor_file = Path(config.data.labor_law_file)
+        if not labor_file.is_file():
+            return False, f"Corpus JSONL not found: {labor_file}"
+
+        ingestion = DataIngestion(config=config)
+        fp = str(labor_file.resolve())
+        ok = bool(ingestion.reingest(fp))
+        _vector_store = ingestion.vector_store
+        _initialized = True
+        _init_error = None if ok else "reingest returned False"
+        n = get_collection_count()
+        return ok, f"reindexed ok={ok} docs={n}"
+    except Exception as e:
+        _vector_store = None
+        _initialized = False
+        _init_error = str(e)
+        return False, repr(e)

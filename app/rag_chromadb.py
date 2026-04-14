@@ -10,13 +10,14 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 _BASE = Path(__file__).resolve().parent.parent
 
-# Corpus: Legal Rag data or project chunks
+# Corpus: Legal Rag data or project chunks (preprocess script writes all of these)
 LEGAL_RAG_DATA = _BASE / "Legal Rag" / "data" / "labor14_2025_chunks.cleaned.jsonl"
-CHUNKS_FALLBACK = _BASE / "chunks" / "labor14_2025_chunks.cleaned.jsonl"
+CHUNKS_CLEANED = _BASE / "chunks" / "labor14_2025_chunks.cleaned.jsonl"
+CHUNKS_RAW = _BASE / "chunks" / "labor14_2025_chunks.jsonl"
 PERSIST_DIR = os.environ.get("CHROMA_LEGAL_DIR", str(_BASE / "chroma_legal"))
 COLLECTION_NAME = "legal_labor_law"
 
@@ -30,9 +31,10 @@ def _corpus_path() -> Path:
     path_env = os.environ.get("LEGAL_RAG_DATA_PATH", "").strip()
     if path_env:
         return Path(path_env)
-    if LEGAL_RAG_DATA.exists():
-        return LEGAL_RAG_DATA
-    return CHUNKS_FALLBACK
+    for p in (LEGAL_RAG_DATA, CHUNKS_CLEANED, CHUNKS_RAW):
+        if p.exists():
+            return p
+    return LEGAL_RAG_DATA
 
 
 def _load_docs(path: Path) -> List[Dict[str, Any]]:
@@ -72,6 +74,27 @@ def _get_embedding_fn():
         return _embedding_fn
     except Exception as e:
         raise RuntimeError(f"ChromaDB RAG requires sentence_transformers: {e}") from e
+
+
+def reset_client_cache() -> None:
+    """Drop cached Chroma client so the next build_index / _get_client rebuilds from disk."""
+    global _client, _collection, _initialized
+    _client = None
+    _collection = None
+    _initialized = False
+
+
+def reindex_from_corpus(corpus_jsonl: Optional[Path] = None) -> Tuple[bool, str]:
+    """Rebuild Chroma from a JSONL file or default corpus path (same signature as legal_rag_bridge)."""
+    try:
+        reset_client_cache()
+        cp: Optional[Path] = Path(corpus_jsonl) if corpus_jsonl is not None else None
+        if cp is not None and not cp.is_file():
+            cp = None
+        n = build_index(corpus_dir=cp)
+        return True, f"indexed={n}"
+    except Exception as e:
+        return False, repr(e)
 
 
 def build_index(

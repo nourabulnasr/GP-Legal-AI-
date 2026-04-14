@@ -28,6 +28,7 @@ import io
 import json
 import hashlib
 import unicodedata
+import threading
 
 def _normalize_contract_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text or "")
@@ -462,6 +463,14 @@ if chat_router:
     api.include_router(chat_router)
     print("[OK] Chat router mounted:", getattr(chat_router, "prefix", None))
 
+try:
+    from .routers.admin_law import router as admin_law_router
+
+    api.include_router(admin_law_router)
+    print("[OK] Admin law router mounted:", getattr(admin_law_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Admin law router not mounted:", repr(e))
+
 # ============================================================
 # Optional jobs router (SAFE – stub included; mount only if present)
 # ============================================================
@@ -490,6 +499,22 @@ try:
         rule_engine = RuleEngine(RULES_DIR, LAWS_DIR)
 except Exception:
     rule_engine = None
+
+
+def reload_chunk_retriever() -> Dict[str, Any]:
+    """Reload in-memory law chunks retriever after JSONL files change (law update pipeline)."""
+    global retriever
+    try:
+        docs = load_chunks_as_docs(CHUNKS_DIR)
+    except Exception as e:
+        return {"ok": False, "error": repr(e), "docs": 0}
+    try:
+        r = Retriever()  # type: ignore
+        r.build_index(docs)
+        retriever = r
+        return {"ok": True, "docs": len(docs)}
+    except Exception as e:
+        return {"ok": False, "error": repr(e), "docs": len(docs)}
 
 
 # ============================================================
@@ -806,6 +831,14 @@ def build_rag_query(
     return norm_ar(boosted)
 
 
+def _rag_min_score() -> float:
+    try:
+        v = float(os.getenv("RAG_MIN_SCORE", "0.02").strip())
+    except (TypeError, ValueError):
+        v = 0.02
+    return max(0.0, min(v, 0.99))
+
+
 def _rag_search_safe(
     query_text: str,
     top_k: int = 5,
@@ -845,6 +878,18 @@ def _rag_search_safe(
             return []
     except Exception:
         return []
+
+
+def _rag_backend_ready() -> bool:
+    """True if either in-memory retriever or Chroma legal RAG can serve searches."""
+    if retriever:
+        return True
+    if rag_chromadb is not None:
+        try:
+            return bool(getattr(rag_chromadb, "is_available", lambda: False)())
+        except Exception:
+            return False
+    return False
 
 
 def _filter_to_labor_only(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -956,59 +1001,41 @@ _startup_report_done = False
 # ============================================================
 # 4) Startup – DB init + RAG init + health checks
 # ============================================================
-@api.on_event("startup")
-def startup():
+def _heavy_rag_bootstrap(db_ok: bool) -> None:
+    """
+    Chroma + in-memory retriever warmup can take minutes (embeddings, ingest).
+    Must NOT run on the asyncio event loop or HTTP calls see ERR_EMPTY_RESPONSE.
+    """
     global retriever, _startup_report_done
-
-    # DB init
-    db_ok = False
-    if _HAS_DB and init_db:
-        try:
-            init_db()
-            db_ok = True
-            print("[OK] DB initialized (SQLite).")
-        except Exception as e:
-            print("[ERROR] Failed to init DB:", repr(e))
-    else:
-        print("[INFO] DB not configured (optional).")
-
-    # RAG init: ChromaDB (Legal RAG) preferred; in-memory retriever fallback.
-    # Keep auth/login responsive by allowing startup to skip heavy RAG bootstrap.
-    enable_startup_rag = os.getenv("ENABLE_STARTUP_RAG", "0").strip() == "1"
     chroma_count = 0
     chroma_name = None
     device_used = None
     embedding_model = None
     artifacts_ok = False
-    if enable_startup_rag:
-        if rag_chromadb is not None and getattr(rag_chromadb, "is_available", lambda: False)():
-            try:
-                chroma_count = getattr(rag_chromadb, "get_collection_count", lambda: 0)()
-                chroma_name = getattr(rag_chromadb, "get_collection_name", lambda: None)()
-                device_used = getattr(rag_chromadb, "get_device", lambda: None)()
-                embedding_model = getattr(rag_chromadb, "get_embedding_model_name", lambda: None)()
-                artifacts_ok = True
-                print(f"[OK] ChromaDB RAG ready (Legal RAG corpus): {chroma_count} docs.")
-            except Exception as e:
-                print("[ERROR] ChromaDB RAG init failed:", repr(e))
-        else:
-            print("[INFO] ChromaDB RAG not available (optional).")
+    if rag_chromadb is not None and getattr(rag_chromadb, "is_available", lambda: False)():
+        try:
+            chroma_count = getattr(rag_chromadb, "get_collection_count", lambda: 0)()
+            chroma_name = getattr(rag_chromadb, "get_collection_name", lambda: None)()
+            device_used = getattr(rag_chromadb, "get_device", lambda: None)()
+            embedding_model = getattr(rag_chromadb, "get_embedding_model_name", lambda: None)()
+            artifacts_ok = True
+            print(f"[OK] ChromaDB RAG ready (Legal RAG corpus): {chroma_count} docs.")
+        except Exception as e:
+            print("[ERROR] ChromaDB RAG init failed:", repr(e))
     else:
-        print("[INFO] Skipping heavy RAG startup init (set ENABLE_STARTUP_RAG=1 to enable).")
+        print("[INFO] ChromaDB RAG not available (optional).")
 
     retriever_docs = 0
-    if enable_startup_rag:
-        try:
-            docs = load_chunks_as_docs(CHUNKS_DIR)
-            retriever = Retriever()  # type: ignore
-            retriever.build_index(docs)
-            retriever_docs = len(docs)
-            print(f"[OK] Retriever initialized with {retriever_docs} docs.")
-        except Exception as e:
-            retriever = None
-            print("[ERROR] Failed to init Retriever:", repr(e))
+    try:
+        docs = load_chunks_as_docs(CHUNKS_DIR)
+        retriever = Retriever()  # type: ignore
+        retriever.build_index(docs)
+        retriever_docs = len(docs)
+        print(f"[OK] Retriever initialized with {retriever_docs} docs.")
+    except Exception as e:
+        retriever = None
+        print("[ERROR] Failed to init Retriever:", repr(e))
 
-    # Single consolidated startup report (once per process)
     if not _startup_report_done:
         print(
             "[Startup] RAG: Chroma (Legal RAG)=%s docs (collection=%s); in-memory Retriever (chunks)=%s docs. "
@@ -1026,9 +1053,83 @@ def startup():
         _startup_report_done = True
 
 
+@api.on_event("startup")
+def startup():
+    global retriever, _startup_report_done
+
+    # DB init
+    db_ok = False
+    if _HAS_DB and init_db:
+        try:
+            init_db()
+            db_ok = True
+            print("[OK] DB initialized (SQLite).")
+        except Exception as e:
+            print("[ERROR] Failed to init DB:", repr(e))
+    else:
+        print("[INFO] DB not configured (optional).")
+
+    # Local LLM availability report (helps distinguish local model vs cloud fallback)
+    try:
+        from app.local_llm import is_available as _app_local_available, _model_path as _app_model_path  # type: ignore
+        app_local_path = _app_model_path()
+        app_local_ok = bool(_app_local_available())
+    except Exception as e:
+        app_local_path = None
+        app_local_ok = False
+        print("[WARN] app.local_llm availability check failed:", repr(e))
+    try:
+        from llm.lfm_model import is_available as _llm_local_available, _model_path as _llm_model_path  # type: ignore
+        llm_local_path = _llm_model_path()
+        llm_local_ok = bool(_llm_local_available())
+    except Exception as e:
+        llm_local_path = None
+        llm_local_ok = False
+        print("[WARN] llm.lfm_model availability check failed:", repr(e))
+    print(
+        "[Startup] Local LLM paths: app.local_llm=%s (available=%s), llm.lfm_model=%s (available=%s)"
+        % (
+            str(app_local_path or "not found"),
+            str(app_local_ok).lower(),
+            str(llm_local_path or "not found"),
+            str(llm_local_ok).lower(),
+        )
+    )
+
+    # RAG init: heavy work runs in a daemon thread so /health and /auth/google respond immediately.
+    enable_startup_rag = os.getenv("ENABLE_STARTUP_RAG", "0").strip() == "1"
+    if enable_startup_rag:
+        print(
+            "[INFO] ENABLE_STARTUP_RAG=1: RAG warmup running in background thread "
+            "(API accepts requests immediately)."
+        )
+        threading.Thread(target=_heavy_rag_bootstrap, args=(db_ok,), daemon=True, name="rag-bootstrap").start()
+    else:
+        print("[INFO] Skipping heavy RAG startup init (set ENABLE_STARTUP_RAG=1 to enable).")
+        if not _startup_report_done:
+            print(
+                "[Startup] RAG: Chroma (Legal RAG)=0 docs (collection=n/a); in-memory Retriever (chunks)=0 docs. "
+                "DB=%s, artifacts=n/a, device=n/a, embedding_model=n/a" % ("ok" if db_ok else "n/a")
+            )
+            _startup_report_done = True
+
+    try:
+        from .law_update_service import start_background_poller
+
+        start_background_poller()
+    except Exception as e:
+        print("[WARN] Law official URL poller not started:", repr(e))
+
+
 @api.on_event("shutdown")
 def on_shutdown():
     """Graceful shutdown: cleanup and avoid noisy tracebacks on reload/Ctrl+C."""
+    try:
+        from .law_update_service import stop_background_poller
+
+        stop_background_poller()
+    except Exception:
+        pass
     try:
         print("Shutting down gracefully.")
     except Exception:
@@ -1229,7 +1330,7 @@ def _labor_applicability(full_text: str, cb: Dict[str, Any], contract_tags: List
 # ============================================================
 # 6) OCR + Rules + RAG endpoint (IMPROVED)
 # ============================================================
-# Prefer llm folder (llm/generate.py) for explanation; fallback to app/local_llm
+# Prefer app/local_llm when model path is set (local_files_only); else llm/generate.py
 try:
     from llm.generate import explain_violation as _llm_explain_violation
     from llm.generate import is_available as _llm_is_available
@@ -1599,14 +1700,15 @@ async def ocr_check_and_search(
                 if qnorm and qnorm in (c.get("normalized_text") or ""):
                     contract_local_matches.append({"chunk_id": c.get("id"), "text": c.get("text")})
 
-            if use_rag and retriever and labor_applicable:
+            if use_rag and labor_applicable and _rag_backend_ready():
                 boosted_query = build_rag_query(query, full_text, contract_tags)
 
+                ms = _rag_min_score()
                 rag_results = _rag_search_safe(
                     boosted_query,
                     top_k=8,
                     law_filters={"source": "labor14_2025"},
-                    min_score=0.05,
+                    min_score=ms,
                 )
 
                 if not rag_results:
@@ -1614,11 +1716,11 @@ async def ocr_check_and_search(
                         boosted_query,
                         top_k=8,
                         law_filters={"law": "قانون العمل رقم 14 لسنة 2025"},
-                        min_score=0.05,
+                        min_score=ms,
                     )
 
                 if not rag_results:
-                    rag_results = _rag_search_safe(boosted_query, top_k=8, law_filters=None, min_score=0.05)
+                    rag_results = _rag_search_safe(boosted_query, top_k=8, law_filters=None, min_score=ms)
 
                 rag_results = _filter_to_labor_only(rag_results)[:5]
 
@@ -1668,8 +1770,9 @@ async def ocr_check_and_search(
                 out.append(x)
             return out
 
-        if use_rag and retriever and labor_applicable:
+        if use_rag and labor_applicable and _rag_backend_ready():
             important = [h for h in rule_hits if (h.get("severity") in ["error", "high"])][:6]
+            ms_v = _rag_min_score()
 
             for vh in important:
                 qv = _mk_query_from_violation(vh)
@@ -1679,7 +1782,7 @@ async def ocr_check_and_search(
                     qv_boosted,
                     top_k=6,
                     law_filters={"source": "labor14_2025"},
-                    min_score=0.05,
+                    min_score=ms_v,
                 )
 
                 if not hits_v:
@@ -1687,11 +1790,11 @@ async def ocr_check_and_search(
                         qv_boosted,
                         top_k=6,
                         law_filters={"law": "قانون العمل رقم 14 لسنة 2025"},
-                        min_score=0.05,
+                        min_score=ms_v,
                     )
 
                 if not hits_v:
-                    hits_v = _rag_search_safe(qv_boosted, top_k=6, law_filters=None, min_score=0.05)
+                    hits_v = _rag_search_safe(qv_boosted, top_k=6, law_filters=None, min_score=ms_v)
 
                 hits_v = _filter_to_labor_only(_dedupe_hits(hits_v))[:4]
 
@@ -1708,13 +1811,17 @@ async def ocr_check_and_search(
             rag_by_violation = _dedupe_rag_blocks_by_rule(rag_by_violation)
 
         # ---------- Optional: Local LLM explanation per violation (explanation only, no decision) ----------
-        _llm_available = (_llm_explain_violation is not None and _llm_is_available()) or (
-            _local_llm_module is not None and getattr(_local_llm_module, "is_available", lambda: False)()
-        )
+        _local_llm_ok = _local_llm_module is not None and getattr(_local_llm_module, "is_available", lambda: False)()
+        _pkg_llm_ok = _llm_explain_violation is not None and _llm_is_available()
+        _llm_available = _local_llm_ok or _pkg_llm_ok
         if use_llm and _llm_available:
             top_k_llm = max(0, int(llm_top_k or 0))
             max_new = max(32, int(llm_max_new_tokens or 200))
-            _explain_fn = _llm_explain_violation if _llm_explain_violation is not None else getattr(_local_llm_module, "explain_violation", None)
+            _explain_fn = None
+            if _local_llm_ok:
+                _explain_fn = getattr(_local_llm_module, "explain_violation", None)
+            if _explain_fn is None and _pkg_llm_ok:
+                _explain_fn = _llm_explain_violation
             for block in (rag_by_violation or [])[:top_k_llm]:
                 rule_id = block.get("rule_id") or ""
                 violation_desc = block.get("violation_desc") or ""

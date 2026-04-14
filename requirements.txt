@@ -18,8 +18,8 @@ scipy>=1.10.0
 sentence-transformers==2.7.0
 faiss-cpu==1.7.4
 chromadb==0.4.22
-# Local LLM (LFM2.5-1.2B-Instruct from disk)
-transformers==4.45.0
+# Local LLM (LFM2.5-1.2B-Instruct from disk) — needs model_type "lfm2" (Transformers >= 4.57)
+transformers==4.57.2
 torch==2.2.0
 accelerate==0.33.0
 

@@ -99,6 +99,56 @@ export async function adminListUserAnalyses(userId: number): Promise<AnalysisIte
   return data;
 }
 
+// ---- Admin: labor law + RAG rebuild ----
+export type LawJobResponse = {
+  job_id: string;
+  status: string;
+  saved_pdf?: string;
+  result?: unknown;
+  error?: string;
+  mode?: string;
+};
+
+export async function adminLawPreviewPdf(
+  file: File,
+  lawDisplayName?: string
+): Promise<{ article_count: number; preview: { article: string; title: string; text_len: number }[] }> {
+  const form = new FormData();
+  form.append("file", file);
+  if (lawDisplayName?.trim()) form.append("law_display_name", lawDisplayName.trim());
+  const { data } = await api.post("/admin/law/preview-pdf", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000,
+  });
+  return data;
+}
+
+export async function adminLawUploadPdf(file: File, lawDisplayName?: string): Promise<LawJobResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (lawDisplayName?.trim()) form.append("law_display_name", lawDisplayName.trim());
+  const { data } = await api.post<LawJobResponse>("/admin/law/upload-pdf", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000,
+  });
+  return data;
+}
+
+export async function adminLawReindex(): Promise<LawJobResponse> {
+  const { data } = await api.post<LawJobResponse>("/admin/law/reindex", {}, { timeout: 120000 });
+  return data;
+}
+
+export async function adminLawJob(jobId: string): Promise<LawJobResponse> {
+  const { data } = await api.get<LawJobResponse>(`/admin/law/jobs/${jobId}`);
+  return data;
+}
+
+export async function adminLawSyncFromUrl(): Promise<Record<string, unknown>> {
+  const { data } = await api.post<Record<string, unknown>>("/admin/law/sync-from-url", {}, { timeout: 300000 });
+  return data;
+}
+
 // ---- Chat (Gemini) ----
 export async function chatMessage(payload: {
   analysis_id: number;

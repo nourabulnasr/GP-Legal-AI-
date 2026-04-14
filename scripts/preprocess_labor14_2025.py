@@ -1,5 +1,6 @@
 import json
 import re
+import sys
 import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List
@@ -11,6 +12,8 @@ ARTICLES_IN = ROOT / "laws" / "processed" / "labor14_2025_articles.json"
 # Outputs
 ARTICLES_OUT = ROOT / "laws" / "processed" / "labor14_2025_articles.cleaned.json"
 CHUNKS_OUT = ROOT / "chunks" / "labor14_2025_chunks.jsonl"
+CHUNKS_CLEANED = ROOT / "chunks" / "labor14_2025_chunks.cleaned.jsonl"
+LEGAL_RAG_CHUNKS = ROOT / "Legal Rag" / "data" / "labor14_2025_chunks.cleaned.jsonl"
 REPORT_OUT = ROOT / "laws" / "processed" / "labor14_2025_report.json"
 
 ARABIC_DIACRITICS = re.compile(r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]")
@@ -120,6 +123,11 @@ def clamp_chunk(text: str, max_chars: int = 1800) -> List[str]:
     return out
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     if not ARTICLES_IN.exists():
         raise SystemExit(f"Missing articles file: {ARTICLES_IN}")
 
@@ -134,7 +142,7 @@ def main():
     empty_dropped = 0
     total_out = 0
 
-    for a in articles:
+    for a_idx, a in enumerate(articles):
         if not isinstance(a, dict):
             continue
 
@@ -163,9 +171,8 @@ def main():
             split_count += 1
 
         for j, piece in enumerate(pieces):
-            cid = f"labor14_2025__art_{art_no}"
-            if len(pieces) > 1:
-                cid = f"{cid}__{j}"
+            # Keep IDs deterministic and globally unique even when article numbers repeat.
+            cid = f"labor14_2025__a{a_idx:04d}__art_{art_no or 'na'}__c{j}"
 
             chunks.append(
                 {
@@ -176,6 +183,7 @@ def main():
                     "law": obj["law"],
                     "article": art_no,
                     "title": title_n,
+                    "chunk_index": int(j),
                 }
             )
             total_out += 1
@@ -192,6 +200,19 @@ def main():
         seen.add(key)
         deduped.append(c)
 
+    # Ensure IDs are unique after dedupe; if not, suffix deterministically.
+    id_seen: Dict[str, int] = {}
+    for c in deduped:
+        cid = str(c.get("id") or "")
+        if not cid:
+            cid = f"labor14_2025__fallback__{len(id_seen)}"
+        n = id_seen.get(cid, 0)
+        if n > 0:
+            c["id"] = f"{cid}__dup{n}"
+        else:
+            c["id"] = cid
+        id_seen[cid] = n + 1
+
     # Write outputs
     ARTICLES_OUT.write_text(
         json.dumps(cleaned_articles, ensure_ascii=False, indent=2),
@@ -199,9 +220,11 @@ def main():
     )
 
     CHUNKS_OUT.parent.mkdir(parents=True, exist_ok=True)
-    with CHUNKS_OUT.open("w", encoding="utf-8") as w:
-        for c in deduped:
-            w.write(json.dumps(c, ensure_ascii=False) + "\n")
+    for out_path in (CHUNKS_OUT, CHUNKS_CLEANED, LEGAL_RAG_CHUNKS):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", encoding="utf-8") as w:
+            for c in deduped:
+                w.write(json.dumps(c, ensure_ascii=False) + "\n")
 
     report = {
         "articles_in": len(articles),

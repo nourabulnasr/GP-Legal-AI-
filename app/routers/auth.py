@@ -4,6 +4,7 @@ import hashlib
 import secrets
 import smtplib
 import os
+from urllib.parse import urlencode
 from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -57,8 +58,9 @@ def _smtp_settings():
 
 
 def _smtp_configured() -> bool:
-    host, _, user, _, _ = _smtp_settings()
-    return bool(host and user)
+    """True only when SMTP can actually send (host + user + password)."""
+    host, _, user, password, _ = _smtp_settings()
+    return bool(host and user and password)
 
 
 def _allow_dev_auto_verify() -> bool:
@@ -402,16 +404,17 @@ def google_oauth_redirect():
             url=f"{_frontend_url()}/login?error=google_not_configured",
             status_code=302,
         )
-    scope = "openid email profile"
-    auth_url = (
-        f"https://accounts.google.com/o/oauth2/v2/auth"
-        f"?client_id={client_id}"
-        f"&redirect_uri={redirect_uri}"
-        f"&response_type=code"
-        f"&scope={scope}"
-        f"&access_type=offline"
-        f"&prompt=consent"
+    qs = urlencode(
+        {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "access_type": "offline",
+            "prompt": "consent",
+        }
     )
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{qs}"
     return RedirectResponse(url=auth_url, status_code=302)
 
 

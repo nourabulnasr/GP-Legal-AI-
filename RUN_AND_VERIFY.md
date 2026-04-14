@@ -50,7 +50,7 @@ Expected: prints a non-zero rules count.
 
 ### Step B — ChromaDB RAG (Legal Rag bridge or app/rag_chromadb)
 
-Prefers **Legal Rag bridge** (uses `Legal Rag/src` VectorStore + DataIngestion; corpus `Legal Rag/data/labor14_2025_chunks.cleaned.jsonl`; index `Legal Rag/chroma_db`). Falls back to `app/rag_chromadb` (index `./chroma_legal`).
+Prefers **Legal Rag bridge** (uses `Legal Rag/src` VectorStore + DataIngestion; corpus `Legal Rag/data/labor14_2025_chunks.cleaned.jsonl`; index `Legal Rag/chroma_db`). Falls back to `app/rag_chromadb` (index `./chroma_legal`). If the corpus file is missing, generate it from `laws/processed/labor14_2025_articles.json` with `python scripts/preprocess_labor14_2025.py`.
 
 ```powershell
 python scripts/verify_chromadb_rag.py
@@ -64,7 +64,7 @@ Expected: prints `OK: ChromaDB RAG verified.` and shows 5 results for `ساعا�
 
 ### Step C — Local LLM (LFM2.5-1.2B-Instruct) loads from disk
 
-Prefers **llm/generate.py**; fallback: `app/local_llm`. Uses the local folder `./LFM2.5-1.2B-Instruct/` (or env `LOCAL_LLM_PATH`).
+Prefers **llm/generate.py**; fallback: `app/local_llm`. Resolves local weights from `LOCAL_LLM_PATH`, then `./LFM2.5-1.2B-Instruct/`, then `./models/LFM2.5-1.2B-Instruct/`.
 
 ```powershell
 python scripts/verify_local_llm.py

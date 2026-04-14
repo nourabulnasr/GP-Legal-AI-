@@ -5,8 +5,8 @@
 Start uvicorn from the **project root** (where `app/` and `requirements.txt` are), not from the frontend directory. Running uvicorn from `legalai-frontend\legalai-frontend` will cause `ModuleNotFoundError: No module named 'app'`.
 
 ```powershell
-cd "C:\Users\Aly ahmed\Desktop\GP-Legal-AI--main"
-uvicorn app.main:api --reload --host 0.0.0.0 --port 8000
+cd "C:\path\to\GP-Legal-AI-"   # project root: contains app\ and requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ---
@@ -33,8 +33,8 @@ docker build -t legalai .
 # Run
 docker run -p 8000:8000 legalai
 
-# With volume for persistence
-docker run -p 8000:8000 -v $(pwd)/legalai.db:/app/legalai.db legalai
+# With SQLite on a host file (match DATABASE_URL if you override it)
+docker run -p 8000:8000 -v "$(pwd)/data/legalai.db:/data/legalai.db" -e DATABASE_URL=sqlite:////data/legalai.db legalai
 ```
 
 ### PowerShell (Windows)
@@ -46,6 +46,41 @@ docker compose up --build
 # Backend only
 docker build -t legalai .
 docker run -p 8000:8000 legalai
+```
+
+### Local LFM model in Docker
+
+To force document chat/explanations to use local LFM files (not API fallback), set these env vars:
+
+```env
+# Must start with ./ or ../ for relative paths (Compose bind mount vs named volume)
+LOCAL_LLM_HOST_PATH=./models/LFM2.5-1.2B-Instruct
+```
+
+`docker-compose.yml` mounts that folder to `/models/lfm` and sets `LOCAL_LLM_PATH=/models/lfm` inside the backend container.
+
+### Legal RAG corpus (first time / after clone)
+
+Chunks are not always committed. Generate them from `laws/processed/labor14_2025_articles.json`:
+
+```powershell
+python scripts/preprocess_labor14_2025.py
+```
+
+This writes `chunks/labor14_2025_chunks*.jsonl` and `Legal Rag/data/labor14_2025_chunks.cleaned.jsonl` for Chroma ingestion.
+
+### Auto-update labor law and RAG (admin + optional official URL)
+
+- **Admin UI**: log in as a user with `role=admin`, open **Admin** → **Law RAG**. Use **Preview** on a PDF, then **Upload and rebuild** (runs extract → `laws/processed/labor14_2025_articles.json` → preprocess → Chroma reingest + in-memory retriever reload). **Reindex only** reruns preprocess + reindex from the current articles JSON (e.g. after hand-editing). **Sync from official URL** runs one conditional GET of `LAW_OFFICIAL_PDF_URL` (if set).
+- **API** (Bearer admin token): `POST /admin/law/preview-pdf`, `POST /admin/law/upload-pdf`, `POST /admin/law/reindex`, `POST /admin/law/sync-from-url`, `GET /admin/law/jobs/{job_id}` for async upload/reindex status.
+- **Background poller**: set `LAW_POLL_ENABLED=1`, `LAW_OFFICIAL_PDF_URL=https://.../file.pdf`, and optional `LAW_POLL_INTERVAL_SECONDS` (default 86400). State is stored in `laws/meta/sync_state.json` (gitignored).
+- **Cron / one-shot**: from project root, `python scripts/poll_official_law.py` with the same env vars.
+- **Docker persistence**: keep the existing Chroma volume; to persist updated law files across image rebuilds, mount host directories for `laws/` and `Legal Rag/data/` if you rely on disk-backed corpus edits.
+
+Quick verification (inside container):
+
+```bash
+docker exec legalai-backend python -c "from app.local_llm import is_available as a; from llm.lfm_model import is_available as b; import os; print('LOCAL_LLM_PATH=', os.getenv('LOCAL_LLM_PATH')); print('app.local_llm=', a()); print('llm.lfm_model=', b())"
 ```
 
 ### Test OCR + Check (PowerShell)

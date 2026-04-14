@@ -47,7 +47,6 @@ legalai_backup.db
 chroma_legal/
 chroma_db/
 Legal Rag/chroma_db/
-Legal Rag/Legal Rag/chroma_db/
 
 # =========================
 # IDE and editor
@@ -75,10 +74,17 @@ logs/
 wheels/
 *.whl
 
+# Law auto-update state (poll ETag, temp download, backups)
+laws/meta/backups/
+laws/meta/sync_state.json
+laws/meta/incoming_poll.pdf
+laws/raw/incoming/
+
 # =========================
-# Large model (download separately; remove this line to track the model)
+# Large model (download separately; remove these lines to track the model)
 # =========================
 LFM2.5-1.2B-Instruct/
+models/LFM2.5-1.2B-Instruct/
 
 # =========================
 # Jupyter and testing

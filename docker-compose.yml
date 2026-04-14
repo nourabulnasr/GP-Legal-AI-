@@ -12,11 +12,22 @@ services:
     volumes:
       # Persist SQLite DB without overriding application code
       - legalai_db:/data
+      # Persist Chroma legal RAG index (avoid full re-ingest every restart)
+      - legalai_chroma:/data/chroma_legal
+      # Mount local LFM model files from host into container (read-only)
+      # Use ./ prefix so Compose treats this as a bind mount, not a named volume
+      - ${LOCAL_LLM_HOST_PATH:-./models/LFM2.5-1.2B-Instruct}:/models/lfm:ro
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=sqlite:////data/legalai.db
+      - LOCAL_LLM_PATH=/models/lfm
+      - CHROMA_LEGAL_DIR=/data/chroma_legal
+      # Build in-memory chunk retriever + warm Chroma at startup (legal RAG)
+      - ENABLE_STARTUP_RAG=1
+      # Document chat: set to 0 to never hide local LLM errors behind Gemini quota messages
+      - DOCUMENT_CHAT_GEMINI_FALLBACK=0
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
@@ -38,3 +49,4 @@ services:
 
 volumes:
   legalai_db:
+  legalai_chroma:

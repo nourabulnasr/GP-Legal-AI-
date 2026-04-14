@@ -8,7 +8,7 @@
 | (2) | Normalize Arabic | ✅ | Existing in `utils_text.py`: `norm_ar`, `normalize_for_rules` |
 | (3) | Split contracts into clauses | ✅ **Added** | `utils_text.split_into_clauses()`, used in `/ocr_check_and_search`, response includes `clauses` |
 | (4) | ML entity/clause extraction | ✅ **Added** | Rule-level ML predictor (existing) + clause classifier training script `ml/scripts/train_clause_classifier.py` |
-| (5) | Knowledge base of Egyptian labor law | ✅ | `laws/raw/`, `chunks/labor14_2025_chunks.cleaned.jsonl` |
+| (5) | Knowledge base of Egyptian labor law | ✅ | `laws/processed/labor14_2025_articles.json` → run `python scripts/preprocess_labor14_2025.py` → `chunks/*.jsonl` + `Legal Rag/data/labor14_2025_chunks.cleaned.jsonl` |
 | (6) | RAG: embedding + vector search | ✅ **Upgraded** | `rag_utils.py`: `EmbeddingRetriever` (sentence-transformers + FAISS) when deps installed |
 | (6b) | RAG: LLM cites only retrieved text | ⚪ | No LLM in current pipeline; guard applies when LLM added |
 | (6c) | RAG: return retrieved passages when LLM disabled | ✅ | `rag_legal_hits`, `rag_by_violation`, `rag_global_hits` always returned |

@@ -240,6 +240,21 @@ Be concise. Cite sections or rule IDs when relevant. If the answer is not in the
 _MAX_DOCUMENT_CONTEXT_CHARS = 6000
 
 
+def _local_model_hint() -> str:
+    path_env = (os.getenv("LOCAL_LLM_PATH") or "").strip()
+    try:
+        from pathlib import Path
+        default_path = Path(__file__).resolve().parents[2] / "LFM2.5-1.2B-Instruct"
+    except Exception:
+        default_path = None
+    parts = []
+    if path_env:
+        parts.append(f"LOCAL_LLM_PATH={path_env}")
+    if default_path is not None:
+        parts.append(f"default={default_path}")
+    return ", ".join(parts) if parts else "no model path configured"
+
+
 def _build_document_chat_prompt(context: str, message: str) -> str:
     """Build a single prompt for document Q&A (used when generate_answer is not available)."""
     return f"""أنت مساعد قانوني. أجب على سؤال المستخدم بناءً على النص التالي فقط. إذا لم يكن الجواب في النص فقل ذلك.
@@ -254,26 +269,38 @@ def _build_document_chat_prompt(context: str, message: str) -> str:
 
 
 def _get_lfm_document_reply(document_context: str, message: str, max_new_tokens: int = 256) -> str:
-    """Call local LFM (llm/generate or app/local_llm) for document Q&A. Returns reply or error message."""
+    """Call local LFM (app/local_llm first, then llm/generate) for document Q&A."""
     context = (document_context or "").strip()
     if len(context) > _MAX_DOCUMENT_CONTEXT_CHARS:
         context = context[:_MAX_DOCUMENT_CONTEXT_CHARS] + "..."
     if not context:
         return "[No document context provided.]"
     try:
+        from app.local_llm import is_available as app_avail, generate as app_generate
+        if app_avail():
+            prompt = _build_document_chat_prompt(context, message)
+            return app_generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
+    except Exception as e_app:
+        try:
+            from llm.generate import is_available as gen_avail, generate_answer
+            if gen_avail():
+                return generate_answer(context, message)
+            raise RuntimeError("llm.generate not available") from e_app
+        except Exception as e1:
+            return f"[Local LLM error: app.local_llm={e_app!r}; llm.generate={e1!r}]"
+    try:
         from llm.generate import is_available, generate_answer
         if not is_available():
-            raise RuntimeError("Local LLM not available")
+            return (
+                "[Local LLM not available. Check model folder and path "
+                f"({_local_model_hint()}).]"
+            )
         return generate_answer(context, message)
-    except Exception as e1:
-        try:
-            from app.local_llm import is_available, generate
-            if not is_available():
-                return "[Local LLM not available. Check LOCAL_LLM_PATH or LFM2.5-1.2B-Instruct folder.]"
-            prompt = _build_document_chat_prompt(context, message)
-            return generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
-        except Exception:
-            return f"[Local LLM error: {e1!r}]"
+    except Exception as e2:
+        return (
+            "[Local LLM not available. Check model folder and path "
+            f"({_local_model_hint()}).] Details: {e2!r}"
+        )
 
 
 # Gemini can use more context than the local LFM path
@@ -316,8 +343,9 @@ Document context:
         err_str = str(e).lower()
         if "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str or "rate limit" in err_str:
             return (
-                "The AI chat has reached its usage limit for now. "
-                "Please try again later or check your API plan."
+                "[Gemini API] Usage limit or quota reached. "
+                "This reply used the cloud fallback, not your local LFM. "
+                "Fix LOCAL_LLM_PATH/mount or set DOCUMENT_CHAT_GEMINI_FALLBACK=0 to see the real local error."
             )
         print(f"[Chat] Gemini document reply failed: {e}")
         return None
@@ -368,13 +396,22 @@ def chat_document(
 
     content = _get_lfm_document_reply(context, payload.message)
     if _local_document_failed(content):
-        gemini_reply = _get_gemini_document_reply(context, payload.message)
-        if gemini_reply:
-            content = gemini_reply
+        allow_gemini = os.getenv("DOCUMENT_CHAT_GEMINI_FALLBACK", "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if allow_gemini:
+            gemini_reply = _get_gemini_document_reply(context, payload.message)
+            if gemini_reply:
+                content = gemini_reply
+            else:
+                detail = (
+                    content.strip("[]")
+                    + " Cloud fallback failed or GEMINI_API_KEY missing."
+                )
+                raise HTTPException(status_code=503, detail=detail)
         else:
-            detail = (
-                content.strip("[]")
-                + " Or set GEMINI_API_KEY on the backend to use cloud chat without a local model."
-            )
-            raise HTTPException(status_code=503, detail=detail)
+            raise HTTPException(status_code=503, detail=content.strip("[]"))
     return DocumentChatResponse(content=content)
