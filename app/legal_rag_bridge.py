@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.law_paths import migrate_legacy_labor_law_artifacts, resolved_legal_rag_chunks_file
+
 _BASE = Path(__file__).resolve().parent.parent
 _LEGAL_RAG_ROOT = _BASE / "Legal Rag"
 _LEGAL_RAG_SRC = _LEGAL_RAG_ROOT / "src"
@@ -33,15 +35,20 @@ def _get_config():
     try:
         from src.config import Config
 
+        migrate_legacy_labor_law_artifacts()
+
         yaml_path = _LEGAL_RAG_ROOT / "config.yaml"
         if yaml_path.exists():
             _config = Config.from_yaml(str(yaml_path))
         else:
             _config = Config()
         # Override paths to be absolute
-        _config.data.labor_law_file = str(_LEGAL_RAG_ROOT / "data" / "labor14_2025_chunks.cleaned.jsonl")
+        _config.data.labor_law_file = str(resolved_legal_rag_chunks_file().resolve())
         _config.data.sample_contracts_dir = str(_LEGAL_RAG_ROOT / "data" / "sample_contracts")
-        _config.vector_store.persist_directory = str(_LEGAL_RAG_ROOT / "chroma_db")
+        chroma_dir = (os.environ.get("CHROMA_LEGAL_DIR") or "").strip()
+        _config.vector_store.persist_directory = (
+            chroma_dir if chroma_dir else str(_LEGAL_RAG_ROOT / "chroma_db")
+        )
         _config.vector_store.collection_name = getattr(
             _config.vector_store, "collection_name", "egyptian_labor_laws"
         )

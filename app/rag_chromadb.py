@@ -12,12 +12,16 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-_BASE = Path(__file__).resolve().parent.parent
+from app.law_paths import (
+    CHUNKS_CLEANED_JSONL,
+    CHUNKS_JSONL,
+    LEGACY_CHUNKS_CLEANED_JSONL,
+    LEGACY_CHUNKS_JSONL,
+    LEGACY_LEGAL_RAG_CHUNKS_CLEANED_JSONL,
+    LEGAL_RAG_CHUNKS_CLEANED_JSONL,
+)
 
-# Corpus: Legal Rag data or project chunks (preprocess script writes all of these)
-LEGAL_RAG_DATA = _BASE / "Legal Rag" / "data" / "labor14_2025_chunks.cleaned.jsonl"
-CHUNKS_CLEANED = _BASE / "chunks" / "labor14_2025_chunks.cleaned.jsonl"
-CHUNKS_RAW = _BASE / "chunks" / "labor14_2025_chunks.jsonl"
+_BASE = Path(__file__).resolve().parent.parent
 PERSIST_DIR = os.environ.get("CHROMA_LEGAL_DIR", str(_BASE / "chroma_legal"))
 COLLECTION_NAME = "legal_labor_law"
 
@@ -31,10 +35,17 @@ def _corpus_path() -> Path:
     path_env = os.environ.get("LEGAL_RAG_DATA_PATH", "").strip()
     if path_env:
         return Path(path_env)
-    for p in (LEGAL_RAG_DATA, CHUNKS_CLEANED, CHUNKS_RAW):
+    for p in (
+        LEGAL_RAG_CHUNKS_CLEANED_JSONL,
+        CHUNKS_CLEANED_JSONL,
+        CHUNKS_JSONL,
+        LEGACY_LEGAL_RAG_CHUNKS_CLEANED_JSONL,
+        LEGACY_CHUNKS_CLEANED_JSONL,
+        LEGACY_CHUNKS_JSONL,
+    ):
         if p.exists():
             return p
-    return LEGAL_RAG_DATA
+    return LEGAL_RAG_CHUNKS_CLEANED_JSONL
 
 
 def _load_docs(path: Path) -> List[Dict[str, Any]]:

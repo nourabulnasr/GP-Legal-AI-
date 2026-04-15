@@ -29,7 +29,7 @@ def nfkc_norm(s: str) -> str:
     return s
 
 
-def extract_pdf_text(pdf_path: Path) -> str:
+def _extract_pdf_text_pymupdf_only(pdf_path: Path) -> str:
     import fitz
 
     doc = fitz.open(pdf_path)
@@ -37,6 +37,23 @@ def extract_pdf_text(pdf_path: Path) -> str:
     for page in doc:
         parts.append(page.get_text("text") or "")
     return "\n".join(parts)
+
+
+def extract_pdf_text(pdf_path: Path) -> str:
+    """Raw PDF text for article splitting.
+
+    Default (``LAW_PDF_EXTRACTION_MODE=auto``): same pipeline as contract uploads
+    (Document AI when configured, else PyMuPDF with per-page OCR when text is sparse).
+
+    Set ``LAW_PDF_EXTRACTION_MODE=pymupdf_only`` for the previous fast path (embedded text only).
+    """
+    pdf_path = Path(pdf_path)
+    mode = (os.environ.get("LAW_PDF_EXTRACTION_MODE") or "auto").strip().lower()
+    if mode == "pymupdf_only":
+        return _extract_pdf_text_pymupdf_only(pdf_path)
+    from .pdf_text_pipeline import extract_full_text_from_pdf_bytes
+
+    return extract_full_text_from_pdf_bytes(pdf_path.read_bytes())
 
 
 def build_articles_from_text(full_text: str, *, source_path: str) -> List[Dict[str, Any]]:
@@ -70,7 +87,7 @@ def extract_articles_from_pdf(
     law_display_name: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Read PDF from disk and return article dicts suitable for labor14_2025_articles.json.
+    Read PDF from disk and return article dicts suitable for laws/processed/labor_law_articles.json.
     """
     pdf_path = Path(pdf_path)
     if not pdf_path.is_file():

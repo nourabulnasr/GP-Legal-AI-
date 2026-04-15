@@ -29,10 +29,12 @@ import {
   adminLawUploadPdf,
   adminLawReindex,
   adminLawJob,
+  adminLawDownloadChunksCleaned,
   adminLawSyncFromUrl,
   deleteAnalysis,
 } from "@/lib/api";
 import type { AnalysisDetail, AdminUser } from "@/lib/api";
+import axios from "axios";
 import {
   Download,
   Plus,
@@ -128,6 +130,7 @@ export default function AdminPage({ user, onLogout }: Props) {
   const [lawJobInfo, setLawJobInfo] = useState<string>("");
   const [lawBusy, setLawBusy] = useState(false);
   const [lawErr, setLawErr] = useState<string | null>(null);
+  const [lawJobSucceeded, setLawJobSucceeded] = useState(false);
   const [filterText, setFilterText] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [usersPage, setUsersPage] = useState(1);
@@ -183,6 +186,12 @@ export default function AdminPage({ user, onLogout }: Props) {
       try {
         const j = await adminLawJob(lawJobId);
         setLawJobInfo(JSON.stringify(j, null, 2));
+        if (j.status === "done") {
+          setLawJobSucceeded(true);
+        }
+        if (j.status === "error") {
+          setLawJobSucceeded(false);
+        }
         if (j.status === "done" || j.status === "error") {
           window.clearInterval(timer);
           setLawBusy(false);
@@ -903,6 +912,7 @@ export default function AdminPage({ user, onLogout }: Props) {
                       if (!lawPdfFile) return;
                       setLawBusy(true);
                       setLawErr(null);
+                      setLawJobSucceeded(false);
                       setLawJobInfo("");
                       try {
                         const r = await adminLawUploadPdf(lawPdfFile, lawDisplayName || undefined);
@@ -923,6 +933,7 @@ export default function AdminPage({ user, onLogout }: Props) {
                     onClick={async () => {
                       setLawBusy(true);
                       setLawErr(null);
+                      setLawJobSucceeded(false);
                       setLawJobInfo("");
                       try {
                         const r = await adminLawReindex();
@@ -963,6 +974,49 @@ export default function AdminPage({ user, onLogout }: Props) {
                     response).
                   </p>
                 )}
+                {lawJobSucceeded && (
+                  <p className="text-sm text-emerald-700 dark:text-emerald-400">
+                    RAG index updated. Download the generated cleaned chunk file (JSONL) for backup or offline use.
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={lawBusy}
+                    onClick={async () => {
+                      setLawErr(null);
+                      try {
+                        const blob = await adminLawDownloadChunksCleaned();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = "labor_law_chunks.cleaned.jsonl";
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                      } catch (e: unknown) {
+                        if (axios.isAxiosError(e) && e.response?.data instanceof Blob) {
+                          try {
+                            const text = await e.response.data.text();
+                            const parsed = JSON.parse(text) as { detail?: string };
+                            setLawErr(parsed.detail ?? text);
+                          } catch {
+                            setLawErr(e instanceof Error ? e.message : String(e));
+                          }
+                        } else {
+                          setLawErr(e instanceof Error ? e.message : String(e));
+                        }
+                      }
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Download chunks (JSONL)
+                  </Button>
+                  <span className="text-xs text-muted-foreground">labor_law_chunks.cleaned.jsonl</span>
+                </div>
                 {lawJobId && (
                   <div className="rounded-md border bg-muted/30 p-3">
                     <p className="text-xs font-mono break-all">job_id: {lawJobId}</p>

@@ -17,8 +17,9 @@ load_dotenv()
 class EmbeddingsConfig(BaseModel):
     """Configuration for embedding models"""
     model_config = {"protected_namespaces": ()}
-    model_name: str = Field(default="aubmindlab/bert-base-arabertv2")
-    fallback_model: str = Field(default="sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+    # Native sentence-transformers model (reliable in Docker). AraBERT via ST can hit meta-tensor init on recent torch/HF.
+    model_name: str = Field(default="sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+    fallback_model: str = Field(default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     device: str = Field(default="auto")
     batch_size: int = Field(default=32)
 
@@ -73,7 +74,7 @@ class OutputConfig(BaseModel):
 
 class DataConfig(BaseModel):
     """Configuration for data paths"""
-    labor_law_file: str = Field(default="./data/labor14_2025_chunks.cleaned.jsonl")
+    labor_law_file: str = Field(default="./data/labor_law_chunks.cleaned.jsonl")
     sample_contracts_dir: str = Field(default="./data/sample_contracts")
 
 
@@ -156,6 +157,32 @@ class Config(BaseModel):
             return device if device in ("cpu", "cuda") else "cpu"
         except ImportError:
             return "cpu" if device == "auto" else (device if device in ("cpu", "cuda") else "cpu")
+
+    def get_embeddings_device(self) -> str:
+        """
+        Device for sentence-transformers embeddings (separate from LLM DEVICE).
+        EMBEDDINGS_DEVICE or EMBED_DEVICE env overrides embeddings.device from YAML.
+        """
+        raw = (
+            os.getenv("EMBEDDINGS_DEVICE")
+            or os.getenv("EMBED_DEVICE")
+            or getattr(self.embeddings, "device", "auto")
+            or "auto"
+        )
+        raw = str(raw).strip().lower()
+        if not raw:
+            raw = "auto"
+        try:
+            import torch
+            if raw == "auto":
+                return "cuda" if torch.cuda.is_available() else "cpu"
+            if raw == "cuda":
+                return "cuda" if torch.cuda.is_available() else "cpu"
+            if raw == "cpu":
+                return "cpu"
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            return "cpu"
 
     def ensure_directories(self):
         """Create necessary directories if they don't exist"""

@@ -28,7 +28,10 @@ class TestDataIngestion:
         ingestion = DataIngestion()
 
         # Load sample data
-        file_path = "data/labor14_2025_chunks.cleaned.jsonl"
+        file_path = next(
+            (p for p in ("data/labor_law_chunks.cleaned.jsonl", "data/labor14_2025_chunks.cleaned.jsonl") if Path(p).exists()),
+            "data/labor_law_chunks.cleaned.jsonl",
+        )
 
         if Path(file_path).exists():
             documents = ingestion.load_jsonl(file_path)
@@ -76,7 +79,7 @@ class TestDataIngestion:
                 "chunk_index": 1,
                 "text": "نص المادة الأولى",
                 "normalized_text": "نص المادة الأولى",
-                "source": "labor14"
+                "source": "labor_law"
             }
         ]
 
@@ -95,9 +98,12 @@ class TestJSONLFormat:
 
     def test_jsonl_structure(self):
         """Test that JSONL file has correct structure"""
-        file_path = "data/labor14_2025_chunks.cleaned.jsonl"
+        file_path = next(
+            (p for p in ("data/labor_law_chunks.cleaned.jsonl", "data/labor14_2025_chunks.cleaned.jsonl") if Path(p).exists()),
+            None,
+        )
 
-        if not Path(file_path).exists():
+        if not file_path or not Path(file_path).exists():
             pytest.skip("JSONL file not found")
 
         with open(file_path, 'r', encoding='utf-8') as f:

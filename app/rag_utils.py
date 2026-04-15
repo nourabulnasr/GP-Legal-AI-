@@ -162,6 +162,19 @@ class Retriever:
 # ---------------------------------------------------------------------------
 if _USE_EMBEDDING and SentenceTransformer is not None and faiss is not None:
 
+    def _load_st_model(model_name: str) -> Any:
+        import torch
+
+        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        try:
+            return SentenceTransformer(
+                model_name,
+                device=dev,
+                model_kwargs={"low_cpu_mem_usage": False},
+            )
+        except TypeError:
+            return SentenceTransformer(model_name, device=dev)
+
     class EmbeddingRetriever(Retriever):
         """
         Multilingual embedding retriever (sentence-transformers + FAISS).
@@ -170,7 +183,7 @@ if _USE_EMBEDDING and SentenceTransformer is not None and faiss is not None:
 
         def __init__(self, model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"):
             super().__init__(dim=384)
-            self._model = SentenceTransformer(model_name)
+            self._model = _load_st_model(model_name)
             self._index: Optional[Any] = None
 
         def build_index(self, docs: List[Dict[str, Any]]) -> None:

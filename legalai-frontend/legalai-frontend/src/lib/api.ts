@@ -144,6 +144,15 @@ export async function adminLawJob(jobId: string): Promise<LawJobResponse> {
   return data;
 }
 
+/** Cleaned chunk JSONL (same artifact used for Chroma ingest). Requires admin; 404 if file missing. */
+export async function adminLawDownloadChunksCleaned(): Promise<Blob> {
+  const { data } = await api.get<Blob>("/admin/law/download-chunks-cleaned", {
+    responseType: "blob",
+    timeout: 120000,
+  });
+  return data;
+}
+
 export async function adminLawSyncFromUrl(): Promise<Record<string, unknown>> {
   const { data } = await api.post<Record<string, unknown>>("/admin/law/sync-from-url", {}, { timeout: 300000 });
   return data;

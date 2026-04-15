@@ -12,7 +12,7 @@ services:
     volumes:
       # Persist SQLite DB without overriding application code
       - legalai_db:/data
-      # Persist Chroma legal RAG index (avoid full re-ingest every restart)
+      # Persist Chroma legal RAG (legal_rag_bridge + rag_chromadb when CHROMA_LEGAL_DIR is set)
       - legalai_chroma:/data/chroma_legal
       # Mount local LFM model files from host into container (read-only)
       # Use ./ prefix so Compose treats this as a bind mount, not a named volume

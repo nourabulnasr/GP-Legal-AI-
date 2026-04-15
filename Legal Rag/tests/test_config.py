@@ -20,7 +20,7 @@ class TestConfig:
         config = Config()
 
         assert config.llm.model_name == "LiquidAI/LFM2.5-1.2B-Instruct"
-        assert config.embeddings.model_name == "aubmindlab/bert-base-arabertv2"
+        assert config.embeddings.model_name == "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
         assert config.vector_store.collection_name == "egyptian_labor_laws"
         assert config.rag.section_top_k == 10
         assert config.rag.clause_top_k == 5

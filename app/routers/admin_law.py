@@ -8,6 +8,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from app.core.deps import require_admin
 from app.db.models import User
@@ -132,6 +133,24 @@ def get_law_job(job_id: str, _: User = Depends(require_admin)) -> Dict[str, Any]
     if not j:
         raise HTTPException(404, "Unknown job_id")
     return {"job_id": job_id, **j}
+
+
+@router.get("/download-chunks-cleaned")
+def download_chunks_cleaned(_: User = Depends(require_admin)) -> FileResponse:
+    """Serve the cleaned labor-law chunk JSONL produced by preprocess (same file used for RAG ingest)."""
+    from app.law_update_service import resolved_cleaned_chunks_path
+
+    path = resolved_cleaned_chunks_path()
+    if path is None:
+        raise HTTPException(
+            404,
+            detail="No cleaned chunks JSONL found. Run Upload and rebuild or Reindex only first.",
+        )
+    return FileResponse(
+        path=str(path.resolve()),
+        filename=path.name,
+        media_type="application/x-ndjson; charset=utf-8",
+    )
 
 
 @router.post("/sync-from-url")

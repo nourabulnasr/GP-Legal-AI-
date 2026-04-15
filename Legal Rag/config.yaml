@@ -2,9 +2,10 @@
 
 # Model Configuration
 embeddings:
-  model_name: "aubmindlab/bert-base-arabertv2"
-  fallback_model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-  device: "cuda"  # or "cpu" for CPU-only systems
+  # Native ST model avoids meta-tensor / lazy-init failures when wrapping raw BERT (e.g. AraBERT) on recent torch+transformers.
+  model_name: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+  fallback_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  device: "auto"  # auto | cpu | cuda — auto picks GPU when available (recommended for Docker)
   batch_size: 32
 
 llm:
@@ -22,7 +23,7 @@ vector_store:
   persist_directory: "./chroma_db"
   collection_name: "egyptian_labor_laws"
   distance_metric: "cosine"
-  embedding_function: "arabic"  # uses aubmindlab/bert-base-arabertv2
+  embedding_function: "arabic"  # multilingual sentence-transformers (see embeddings.model_name)
 
 # RAG Configuration
 rag:
@@ -50,7 +51,7 @@ output:
 
 # Data Configuration
 data:
-  labor_law_file: "./data/labor14_2025_chunks.cleaned.jsonl"
+  labor_law_file: "./data/labor_law_chunks.cleaned.jsonl"
   sample_contracts_dir: "./data/sample_contracts"
 
 # API Configuration (for FastAPI mode)

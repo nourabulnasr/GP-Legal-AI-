@@ -97,7 +97,10 @@ def validate_data_files():
     """Validate data files exist"""
     print("\n[Data Files]")
 
-    data_file = Path("data/labor14_2025_chunks.cleaned.jsonl")
+    data_file = next(
+        (Path(p) for p in ("data/labor_law_chunks.cleaned.jsonl", "data/labor14_2025_chunks.cleaned.jsonl") if Path(p).is_file()),
+        Path("data/labor_law_chunks.cleaned.jsonl"),
+    )
     sample_contract = Path("data/sample_contracts/sample_contract.txt")
 
     results = {

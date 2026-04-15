@@ -39,7 +39,7 @@ try:
     import fitz  # PyMuPDF
 except Exception:
     fitz = None  # type: ignore
-from PIL import Image, ImageOps, ImageEnhance, ImageFilter
+from PIL import Image
 
 # SQLAlchemy typing only (safe)
 try:
@@ -66,14 +66,12 @@ from .rag_rule_mapping import chunks_to_rule_ids
 
 try:
     from .documentai_ocr import (
-        documentai_extract_text,
         documentai_extract_pages,
         _HAS_DOCUMENTAI,
         _is_configured as _documentai_configured,
     )
 except Exception:
     _HAS_DOCUMENTAI = False
-    documentai_extract_text = lambda *a, **k: ""  # type: ignore
     documentai_extract_pages = lambda *a, **k: []  # type: ignore
     _documentai_configured = lambda: False  # type: ignore
 
@@ -86,6 +84,12 @@ try:
 except Exception:
     documentai_extract_pages_from_bytes = None  # type: ignore
     _documentai_py_configured = lambda: False  # type: ignore
+
+from .pdf_text_pipeline import (
+    extract_full_text_from_pdf_bytes,
+    extract_pdf_pages_from_bytes,
+    ocr_image_to_text as _ocr_image_to_text,
+)
 
 # [OK] cross-border detector
 from .cross_border import detect_cross_border
@@ -298,7 +302,14 @@ def _fallback_load_chunks_as_docs(chunks_dir: Path) -> List[Dict[str, Any]]:
     if not chunks_dir.exists():
         return docs
 
-    jsonl_files = sorted(chunks_dir.glob("*.jsonl"))
+    neutral = chunks_dir / "labor_law_chunks.cleaned.jsonl"
+    legacy = chunks_dir / "labor14_2025_chunks.cleaned.jsonl"
+    if neutral.is_file():
+        jsonl_files = [neutral]
+    elif legacy.is_file():
+        jsonl_files = [legacy]
+    else:
+        jsonl_files = sorted(chunks_dir.glob("*.jsonl"))
     for fp in jsonl_files:
         try:
             with fp.open("r", encoding="utf-8") as f:
@@ -533,19 +544,6 @@ def health() -> HealthResponse:
 # ============================================================
 # 1) OCR helpers (IMPROVED)
 # ============================================================
-def _preprocess_for_ocr(img: Image.Image) -> Image.Image:
-    try:
-        img = img.convert("L")
-        img = ImageOps.autocontrast(img)
-        img = img.filter(ImageFilter.SHARPEN)
-        img = ImageEnhance.Contrast(img).enhance(1.4)
-        img = img.point(lambda x: 0 if x < 160 else 255, mode="1")
-        img = img.convert("L")
-        return img
-    except Exception:
-        return img
-
-
 def _docx_bytes_to_text(data: bytes) -> str:
     try:
         from docx import Document
@@ -603,21 +601,6 @@ def _docx_images_to_text(data: bytes) -> str:
     return "\n".join(texts).strip()
 
 
-def _ocr_image_to_text(img_bytes: bytes) -> str:
-    try:
-        import pytesseract
-        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-        img = _preprocess_for_ocr(img)
-        config = "--oem 1 --psm 6"
-        return pytesseract.image_to_string(img, lang="ara+eng", config=config)
-    except Exception:
-        return ""
-
-
-def _is_text_too_short(txt: str) -> bool:
-    return len((txt or "").strip()) < 40
-
-
 def _normalize_contract_text(raw_text: str) -> str:
     if not raw_text:
         return ""
@@ -665,30 +648,9 @@ async def ocr(file: UploadFile = File(...)) -> OCRResponse:
     )
 
     if is_pdf:
-        if _documentai_configured() and documentai_extract_text:
-            try:
-                dai_text = documentai_extract_text(data)
-                if dai_text and len(dai_text.strip()) > 30:
-                    text = dai_text
-                else:
-                    raise ValueError("Document AI returned insufficient text")
-            except Exception:
-                pass
+        text = extract_full_text_from_pdf_bytes(data)
         if not text:
-            try:
-                if fitz is None:
-                    raise RuntimeError("PyMuPDF is not available")
-                doc = fitz.open(stream=data, filetype="pdf")
-                parts: List[str] = []
-                for page in doc:
-                    txt = page.get_text("text") or ""
-                    if _is_text_too_short(txt):
-                        pix = page.get_pixmap(dpi=300)
-                        txt = _ocr_image_to_text(pix.tobytes("png"))
-                    parts.append(txt)
-                text = "\n".join(parts)
-            except Exception:
-                text = _ocr_image_to_text(data)
+            text = _ocr_image_to_text(data)
     else:
         text = _ocr_image_to_text(data)
 
@@ -839,6 +801,14 @@ def _rag_min_score() -> float:
     return max(0.0, min(v, 0.99))
 
 
+def _legal_rag_query_backend() -> str:
+    """chroma_first (default): Chroma then in-memory retriever. memory_only: JSONL retriever only."""
+    v = (os.environ.get("LEGAL_RAG_QUERY_BACKEND") or "chroma_first").strip().lower()
+    if v == "memory_only":
+        return "memory_only"
+    return "chroma_first"
+
+
 def _rag_search_safe(
     query_text: str,
     top_k: int = 5,
@@ -847,10 +817,24 @@ def _rag_search_safe(
 ) -> List[Dict[str, Any]]:
     """
     Prefer ChromaDB (Legal RAG) when available; else retriever (FAISS/hash).
+    Set LEGAL_RAG_QUERY_BACKEND=memory_only to use only the in-memory retriever (old RAG path).
     Same return shape: [{"score", "text", "metadata"}, ...]
     """
     if not query_text or not query_text.strip():
         return []
+
+    if _legal_rag_query_backend() == "memory_only":
+        if not retriever:
+            return []
+        try:
+            return retriever.search(query_text, top_k=top_k, filters=law_filters, min_score=min_score)  # type: ignore
+        except TypeError:
+            try:
+                return retriever.search(query_text, top_k=top_k)  # type: ignore
+            except Exception:
+                return []
+        except Exception:
+            return []
 
     # Prefer ChromaDB (Legal RAG corpus)
     if rag_chromadb is not None and getattr(rag_chromadb, "is_available", lambda: False)():
@@ -880,8 +864,29 @@ def _rag_search_safe(
         return []
 
 
+def _labor_law_rag_filters() -> List[Optional[Dict[str, Any]]]:
+    from .law_paths import LAW_CHUNK_SOURCE
+
+    return [
+        {"source": LAW_CHUNK_SOURCE},
+        {"source": "labor14_2025"},
+        {"law": "قانون العمل رقم 14 لسنة 2025"},
+        None,
+    ]
+
+
+def _rag_search_labor_corpus(query_text: str, *, top_k: int, min_score: float) -> List[Dict[str, Any]]:
+    for filt in _labor_law_rag_filters():
+        hits = _rag_search_safe(query_text, top_k=top_k, law_filters=filt, min_score=min_score)
+        if hits:
+            return hits
+    return []
+
+
 def _rag_backend_ready() -> bool:
     """True if either in-memory retriever or Chroma legal RAG can serve searches."""
+    if _legal_rag_query_backend() == "memory_only":
+        return bool(retriever)
     if retriever:
         return True
     if rag_chromadb is not None:
@@ -898,7 +903,7 @@ def _filter_to_labor_only(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         md = h.get("metadata") or {}
         law = str(md.get("law") or "")
         src = str(md.get("source") or "")
-        if ("قانون العمل" in law) or (src == "labor14_2025"):
+        if ("قانون العمل" in law) or (src in ("labor_law", "labor14_2025")):
             out.append(h)
     return out
 
@@ -1406,58 +1411,31 @@ async def ocr_check_and_search(
                     )
 
         elif is_pdf:
-            # Prefer DocumentAI.py (bytes-based) when configured; else documentai_ocr
-            dai_pages = []
-            if documentai_extract_pages_from_bytes and _documentai_py_configured():
-                try:
-                    dai_pages = documentai_extract_pages_from_bytes(data)
-                except Exception:
-                    pass
-            if not dai_pages and _documentai_configured() and documentai_extract_pages:
-                try:
-                    dai_pages = documentai_extract_pages(data)
-                except Exception:
-                    pass
-            if dai_pages and any((p.get("text") or "").strip() for p in dai_pages):
-                ocr_used_flag = True
-                for p in dai_pages:
-                    ocr_chunks.append({
-                        "id": f"page_{p.get('page', len(ocr_chunks))}",
-                        "page": p.get("page", len(ocr_chunks)),
-                        "text": p.get("text", "") or "",
-                        "left": None,
-                        "top": None,
-                        "width": None,
-                        "height": None,
-                        "conf": None,
-                    })
-            if not ocr_chunks:
-                if fitz is None:
-                    raise HTTPException(
-                        status_code=500,
-                        detail="PDF parsing dependency missing (PyMuPDF). Install PyMuPDF or enable Document AI.",
-                    )
-                doc = fitz.open(stream=data, filetype="pdf")
-                try:
-                    for i, page in enumerate(doc):
-                        page_txt = page.get_text("text") or ""
-                        if _is_text_too_short(page_txt):
-                            ocr_used_flag = True
-                            pix = page.get_pixmap(dpi=300)
-                            page_txt = _ocr_image_to_text(pix.tobytes("png")) or ""
-
-                        ocr_chunks.append({
-                            "id": f"page_{i}",
-                            "page": i,
-                            "text": page_txt,
-                            "left": None,
-                            "top": None,
-                            "width": None,
-                            "height": None,
-                            "conf": None,
-                        })
-                finally:
-                    doc.close()
+            if fitz is None and not (
+                (documentai_extract_pages_from_bytes and _documentai_py_configured())
+                or _documentai_configured()
+            ):
+                raise HTTPException(
+                    status_code=500,
+                    detail="PDF parsing dependency missing (PyMuPDF). Install PyMuPDF or enable Document AI.",
+                )
+            page_rows, ocr_used_flag = extract_pdf_pages_from_bytes(data)
+            if not page_rows:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not extract text from this PDF.",
+                )
+            for p in page_rows:
+                ocr_chunks.append({
+                    "id": f"page_{p.get('page', len(ocr_chunks))}",
+                    "page": p.get("page", len(ocr_chunks)),
+                    "text": p.get("text", "") or "",
+                    "left": None,
+                    "top": None,
+                    "width": None,
+                    "height": None,
+                    "conf": None,
+                })
 
         else:
             # image or unknown -> OCR
@@ -1704,24 +1682,7 @@ async def ocr_check_and_search(
                 boosted_query = build_rag_query(query, full_text, contract_tags)
 
                 ms = _rag_min_score()
-                rag_results = _rag_search_safe(
-                    boosted_query,
-                    top_k=8,
-                    law_filters={"source": "labor14_2025"},
-                    min_score=ms,
-                )
-
-                if not rag_results:
-                    rag_results = _rag_search_safe(
-                        boosted_query,
-                        top_k=8,
-                        law_filters={"law": "قانون العمل رقم 14 لسنة 2025"},
-                        min_score=ms,
-                    )
-
-                if not rag_results:
-                    rag_results = _rag_search_safe(boosted_query, top_k=8, law_filters=None, min_score=ms)
-
+                rag_results = _rag_search_labor_corpus(boosted_query, top_k=8, min_score=ms)
                 rag_results = _filter_to_labor_only(rag_results)[:5]
 
         # ============================================================
@@ -1778,24 +1739,7 @@ async def ocr_check_and_search(
                 qv = _mk_query_from_violation(vh)
                 qv_boosted = build_rag_query(qv, full_text, contract_tags)
 
-                hits_v = _rag_search_safe(
-                    qv_boosted,
-                    top_k=6,
-                    law_filters={"source": "labor14_2025"},
-                    min_score=ms_v,
-                )
-
-                if not hits_v:
-                    hits_v = _rag_search_safe(
-                        qv_boosted,
-                        top_k=6,
-                        law_filters={"law": "قانون العمل رقم 14 لسنة 2025"},
-                        min_score=ms_v,
-                    )
-
-                if not hits_v:
-                    hits_v = _rag_search_safe(qv_boosted, top_k=6, law_filters=None, min_score=ms_v)
-
+                hits_v = _rag_search_labor_corpus(qv_boosted, top_k=6, min_score=ms_v)
                 hits_v = _filter_to_labor_only(_dedupe_hits(hits_v))[:4]
 
                 rag_by_violation.append({

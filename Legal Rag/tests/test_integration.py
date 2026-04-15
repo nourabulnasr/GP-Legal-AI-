@@ -73,7 +73,10 @@ class TestEndToEnd:
 
     def test_labor_law_data_exists(self):
         """Test that labor law data file exists"""
-        data_path = Path("data/labor14_2025_chunks.cleaned.jsonl")
+        data_path = next(
+            (Path(p) for p in ("data/labor_law_chunks.cleaned.jsonl", "data/labor14_2025_chunks.cleaned.jsonl") if Path(p).exists()),
+            Path("data/labor_law_chunks.cleaned.jsonl"),
+        )
 
         assert data_path.exists(), "Labor law data file missing"
 

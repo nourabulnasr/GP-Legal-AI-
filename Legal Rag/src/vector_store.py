@@ -21,34 +21,51 @@ def _get_hf_token() -> Optional[str]:
     return os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN") or None
 
 
+def _load_sentence_transformer(model_name: str, device: str, token: Optional[str]) -> SentenceTransformer:
+    """
+    Load SentenceTransformer with meta-tensor / lazy-init pitfalls disabled where supported.
+    Recent transformers may default low_cpu_mem_usage=True and leave weights on the meta device.
+    """
+    try:
+        return SentenceTransformer(
+            model_name,
+            device=device,
+            token=token,
+            model_kwargs={"low_cpu_mem_usage": False},
+        )
+    except TypeError:
+        return SentenceTransformer(model_name, device=device, token=token)
+
+
 class ArabicEmbeddingFunction:
     """Custom embedding function for Arabic text using sentence transformers"""
 
-    def __init__(self, model_name: str, device: str = "cuda"):
+    def __init__(self, model_name: str, device: str = "cuda", fallback_model: Optional[str] = None):
         """
         Initialize Arabic embedding function.
 
         Args:
             model_name: Name of the sentence transformer model (or HF model; SentenceTransformer wraps with mean pooling).
             device: Device to run on (auto, cuda, or cpu). auto => cuda if available else cpu.
+            fallback_model: Optional override for secondary model if primary load fails.
         """
         # Resolve device: auto -> cuda if available else cpu
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device if (torch.cuda.is_available() and device == "cuda") else "cpu"
         token = _get_hf_token()
+        fb = (fallback_model or "").strip() or "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
         logger.info(
             f"Loading embedding model: {model_name} on {self.device}. "
             "SentenceTransformer uses mean pooling; 'UNEXPECTED keys' when loading non-sentence-transformers models (e.g. AraBERT) is expected."
         )
         try:
-            self.model = SentenceTransformer(model_name, device=self.device, token=token)
+            self.model = _load_sentence_transformer(model_name, self.device, token)
             logger.info(f"Successfully loaded embedding model: {model_name}")
         except Exception as e:
             logger.error(f"Failed to load model {model_name}: {e}")
-            fallback_model = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-            logger.info(f"Falling back to: {fallback_model}")
-            self.model = SentenceTransformer(fallback_model, device=self.device, token=token)
+            logger.info(f"Falling back to: {fb}")
+            self.model = _load_sentence_transformer(fb, self.device, token)
 
     def __call__(self, texts: List[str]) -> List[List[float]]:
         """
@@ -97,7 +114,8 @@ class VectorStore:
         # Create embedding function
         self.embedding_function = ArabicEmbeddingFunction(
             model_name=self.config.embeddings.model_name,
-            device=self.config.get_device()
+            device=self.config.get_embeddings_device(),
+            fallback_model=self.config.embeddings.fallback_model,
         )
 
         # Initialize ChromaDB client

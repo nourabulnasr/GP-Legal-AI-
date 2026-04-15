@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 RAW_PDF = ROOT / "laws" / "raw" / "Labor Law for 2025 in egypt.pdf"
-OUT_JSON = ROOT / "laws" / "processed" / "labor14_2025_articles.from_pdf.v3.json"
+OUT_JSON = ROOT / "laws" / "processed" / "labor_law_articles.from_pdf.v3.json"
 
 
 def main() -> None:

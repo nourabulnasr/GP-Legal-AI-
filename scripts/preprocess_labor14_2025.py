@@ -6,15 +6,28 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-ARTICLES_IN = ROOT / "laws" / "processed" / "labor14_2025_articles.json"
+from app.law_paths import (  # noqa: E402
+    ARTICLES_CANONICAL,
+    ARTICLES_CLEANED_JSON,
+    CHUNK_ID_PREFIX,
+    CHUNKS_CLEANED_JSONL,
+    CHUNKS_JSONL,
+    LAW_CHUNK_SOURCE,
+    LEGAL_RAG_CHUNKS_CLEANED_JSONL,
+    LEGACY_ARTICLES_JSON,
+    PREPROCESS_REPORT_JSON,
+    migrate_legacy_labor_law_artifacts,
+)
 
-# Outputs
-ARTICLES_OUT = ROOT / "laws" / "processed" / "labor14_2025_articles.cleaned.json"
-CHUNKS_OUT = ROOT / "chunks" / "labor14_2025_chunks.jsonl"
-CHUNKS_CLEANED = ROOT / "chunks" / "labor14_2025_chunks.cleaned.jsonl"
-LEGAL_RAG_CHUNKS = ROOT / "Legal Rag" / "data" / "labor14_2025_chunks.cleaned.jsonl"
-REPORT_OUT = ROOT / "laws" / "processed" / "labor14_2025_report.json"
+ARTICLES_IN = ARTICLES_CANONICAL
+ARTICLES_OUT = ARTICLES_CLEANED_JSON
+CHUNKS_OUT = CHUNKS_JSONL
+CHUNKS_CLEANED = CHUNKS_CLEANED_JSONL
+LEGAL_RAG_CHUNKS = LEGAL_RAG_CHUNKS_CLEANED_JSONL
+REPORT_OUT = PREPROCESS_REPORT_JSON
 
 ARABIC_DIACRITICS = re.compile(r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]")
 MULTI_SPACE = re.compile(r"[ \t]+")
@@ -128,8 +141,12 @@ def main():
             sys.stdout.reconfigure(encoding="utf-8")
         except Exception:
             pass
-    if not ARTICLES_IN.exists():
-        raise SystemExit(f"Missing articles file: {ARTICLES_IN}")
+    migrate_legacy_labor_law_artifacts()
+    if not ARTICLES_IN.is_file():
+        raise SystemExit(
+            f"Missing articles file: {ARTICLES_CANONICAL} "
+            f"(copy or migrate from legacy {LEGACY_ARTICLES_JSON})"
+        )
 
     articles = json.loads(ARTICLES_IN.read_text(encoding="utf-8"))
     if not isinstance(articles, list) or len(articles) == 0:
@@ -157,8 +174,8 @@ def main():
         obj["article"] = art_no
         obj["title"] = title_n
         obj["text"] = text_n
-        obj["source"] = obj.get("source") or "laws/raw/Labor Law for 2025 in egypt.pdf"
-        obj["law"] = obj.get("law") or "قانون العمل رقم 14 لسنة 2025"
+        obj["source"] = obj.get("source") or "laws/raw/labor_law.pdf"
+        obj["law"] = obj.get("law") or "قانون العمل"
         cleaned_articles.append(obj)
 
         # build chunks from the article text
@@ -172,14 +189,14 @@ def main():
 
         for j, piece in enumerate(pieces):
             # Keep IDs deterministic and globally unique even when article numbers repeat.
-            cid = f"labor14_2025__a{a_idx:04d}__art_{art_no or 'na'}__c{j}"
+            cid = f"{CHUNK_ID_PREFIX}__a{a_idx:04d}__art_{art_no or 'na'}__c{j}"
 
             chunks.append(
                 {
                     "id": cid,
                     "text": piece,
                     "normalized_text": piece,
-                    "source": "labor14_2025",
+                    "source": LAW_CHUNK_SOURCE,
                     "law": obj["law"],
                     "article": art_no,
                     "title": title_n,
@@ -205,7 +222,7 @@ def main():
     for c in deduped:
         cid = str(c.get("id") or "")
         if not cid:
-            cid = f"labor14_2025__fallback__{len(id_seen)}"
+            cid = f"{CHUNK_ID_PREFIX}__fallback__{len(id_seen)}"
         n = id_seen.get(cid, 0)
         if n > 0:
             c["id"] = f"{cid}__dup{n}"

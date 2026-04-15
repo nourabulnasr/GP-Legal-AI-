@@ -4,7 +4,7 @@ import json
 
 ROOT = Path(__file__).resolve().parent.parent
 IN_PATH = ROOT / "laws" / "labor_14_2025.json"
-OUT_PATH = ROOT / "laws" / "processed" / "labor14_2025_articles.json"
+OUT_PATH = ROOT / "laws" / "processed" / "labor_law_articles.json"
 
 def main():
     data = json.load(open(IN_PATH, "r", encoding="utf-8"))

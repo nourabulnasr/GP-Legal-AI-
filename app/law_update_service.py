@@ -15,10 +15,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-_ROOT = Path(__file__).resolve().parent.parent
+from app.law_paths import (
+    ARTICLES_CANONICAL,
+    CHUNKS_CLEANED_JSONL,
+    LEGAL_RAG_CHUNKS_CLEANED_JSONL,
+    resolved_cleaned_chunks_path,
+)
 
-ARTICLES_CANONICAL = _ROOT / "laws" / "processed" / "labor14_2025_articles.json"
-LEGAL_RAG_CHUNKS = _ROOT / "Legal Rag" / "data" / "labor14_2025_chunks.cleaned.jsonl"
+_ROOT = Path(__file__).resolve().parent.parent
 CHUNKS_DIR = _ROOT / "chunks"
 INCOMING_DIR = _ROOT / "laws" / "raw" / "incoming"
 META_DIR = _ROOT / "laws" / "meta"
@@ -39,13 +43,17 @@ def backup_canonical_artifacts() -> Optional[Path]:
     if ARTICLES_CANONICAL.is_file():
         shutil.copy2(ARTICLES_CANONICAL, dest / ARTICLES_CANONICAL.name)
         any_file = True
-    if LEGAL_RAG_CHUNKS.is_file():
-        shutil.copy2(LEGAL_RAG_CHUNKS, dest / LEGAL_RAG_CHUNKS.name)
+    if LEGAL_RAG_CHUNKS_CLEANED_JSONL.is_file():
+        shutil.copy2(LEGAL_RAG_CHUNKS_CLEANED_JSONL, dest / LEGAL_RAG_CHUNKS_CLEANED_JSONL.name)
+        any_file = True
+    if CHUNKS_CLEANED_JSONL.is_file():
+        shutil.copy2(CHUNKS_CLEANED_JSONL, dest / CHUNKS_CLEANED_JSONL.name)
         any_file = True
     if CHUNKS_DIR.is_dir():
-        for p in sorted(CHUNKS_DIR.glob("labor14_2025*.jsonl")):
-            shutil.copy2(p, dest / p.name)
-            any_file = True
+        for p in sorted(CHUNKS_DIR.glob("labor_law*.jsonl")) + sorted(CHUNKS_DIR.glob("labor14_2025*.jsonl")):
+            if p.is_file():
+                shutil.copy2(p, dest / p.name)
+                any_file = True
     return dest if any_file else None
 
 
@@ -112,7 +120,7 @@ def full_pipeline_from_pdf(
 def reindex_all_rag() -> Dict[str, Any]:
     """Rebuild Chroma (bridge or fallback) and reload main in-memory retriever."""
     out: Dict[str, Any] = {"chroma": {}, "retriever": {}}
-    corpus = LEGAL_RAG_CHUNKS if LEGAL_RAG_CHUNKS.is_file() else None
+    corpus = resolved_cleaned_chunks_path()
 
     try:
         import app.main as mainmod
@@ -147,10 +155,24 @@ def reindex_all_rag() -> Dict[str, Any]:
     return out
 
 
+def _rag_memory_only_backend() -> bool:
+    return (os.environ.get("LEGAL_RAG_QUERY_BACKEND") or "").strip().lower() == "memory_only"
+
+
 def reindex_is_successful(result: Dict[str, Any]) -> Tuple[bool, str]:
-    """Return (ok, reason). Strict success requires both chroma and retriever paths healthy."""
+    """Return (ok, reason).
+
+    Default: Chroma must succeed and retriever reload must report ok.
+    With LEGAL_RAG_QUERY_BACKEND=memory_only: only retriever reload must succeed; Chroma is optional.
+    """
     chroma = (result or {}).get("chroma") or {}
     retr = (result or {}).get("retriever") or {}
+
+    if retr.get("ok") is False:
+        return False, str(retr.get("error") or retr.get("reason") or "retriever reload failed")
+
+    if _rag_memory_only_backend():
+        return True, "ok"
 
     if chroma.get("skipped"):
         return False, "chroma backend unavailable"
@@ -158,8 +180,6 @@ def reindex_is_successful(result: Dict[str, Any]) -> Tuple[bool, str]:
         return False, str(chroma.get("message") or "chroma reindex failed")
     if chroma.get("error"):
         return False, str(chroma.get("error"))
-    if retr.get("ok") is False:
-        return False, str(retr.get("error") or retr.get("reason") or "retriever reload failed")
     return True, "ok"
 
 
