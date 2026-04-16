@@ -1,0 +1,31 @@
+{
+  "input_file": "t3.jpeg",
+  "detected_type": "image",
+  "output_dir": "preprocessed_output\\t3",
+  "items": [
+    {
+      "source_file": "t3.jpeg",
+      "file_type": "image",
+      "kind": "image",
+      "page_index": null,
+      "item_index": 0,
+      "text": null,
+      "image_path": "preprocessed_output\\t3\\images\\image_0000_gray.png",
+      "embedded_text_found": false,
+      "needs_ocr": true,
+      "width": 1800,
+      "height": 2760,
+      "meta": {
+        "binary_path": "preprocessed_output\\t3\\images\\image_0000_binary.png",
+        "otsu_binary_path": "preprocessed_output\\t3\\images\\image_0000_otsu.png",
+        "closed_binary_path": "preprocessed_output\\t3\\images\\image_0000_closed.png",
+        "skew_angle": 0.0,
+        "quality": {
+          "sharpness_laplacian_var": 578.597,
+          "mean_gray": 228.226,
+          "std_gray": 56.561
+        }
+      }
+    }
+  ]
+}
