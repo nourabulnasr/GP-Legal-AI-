@@ -197,11 +197,10 @@ class DataIngestion:
         """
         logger.warning("Deleting existing collection and re-ingesting data...")
 
-        # Delete existing collection
+        # Delete existing collection and recreate it on the same VectorStore so we do not
+        # load SentenceTransformer twice in one request (avoids meta-tensor / GPU reload failures).
         self.vector_store.delete_collection()
-
-        # Reinitialize vector store
-        self.vector_store = VectorStore(self.config)
+        self.vector_store.recreate_collection()
 
         # Ingest data
         if file_path:

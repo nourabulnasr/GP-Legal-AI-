@@ -26,14 +26,16 @@ def _load_sentence_transformer(model_name: str, device: str, token: Optional[str
     Load SentenceTransformer with meta-tensor / lazy-init pitfalls disabled where supported.
     Recent transformers may default low_cpu_mem_usage=True and leave weights on the meta device.
     """
+    mk = {"low_cpu_mem_usage": False}
     try:
         return SentenceTransformer(
             model_name,
             device=device,
             token=token,
-            model_kwargs={"low_cpu_mem_usage": False},
+            model_kwargs=mk,
         )
     except TypeError:
+        # Older sentence-transformers: no model_kwargs on constructor
         return SentenceTransformer(model_name, device=device, token=token)
 
 
@@ -81,13 +83,14 @@ class ArabicEmbeddingFunction:
         if isinstance(texts, str):
             texts = [texts]
 
-        # Generate embeddings
-        embeddings = self.model.encode(
-            texts,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-            normalize_embeddings=True  # Normalize for cosine similarity
-        )
+        # Generate embeddings (inference_mode avoids autograd / odd tensor states on reload)
+        with torch.inference_mode():
+            embeddings = self.model.encode(
+                texts,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+                normalize_embeddings=True,  # Normalize for cosine similarity
+            )
 
         return embeddings.tolist()
 
@@ -153,6 +156,9 @@ class VectorStore:
         Returns:
             True if successful
         """
+        if self.collection is None:
+            logger.error("add_documents called with no collection; call recreate_collection() after delete")
+            return False
         try:
             # Generate embeddings
             logger.info(f"Generating embeddings for {len(texts)} documents...")
@@ -279,10 +285,25 @@ class VectorStore:
         try:
             self.client.delete_collection(name=self.config.vector_store.collection_name)
             logger.info(f"Deleted collection: {self.config.vector_store.collection_name}")
+            self.collection = None
             return True
         except Exception as e:
             logger.error(f"Failed to delete collection: {e}")
             return False
+
+    def recreate_collection(self) -> None:
+        """
+        Attach a new empty collection after delete_collection().
+        Reuses the same embedding model (avoids a second SentenceTransformer load in reingest).
+        """
+        self.collection = self.client.get_or_create_collection(
+            name=self.config.vector_store.collection_name,
+            metadata={"hnsw:space": self.config.vector_store.distance_metric},
+        )
+        logger.info(
+            f"Recreated empty collection '{self.config.vector_store.collection_name}' "
+            f"(documents={self.collection.count()})"
+        )
 
     def get_collection_stats(self) -> Dict[str, Any]:
         """
@@ -292,6 +313,12 @@ class VectorStore:
             Dictionary with collection statistics
         """
         try:
+            if self.collection is None:
+                return {
+                    "name": self.config.vector_store.collection_name,
+                    "document_count": 0,
+                    "persist_directory": self.config.vector_store.persist_directory,
+                }
             count = self.collection.count()
             return {
                 "name": self.config.vector_store.collection_name,
