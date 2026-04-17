@@ -255,11 +255,29 @@ def _local_model_hint() -> str:
     return ", ".join(parts) if parts else "no model path configured"
 
 
-def _build_document_chat_prompt(context: str, message: str) -> str:
-    """Build a single prompt for document Q&A (used when generate_answer is not available)."""
-    return f"""أنت مساعد قانوني. أجب على سؤال المستخدم بناءً على النص التالي فقط. إذا لم يكن الجواب في النص فقل ذلك.
+def _format_document_chat_history(history: Optional[List[ChatMessage]]) -> str:
+    if not history:
+        return ""
+    lines: List[str] = []
+    for m in history[-10:]:
+        role = (m.role or "").strip().lower()
+        label = "المستخدم" if role == "user" else "المساعد"
+        content = (m.content or "").strip()
+        if not content:
+            continue
+        lines.append(f"{label}: {content[:1200]}")
+    if not lines:
+        return ""
+    return "محادثة سابقة:\n" + "\n".join(lines) + "\n\n"
 
-النص:
+
+def _build_document_chat_prompt(context: str, message: str, history: Optional[List[ChatMessage]] = None) -> str:
+    """Build prompt for document Q&A; includes optional multi-turn history."""
+    hist = _format_document_chat_history(history)
+    return f"""أنت مساعد قانوني. أجب على سؤال المستخدم بناءً على النص التالي فقط. إذا لم يكن الجواب في النص فقل ذلك.
+استخدم المحادثة السابقة فقط لربط الأسئلة دون إضافة حقائق من خارج النص.
+
+{hist}النص:
 {context[: _MAX_DOCUMENT_CONTEXT_CHARS]}
 
 سؤال المستخدم:
@@ -268,7 +286,13 @@ def _build_document_chat_prompt(context: str, message: str) -> str:
 الجواب:"""
 
 
-def _get_lfm_document_reply(document_context: str, message: str, max_new_tokens: int = 256) -> str:
+def _get_lfm_document_reply(
+    document_context: str,
+    message: str,
+    *,
+    history: Optional[List[ChatMessage]] = None,
+    max_new_tokens: int = 512,
+) -> str:
     """Call local LFM (app/local_llm first, then llm/generate) for document Q&A."""
     context = (document_context or "").strip()
     if len(context) > _MAX_DOCUMENT_CONTEXT_CHARS:
@@ -278,13 +302,16 @@ def _get_lfm_document_reply(document_context: str, message: str, max_new_tokens:
     try:
         from app.local_llm import is_available as app_avail, generate as app_generate
         if app_avail():
-            prompt = _build_document_chat_prompt(context, message)
+            prompt = _build_document_chat_prompt(context, message, history=history)
             return app_generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
     except Exception as e_app:
         try:
             from llm.generate import is_available as gen_avail, generate_answer
             if gen_avail():
-                return generate_answer(context, message)
+                ctx_in = context
+                if history:
+                    ctx_in = _format_document_chat_history(history) + "\nDocument:\n" + context
+                return generate_answer(ctx_in, message)
             raise RuntimeError("llm.generate not available") from e_app
         except Exception as e1:
             return f"[Local LLM error: app.local_llm={e_app!r}; llm.generate={e1!r}]"
@@ -295,7 +322,10 @@ def _get_lfm_document_reply(document_context: str, message: str, max_new_tokens:
                 "[Local LLM not available. Check model folder and path "
                 f"({_local_model_hint()}).]"
             )
-        return generate_answer(context, message)
+        ctx_in = context
+        if history:
+            ctx_in = _format_document_chat_history(history) + "\nDocument:\n" + context
+        return generate_answer(ctx_in, message)
     except Exception as e2:
         return (
             "[Local LLM not available. Check model folder and path "
@@ -307,7 +337,11 @@ def _get_lfm_document_reply(document_context: str, message: str, max_new_tokens:
 _GEMINI_DOCUMENT_CONTEXT_CHARS = 120000
 
 
-def _get_gemini_document_reply(context: str, message: str) -> Optional[str]:
+def _get_gemini_document_reply(
+    context: str,
+    message: str,
+    history: Optional[List[ChatMessage]] = None,
+) -> Optional[str]:
     """Answer document Q&A with Gemini when local LFM is not installed. Returns None if not configured."""
     client_or_legacy = _get_gemini_client()
     if not client_or_legacy:
@@ -315,11 +349,22 @@ def _get_gemini_document_reply(context: str, message: str) -> Optional[str]:
     ctx = (context or "").strip()
     if len(ctx) > _GEMINI_DOCUMENT_CONTEXT_CHARS:
         ctx = ctx[:_GEMINI_DOCUMENT_CONTEXT_CHARS] + "\n\n[Context truncated for API size limits.]"
+    prior = ""
+    if history:
+        parts: List[str] = []
+        for m in history[-10:]:
+            role = "User" if (m.role or "").lower() == "user" else "Assistant"
+            c = (m.content or "").strip()
+            if c:
+                parts.append(f"{role}: {c[:4000]}")
+        if parts:
+            prior = "Prior conversation:\n" + "\n".join(parts) + "\n\n"
     system_prompt = f"""You are a legal contract assistant. Answer the user's question using ONLY the document context below (OCR/analysis text).
 If the answer is not supported by the context, say so clearly.
 Be concise. Mention rule IDs or sections when they appear in the context.
+Use prior conversation only to resolve follow-up questions; do not invent facts not in the document.
 
-Document context:
+{prior}Document context:
 {ctx}"""
     full_prompt = f"{system_prompt}\n\nUser: {message}\n\nAssistant:"
     try:
@@ -394,7 +439,7 @@ def chat_document(
     if not context or not (context or "").strip():
         raise HTTPException(status_code=400, detail="Provide document_context or analysis_id")
 
-    content = _get_lfm_document_reply(context, payload.message)
+    content = _get_lfm_document_reply(context, payload.message, history=payload.history)
     if _local_document_failed(content):
         allow_gemini = os.getenv("DOCUMENT_CHAT_GEMINI_FALLBACK", "1").strip().lower() in {
             "1",
@@ -403,7 +448,7 @@ def chat_document(
             "on",
         }
         if allow_gemini:
-            gemini_reply = _get_gemini_document_reply(context, payload.message)
+            gemini_reply = _get_gemini_document_reply(context, payload.message, history=payload.history)
             if gemini_reply:
                 content = gemini_reply
             else:

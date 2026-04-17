@@ -170,13 +170,18 @@ class RuleEngine:
                 continue
 
             if rule_id == "LABOR25_EMPLOYER_PLACEHOLDER":
-                if re.search(r"(الطرف\s*الاول|صاحب\s*العمل).{0,200}(\.{6,}|…{2,})", text, flags):
-                    out.append(self._build_hit(r, "placeholders"))
+                m_ph = re.search(r"(الطرف\s*الاول|صاحب\s*العمل).{0,200}(\.{6,}|…{2,})", text, flags)
+                if m_ph:
+                    span = m_ph.group(0)
+                    out.append(self._build_hit(r, span[:220] if len(span) > 220 else span))
                 continue
 
             if rule_id == "LABOR25_EMPLOYER_NAME_FILLED":
                 if re.search(r"(شركة|الشركة)\s*[^\.\n]{3,}", text, flags) and not re.search(r"(شركة|الشركة)\s*(\.{6,}|…{2,})", text, flags):
-                    out.append(self._build_hit(r, "company_name_filled"))
+                    m_co = re.search(r"(شركة|الشركة)\s*[^\.\n]{3,}", text, flags)
+                    if m_co:
+                        span = m_co.group(0)
+                        out.append(self._build_hit(r, span[:220] if len(span) > 220 else span))
                 continue
 
             # ==========================
@@ -190,13 +195,18 @@ class RuleEngine:
                 continue
 
             if rule_id == "LABOR25_EMPLOYEE_PLACEHOLDER":
-                if re.search(r"(الطرف\s*الثان[ىي]|العامل|الموظف).{0,200}(\.{6,}|…{2,})", text, flags):
-                    out.append(self._build_hit(r, "placeholders"))
+                m_ph2 = re.search(r"(الطرف\s*الثان[ىي]|العامل|الموظف).{0,200}(\.{6,}|…{2,})", text, flags)
+                if m_ph2:
+                    span = m_ph2.group(0)
+                    out.append(self._build_hit(r, span[:220] if len(span) > 220 else span))
                 continue
 
             if rule_id == "LABOR25_EMPLOYEE_NAME_FILLED":
                 if re.search(r"(السيد\s*/\s*[^\.\n]{3,})", text, flags) and not re.search(r"(السيد\s*/\s*(\.{6,}|…{2,}))", text, flags):
-                    out.append(self._build_hit(r, "employee_name_filled"))
+                    m_em = re.search(r"(السيد\s*/\s*[^\.\n]{3,})", text, flags)
+                    if m_em:
+                        span = m_em.group(0)
+                        out.append(self._build_hit(r, span[:220] if len(span) > 220 else span))
                 continue
 
             # ==========================
@@ -223,8 +233,10 @@ class RuleEngine:
             # ==========================
             if rule_id == "LABOR25_CONTRACT_DURATION":
                 pat_dur = re.compile(r"(مدة|مد|ة\s*مد).{0,30}(العقد|لعقد|لعا\s*قد|هذا\s*العقد)", flags)
-                if pat_dur.search(text):
-                    out.append(self._build_hit(r, "duration_clause"))
+                m_dur = pat_dur.search(text)
+                if m_dur:
+                    span = m_dur.group(0)
+                    out.append(self._build_hit(r, span[:220] if len(span) > 220 else span))
                     continue
 
                 pat_dates = re.compile(r"(\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4})", flags)
@@ -237,8 +249,14 @@ class RuleEngine:
             # SPECIAL: Probation presence (tolerant)
             # ==========================
             if rule_id == "LABOR25_PROBATION_PRESENCE":
-                if re.search(r"(فترة\s*الاختبار|مدة\s*الاختبار|تحت\s*ال[اأإآ]?ختبار|اختبار\s*تحت\s*التجرب)", text, flags):
-                    out.append(self._build_hit(r, "probation_present"))
+                m_pr = re.search(
+                    r"(فترة\s*الاختبار|مدة\s*الاختبار|تحت\s*ال[اأإآ]?ختبار|اختبار\s*تحت\s*التجرب).{0,120}",
+                    text,
+                    flags,
+                )
+                if m_pr:
+                    span = m_pr.group(0)
+                    out.append(self._build_hit(r, span[:220] if len(span) > 220 else span))
                 continue
 
             # ==========================
@@ -269,8 +287,10 @@ class RuleEngine:
             # SPECIAL: Working hours presence (tolerant)
             # ==========================
             if rule_id == "LABOR25_WORKING_HOURS_PRESENCE":
-                if re.search(r"(ساعات\s*العمل|عدد\s*ساعات|الدوام|وقت\s*العمل)", text, flags):
-                    out.append(self._build_hit(r, "working_hours_present"))
+                m_wh = re.search(r"(ساعات\s*العمل|عدد\s*ساعات|الدوام|وقت\s*العمل).{0,80}", text, flags)
+                if m_wh:
+                    span = m_wh.group(0)
+                    out.append(self._build_hit(r, span[:220] if len(span) > 220 else span))
                 continue
 
             # ==========================
@@ -291,8 +311,10 @@ class RuleEngine:
             # SPECIAL: Annual leave presence (tolerant)
             # ==========================
             if rule_id == "LABOR25_ANNUAL_LEAVE_PRESENCE":
-                if re.search(r"(إجازة\s*سنوية|الاجازة\s*السنوية|اجازه\s*سنويه)", text, flags):
-                    out.append(self._build_hit(r, "annual_leave_present"))
+                m_al = re.search(r"(إجازة\s*سنوية|الاجازة\s*السنوية|اجازه\s*سنويه).{0,80}", text, flags)
+                if m_al:
+                    span = m_al.group(0)
+                    out.append(self._build_hit(r, span[:220] if len(span) > 220 else span))
                 continue
 
             # ==========================

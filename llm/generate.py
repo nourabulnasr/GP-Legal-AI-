@@ -117,9 +117,28 @@ def explain_violation(
     matched_text: str,
     law_articles: List[Dict[str, Any]],
     max_new_tokens: int = 400,
+    language: str = "ar",
 ) -> str:
-    """One-shot: build prompt and generate explanation. Returns LLM text only."""
-    prompt = build_explanation_prompt(rule_id, description, matched_text, law_articles)
+    """One-shot: build prompt and generate explanation. Prefer app.local_llm when available (single canonical path)."""
+    try:
+        from app import local_llm as _app_llm
+
+        if getattr(_app_llm, "is_available", lambda: False)():
+            fn = getattr(_app_llm, "explain_violation", None)
+            if fn:
+                return fn(
+                    rule_id=rule_id,
+                    description=description,
+                    matched_text=matched_text,
+                    law_articles=law_articles,
+                    max_new_tokens=max_new_tokens,
+                    language=language,
+                )
+    except Exception:
+        pass
+    prompt = build_explanation_prompt(
+        rule_id, description, matched_text, law_articles, language=language
+    )
     return generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
 
 

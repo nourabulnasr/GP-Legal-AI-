@@ -148,10 +148,13 @@ def generate(
         gen_kwargs["temperature"] = temperature
     with torch.no_grad():
         out = model.generate(**inputs, **gen_kwargs)
-    text = tokenizer.decode(out[0], skip_special_tokens=True)
-    # Return only the generated part (reasoning/explanation), not the prompt
+    # Decode only newly generated tokens — avoids echoing the full prompt (esp. long doc chat).
+    input_len = int(inputs["input_ids"].shape[1])
+    gen_ids = out[0][input_len:]
+    text = tokenizer.decode(gen_ids, skip_special_tokens=True)
+    # Fallback: strip prompt if tokenizer left overlap
     prompt_clean = prompt.strip()
-    if prompt_clean in text:
+    if prompt_clean and prompt_clean in text:
         text = text.split(prompt_clean)[-1].strip()
     # Fallback: strip by last instruction line so we don't show prompt
     for sentinel in (
@@ -225,9 +228,13 @@ def explain_violation(
     matched_text: str,
     law_articles: List[Dict[str, Any]],
     max_new_tokens: int = 400,
+    language: str = "ar",
 ) -> str:
     """
     One-shot: build prompt and generate explanation. Returns LLM text only.
+    language: ar | en (drives system prompt in build_explanation_prompt).
     """
-    prompt = build_explanation_prompt(rule_id, description, matched_text, law_articles)
+    prompt = build_explanation_prompt(
+        rule_id, description, matched_text, law_articles, language=language
+    )
     return generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)

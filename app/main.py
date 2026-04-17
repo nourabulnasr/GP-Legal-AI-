@@ -482,6 +482,22 @@ try:
 except Exception as e:
     print("[INFO] Admin law router not mounted:", repr(e))
 
+try:
+    from .routers.legato_mobile import router as legato_mobile_router
+
+    api.include_router(legato_mobile_router)
+    print("[OK] Legato mobile router mounted:", getattr(legato_mobile_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Legato mobile router not mounted:", repr(e))
+
+try:
+    from .routers.social import router as social_router
+
+    api.include_router(social_router)
+    print("[OK] Social API router mounted:", getattr(social_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Social API router not mounted:", repr(e))
+
 # ============================================================
 # Optional jobs router (SAFE – stub included; mount only if present)
 # ============================================================
@@ -920,6 +936,76 @@ def _dedupe_rag_blocks_by_rule(rag_by_violation: List[Dict[str, Any]]) -> List[D
     return out
 
 
+def _dedupe_rag_hits_by_metadata(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen2 = set()
+    out: List[Dict[str, Any]] = []
+    for x in hits or []:
+        md = x.get("metadata") or {}
+        key = (md.get("law"), md.get("article"), md.get("id"), (x.get("text") or "")[:80])
+        if key in seen2:
+            continue
+        seen2.add(key)
+        out.append(x)
+    return out
+
+
+def _rag_prioritize_hits_for_rule_hit(
+    hits: List[Dict[str, Any]],
+    rule_hit: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Prefer law chunks whose metadata.article aligns with the rule hit; then sort by retrieval score."""
+    want = rule_hit.get("article")
+    want_s = str(want).strip() if want is not None else ""
+    scored: List[tuple[int, float, Dict[str, Any]]] = []
+    for h in hits or []:
+        md = h.get("metadata") or {}
+        art = str(md.get("article") or "").strip()
+        sc = float(h.get("score") or 0.0)
+        match = 0
+        if want_s and art and (want_s == art or want_s in art or art in want_s):
+            match = 1
+        scored.append((match, sc, h))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [x[2] for x in scored]
+
+
+def _llm_alignment_with_severity(
+    explanation: str,
+    rule_severity: Optional[str],
+) -> tuple[str, str]:
+    """Returns (alignment, bilingual_note). alignment is aligned | conflict."""
+    sev = (rule_severity or "").strip().lower()
+    if sev in ("info", "informational", "low", "notice", "presence"):
+        return ("aligned", "")
+    expl = (explanation or "").strip()
+    if not expl or expl.startswith("[LLM"):
+        return ("aligned", "")
+    t = expl.lower()
+    soft = [
+        "no violation",
+        "not a violation",
+        "does not violate",
+        "compliant with",
+        "not unlawful",
+    ]
+    soft_ar = [
+        "لا يوجد مخالفة",
+        "لا مخالفة",
+        "ليس مخالفة",
+        "ليس بمخالفة",
+        "يتوافق مع القانون",
+        "متوافق مع القانون",
+    ]
+    if any(m in t for m in soft) or any(m in expl for m in soft_ar):
+        if sev in ("error", "high", "medium", "warn", "warning", "critical", "violation", "severe"):
+            note = (
+                "Potential mismatch: rule severity is elevated but the LFM text reads non-violating. "
+                "Prefer human review. | تناقض محتمل بين شدة القاعدة ونص الشرح؛ يُنصح بالمراجعة اليدوية."
+            )
+            return ("conflict", note)
+    return ("aligned", "")
+
+
 def _rule_evidence(rule_hits: List[Dict[str, Any]], rule_ids: List[str]) -> Dict[str, Any]:
     evidence = {}
     for rid in rule_ids:
@@ -1142,43 +1228,106 @@ def on_shutdown():
 
 
 # ============================================================
-# 5) Labor summary helper (ML-based: rule_hits are model_ML violations)
+# 5) Labor summary helper (rule engine + ML; split violations vs informational)
 # ============================================================
+def _hit_severity_bucket_from_hit(hit: Dict[str, Any]) -> str:
+    """Classify a rule hit as violation-level vs informational."""
+    if hit.get("ml_detected"):
+        s = (hit.get("severity") or "").strip().lower()
+        if s in ("info", "informational", "low", "notice"):
+            return "informational"
+        return "violation"
+    s = (hit.get("severity") or "").strip().lower()
+    if s in ("info", "informational", "low", "notice", "presence"):
+        return "informational"
+    if s in ("error", "high", "medium", "warn", "warning", "critical", "violation", "severe"):
+        return "violation"
+    return "informational"
+
+
+def _summarize_hit_entry(h: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "rule_id": h.get("rule_id") or h.get("id"),
+        "score": h.get("score"),
+        "severity": h.get("severity"),
+        "description": (h.get("description") or "").strip(),
+    }
+
+
+def _dedupe_summary_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    by_r: Dict[str, Dict[str, Any]] = {}
+    for e in entries:
+        rid = e.get("rule_id")
+        if not rid:
+            continue
+        prev = by_r.get(rid)
+        if prev is None:
+            by_r[rid] = e
+            continue
+        cur = float(e.get("score") or 0)
+        old = float(prev.get("score") or 0)
+        if cur > old:
+            by_r[rid] = e
+    return list(by_r.values())
+
+
 def _build_labor_summary(rule_hits: List[Dict[str, Any]]) -> Dict[str, Any]:
     def bi(ar: str, en: str) -> str:
         return f"{ar} | {en}"
 
-    ml_violations = [
-        {"rule_id": h.get("rule_id"), "score": h.get("score"), "description": h.get("description") or ""}
-        for h in (rule_hits or [])
-        if h.get("rule_id")
-    ]
-    has_violations = len(ml_violations) > 0
-    status = "violations_detected" if has_violations else "ok"
-    message = bi(
-        "تم اكتشاف مخالفات محتملة (نموذج ML). راجع ml_violations." if has_violations else "لم يتم اكتشاف مخالفات من نموذج ML.",
-        "Potential violations detected (ML model). See ml_violations." if has_violations else "No violations detected by ML model.",
-    )
+    viol_entries: List[Dict[str, Any]] = []
+    info_entries: List[Dict[str, Any]] = []
+    for h in rule_hits or []:
+        if not h.get("rule_id"):
+            continue
+        e = _summarize_hit_entry(h)
+        if _hit_severity_bucket_from_hit(h) == "violation":
+            viol_entries.append(e)
+        else:
+            info_entries.append(e)
+
+    viol_entries = _dedupe_summary_entries(viol_entries)
+    info_entries = _dedupe_summary_entries(info_entries)
+
+    has_v = len(viol_entries) > 0
+    has_iv = len(info_entries) > 0
+
+    if has_v:
+        status = "violations_detected"
+        message = bi(
+            "تم اكتشاف مخالفات محتملة (نموذج القواعد/ML). راجع ml_violations.",
+            "Potential violations detected (rules/ML). See ml_violations.",
+        )
+    elif has_iv:
+        status = "informational_only"
+        message = bi(
+            "لا توجد مخالفات مسجّلة؛ توجد فقط مؤشرات/معلومات إضافية. راجع informational_checks.",
+            "No violations flagged; informational checks only. See informational_checks.",
+        )
+    else:
+        status = "ok"
+        message = bi("لم يتم اكتشاف مخالفات.", "No violations detected.")
 
     summary: Dict[str, Any] = {
         "status": status,
         "message": message,
-        "ml_violations": ml_violations,
-        "source": "model_ml",
+        "ml_violations": viol_entries,
+        "informational_checks": info_entries,
+        "source": "rules_engine_ml",
     }
     # Minimal backward-compatible keys (consumers may expect these)
-    summary["employer_info"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج ML.", "Assessment from ML model.")}
-    summary["employee_info"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج ML.", "Assessment from ML model.")}
-    summary["salary"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج ML.", "Assessment from ML model.")}
-    summary["contract_duration"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج ML.", "Assessment from ML model.")}
-    summary["working_hours"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج ML.", "Assessment from ML model.")}
-    summary["annual_leave"] = {"present": None, "min_violation": None, "status": "ml_based", "message": bi("التقييم من نموذج ML.", "Assessment from ML model.")}
-    summary["probation"] = {"present": None, "limit_violation": None, "status": "ml_based", "message": bi("التقييم من نموذج ML.", "Assessment from ML model.")}
+    summary["employer_info"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج القواعد/ML.", "Assessment from rules/ML engine.")}
+    summary["employee_info"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج القواعد/ML.", "Assessment from rules/ML engine.")}
+    summary["salary"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج القواعد/ML.", "Assessment from rules/ML engine.")}
+    summary["contract_duration"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج القواعد/ML.", "Assessment from rules/ML engine.")}
+    summary["working_hours"] = {"present": None, "status": "ml_based", "message": bi("التقييم من نموذج القواعد/ML.", "Assessment from rules/ML engine.")}
+    summary["annual_leave"] = {"present": None, "min_violation": None, "status": "ml_based", "message": bi("التقييم من نموذج القواعد/ML.", "Assessment from rules/ML engine.")}
+    summary["probation"] = {"present": None, "limit_violation": None, "status": "ml_based", "message": bi("التقييم من نموذج القواعد/ML.", "Assessment from rules/ML engine.")}
     return summary
 
 
 # ============================================================
-# 5.5) Cross-border summary helper (ML-based: rule_hits are model_ML violations)
+# 5.5) Cross-border summary helper (split violations vs informational)
 # ============================================================
 def _build_cross_border_summary(
     rule_hits: List[Dict[str, Any]],
@@ -1200,18 +1349,31 @@ def _build_cross_border_summary(
             ),
         }
 
-    ml_violations = [
-        {"rule_id": h.get("rule_id"), "score": h.get("score"), "description": h.get("description") or ""}
-        for h in (rule_hits or [])
-        if h.get("rule_id")
-    ]
+    viol_entries: List[Dict[str, Any]] = []
+    info_entries: List[Dict[str, Any]] = []
+    for h in rule_hits or []:
+        if not h.get("rule_id"):
+            continue
+        e = _summarize_hit_entry(h)
+        if _hit_severity_bucket_from_hit(h) == "violation":
+            viol_entries.append(e)
+        else:
+            info_entries.append(e)
+
+    viol_entries = _dedupe_summary_entries(viol_entries)
+    info_entries = _dedupe_summary_entries(info_entries)
+
+    has_v = len(viol_entries) > 0
+    st = "violations_detected" if has_v else ("informational_only" if info_entries else "ok")
+
     summary: Dict[str, Any] = {
         "enabled": True,
-        "status": "ok" if not ml_violations else "violations_detected",
-        "message": bi("ملخص العقد الدولي (تقييم من نموذج ML).", "Cross-border contract summary (ML-based)."),
+        "status": st,
+        "message": bi("ملخص العقد الدولي (قواعد/ML).", "Cross-border contract summary (rules/ML)."),
         "signals": cb_info.get("matches", []),
-        "ml_violations": ml_violations,
-        "source": "model_ml",
+        "ml_violations": viol_entries,
+        "informational_checks": info_entries,
+        "source": "rules_engine_ml",
     }
     return summary
 
@@ -1355,7 +1517,7 @@ async def ocr_check_and_search(
     use_rag: Optional[bool] = Form(True),
     use_rag_for_rules: Optional[bool] = Form(True),  # RAG-first: run only rules matching RAG chunks
     use_ml: Optional[bool] = Form(True),  # ML fallback when RAG returns nothing
-    use_llm: bool = Form(False),  # Local LLM explanation for violations (LFM2.5-1.2B-Instruct)
+    use_llm: bool = Form(True),  # Local LFM explanations for RAG violation blocks (core product path)
     llm_top_k: int = Form(2),  # limit number of violations explained by LLM
     llm_max_new_tokens: int = Form(200),  # cap tokens for faster inference
     save: bool = Form(False),
@@ -1682,8 +1844,8 @@ async def ocr_check_and_search(
                 boosted_query = build_rag_query(query, full_text, contract_tags)
 
                 ms = _rag_min_score()
-                rag_results = _rag_search_labor_corpus(boosted_query, top_k=8, min_score=ms)
-                rag_results = _filter_to_labor_only(rag_results)[:5]
+                rag_results = _rag_search_labor_corpus(boosted_query, top_k=10, min_score=ms)
+                rag_results = _filter_to_labor_only(_dedupe_rag_hits_by_metadata(rag_results))[:5]
 
         # ============================================================
         # 4.2) RAG by violations
@@ -1719,18 +1881,6 @@ async def ocr_check_and_search(
             q = " ".join([desc] + boosts + ([matched_short] if matched_short else []))
             return norm_ar(q)
 
-        def _dedupe_hits(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-            seen2 = set()
-            out: List[Dict[str, Any]] = []
-            for x in hits or []:
-                md = x.get("metadata") or {}
-                key = (md.get("law"), md.get("article"), md.get("id"), (x.get("text") or "")[:80])
-                if key in seen2:
-                    continue
-                seen2.add(key)
-                out.append(x)
-            return out
-
         if use_rag and labor_applicable and _rag_backend_ready():
             important = [h for h in rule_hits if (h.get("severity") in ["error", "high"])][:6]
             ms_v = _rag_min_score()
@@ -1739,8 +1889,9 @@ async def ocr_check_and_search(
                 qv = _mk_query_from_violation(vh)
                 qv_boosted = build_rag_query(qv, full_text, contract_tags)
 
-                hits_v = _rag_search_labor_corpus(qv_boosted, top_k=6, min_score=ms_v)
-                hits_v = _filter_to_labor_only(_dedupe_hits(hits_v))[:4]
+                hits_v = _rag_search_labor_corpus(qv_boosted, top_k=14, min_score=ms_v)
+                hits_v = _filter_to_labor_only(_dedupe_rag_hits_by_metadata(hits_v))
+                hits_v = _rag_prioritize_hits_for_rule_hit(hits_v, vh)[:4]
 
                 rag_by_violation.append({
                     "rule_id": vh.get("rule_id"),
@@ -1751,13 +1902,14 @@ async def ocr_check_and_search(
                 })
                 rag_global_hits.extend(hits_v)
 
-            rag_global_hits = _dedupe_hits(rag_global_hits)
+            rag_global_hits = _dedupe_rag_hits_by_metadata(rag_global_hits)
             rag_by_violation = _dedupe_rag_blocks_by_rule(rag_by_violation)
 
-        # ---------- Optional: Local LLM explanation per violation (explanation only, no decision) ----------
+        # ---------- Local LFM explanation per violation (explanation only, no decision) ----------
         _local_llm_ok = _local_llm_module is not None and getattr(_local_llm_module, "is_available", lambda: False)()
         _pkg_llm_ok = _llm_explain_violation is not None and _llm_is_available()
         _llm_available = _local_llm_ok or _pkg_llm_ok
+        _explain_lang = detect_language(full_text_rules) if (full_text_rules or "").strip() else "ar"
         if use_llm and _llm_available:
             top_k_llm = max(0, int(llm_top_k or 0))
             max_new = max(32, int(llm_max_new_tokens or 200))
@@ -1784,12 +1936,20 @@ async def ocr_check_and_search(
                             matched_text=matched or violation_desc,
                             law_articles=law_articles,
                             max_new_tokens=max_new,
+                            language=_explain_lang,
                         )
                     else:
                         expl = "[LLM not available]"
-                    block["llm_explanation"] = expl
+                    align, align_note = _llm_alignment_with_severity(expl, block.get("severity"))
+                    block["llm_severity_alignment"] = align
+                    if align == "conflict" and align_note:
+                        block["llm_severity_note"] = align_note
+                        block["llm_explanation"] = f"{align_note}\n\n{expl}"
+                    else:
+                        block["llm_explanation"] = expl
                 except Exception as e:
                     block["llm_explanation"] = f"[LLM error: {e!r}]"
+                    block["llm_severity_alignment"] = "unknown"
 
         # Dynamic law_scope_used
         law_scope_used: List[str] = []

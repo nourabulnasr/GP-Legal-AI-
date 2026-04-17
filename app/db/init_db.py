@@ -51,3 +51,25 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE analyses ADD COLUMN detected_lang VARCHAR;"))
     except Exception:
         pass
+
+    # Safe schema tweaks: add upload storage columns for profile_user_documents
+    try:
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(profile_user_documents);")).fetchall()
+            col_names = {c[1] for c in cols}
+            if "mime_type" not in col_names:
+                conn.execute(text("ALTER TABLE profile_user_documents ADD COLUMN mime_type VARCHAR;"))
+            if "file_bytes" not in col_names:
+                conn.execute(text("ALTER TABLE profile_user_documents ADD COLUMN file_bytes BLOB;"))
+    except Exception:
+        pass
+
+    # Safe schema tweak: add author_id to legato_deal_messages for multi-user threads
+    try:
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(legato_deal_messages);")).fetchall()
+            col_names = {c[1] for c in cols}
+            if "author_id" not in col_names:
+                conn.execute(text("ALTER TABLE legato_deal_messages ADD COLUMN author_id INTEGER;"))
+    except Exception:
+        pass

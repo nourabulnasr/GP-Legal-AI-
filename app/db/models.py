@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Integer, String, DateTime, Text, ForeignKey
+from sqlalchemy import Integer, String, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .session import Base
@@ -37,3 +37,152 @@ class Analysis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User", back_populates="analyses")
+
+
+class LegatoShare(Base):
+    __tablename__ = "legato_shares"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class LegatoDealThread(Base):
+    __tablename__ = "legato_deal_threads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LegatoDealMessage(Base):
+    __tablename__ = "legato_deal_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    thread_id: Mapped[int] = mapped_column(Integer, ForeignKey("legato_deal_threads.id"), index=True, nullable=False)
+    author_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LegatoTimelineEvent(Base):
+    __tablename__ = "legato_timeline_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    label: Mapped[str] = mapped_column(String(512), nullable=False)
+    event_date: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), default="manual", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LegatoProfile(Base):
+    __tablename__ = "legato_profiles"
+
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON object as string
+
+
+class LegatoSignature(Base):
+    __tablename__ = "legato_signatures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    signer_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    consent_acknowledged: Mapped[bool] = mapped_column(default=False, nullable=False)
+    signature_png_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# --- Professional networking (feed, network, profile extensions) ---
+
+
+class SocialPost(Base):
+    __tablename__ = "social_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    tags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="All Updates", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SocialPostLike(Base):
+    __tablename__ = "social_post_likes"
+    __table_args__ = (UniqueConstraint("post_id", "user_id", name="uq_social_post_like_user"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    post_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_posts.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SocialPostComment(Base):
+    __tablename__ = "social_post_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    post_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_posts.id"), index=True, nullable=False)
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SocialPostShare(Base):
+    __tablename__ = "social_post_shares"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    post_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_posts.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class NetworkInvite(Base):
+    __tablename__ = "network_invites"
+    __table_args__ = (UniqueConstraint("requester_id", "addressee_id", name="uq_network_invite_pair"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    requester_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    addressee_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SkillEndorsement(Base):
+    __tablename__ = "skill_endorsements"
+    __table_args__ = (UniqueConstraint("endorser_id", "recipient_id", "skill", name="uq_skill_endorse_triple"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    endorser_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    recipient_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    skill: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProfileRecommendation(Base):
+    __tablename__ = "profile_recommendations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    recipient_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ProfileUserDocument(Base):
+    __tablename__ = "profile_user_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_url: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    file_bytes: Mapped[bytes | None] = mapped_column(nullable=True)  # SQLite BLOB
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
