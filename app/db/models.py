@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import Integer, String, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,11 +30,11 @@ class Analysis(Base):
     result_json: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Optional document metadata (helps defense + admin queries; safe to be null)
-    mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
-    sha256: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
-    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ocr_used: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0/1
-    detected_lang: Mapped[str | None] = mapped_column(String, nullable=True)
+    mime_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    sha256: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ocr_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 0/1
+    detected_lang: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User", back_populates="analyses")
@@ -47,7 +48,7 @@ class LegatoShare(Base):
     analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class LegatoDealThread(Base):
@@ -56,7 +57,7 @@ class LegatoDealThread(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -65,7 +66,7 @@ class LegatoDealMessage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     thread_id: Mapped[int] = mapped_column(Integer, ForeignKey("legato_deal_threads.id"), index=True, nullable=False)
-    author_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    author_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -97,7 +98,7 @@ class LegatoSignature(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     signer_name: Mapped[str] = mapped_column(String(256), nullable=False)
     consent_acknowledged: Mapped[bool] = mapped_column(default=False, nullable=False)
-    signature_png_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    signature_png_base64: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -183,6 +184,6 @@ class ProfileUserDocument(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     file_url: Mapped[str] = mapped_column(Text, nullable=False)
-    mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
-    file_bytes: Mapped[bytes | None] = mapped_column(nullable=True)  # SQLite BLOB
+    mime_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    file_bytes: Mapped[Optional[bytes]] = mapped_column(nullable=True)  # SQLite BLOB
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

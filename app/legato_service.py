@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.db.models import Analysis, User
-from app.utils_text import detect_language, norm_ar
+from app.utils_text import detect_language, llm_locale_from_detection, norm_ar
 
 # Small LRU for identical explain requests (demo path perf; no DB snapshot in key).
 _EXPLAIN_CACHE: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
@@ -84,7 +84,7 @@ def run_explain_clause(
 
     lang = (language or "").strip().lower() if language else ""
     if lang not in ("ar", "en"):
-        lang = detect_language(text)
+        lang = llm_locale_from_detection(detect_language(text))
 
     if analysis_id is None and len(text) <= 6000:
         ck = hashlib.sha256(
@@ -231,7 +231,11 @@ def summarize_clauses_llm(
         raise RuntimeError("local_llm.generate missing")
 
     out: List[Dict[str, Any]] = []
-    lang = language if language in ("ar", "en") else "ar"
+    lang = (
+        language
+        if language in ("ar", "en")
+        else llm_locale_from_detection(detect_language((clauses[0] or "")[:4000] if clauses else ""))
+    )
     for i, c in enumerate(clauses):
         c = (c or "").strip()
         if not c:
@@ -254,7 +258,11 @@ def compare_contracts_llm(text_a: str, text_b: str, language: str) -> str:
     if not gen:
         raise RuntimeError("local_llm.generate missing")
 
-    lang = language if language in ("ar", "en") else "ar"
+    lang = (
+        language
+        if language in ("ar", "en")
+        else llm_locale_from_detection(detect_language((text_a or "") + "\n\n" + (text_b or ""))[:8000])
+    )
     ta = (text_a or "")[:8000]
     tb = (text_b or "")[:8000]
     if lang == "ar":

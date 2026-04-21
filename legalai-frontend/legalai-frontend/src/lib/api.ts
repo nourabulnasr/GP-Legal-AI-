@@ -38,6 +38,12 @@ export async function analyzeContract(
     llmMaxNewTokens?: number;
     save?: boolean;
     query?: string;
+    translateToAr?: boolean;
+    /** When true, each OCR page uses its own detected language for MT (best for mixed-language PDFs). */
+    translatePerChunkMt?: boolean;
+    /** OCR + detect + optional MT only; skips Egyptian labor rules, ML, RAG, LLM */
+    translationOnly?: boolean;
+    sourceLanguageOverride?: string;
   }
 ) {
   const form = new FormData();
@@ -49,6 +55,11 @@ export async function analyzeContract(
   if (options?.llmMaxNewTokens != null) form.append("llm_max_new_tokens", String(options.llmMaxNewTokens));
   form.append("save", String(options?.save ?? true));
   if (options?.query) form.append("query", options.query);
+  form.append("translate_to_ar", String(options?.translateToAr ?? false));
+  form.append("translate_per_chunk_mt", String(options?.translatePerChunkMt ?? false));
+  form.append("translation_only", String(options?.translationOnly ?? false));
+  if (options?.sourceLanguageOverride?.trim())
+    form.append("source_language_override", options.sourceLanguageOverride.trim());
 
   const { data } = await api.post("/ocr_check_and_search", form, {
     headers: { "Content-Type": "multipart/form-data" },
