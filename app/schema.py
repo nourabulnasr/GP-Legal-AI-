@@ -8,6 +8,7 @@ class HealthResponse(BaseModel):
 
 class OCRResponse(BaseModel):
     text: str
+    needs_review: bool = False
 
 class ClauseCheckRequest(BaseModel):
     clause_text: str = Field(..., description="Raw clause text to analyze")

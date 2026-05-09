@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
@@ -57,31 +57,85 @@ def _title_company(prof: Dict[str, Any]) -> str:
     return t or c or "Legal professional"
 
 
+def _batch_post_stats(
+    db: Session,
+    post_ids: List[int],
+    viewer_id: int,
+) -> tuple:
+    """Return (likes_counts, comments_counts, shares_counts, viewer_liked_set) for a list of post IDs.
+    4 queries total regardless of feed size."""
+    if not post_ids:
+        return {}, {}, {}, set()
+    likes_counts = {
+        row.post_id: row.cnt
+        for row in db.query(SocialPostLike.post_id, func.count(SocialPostLike.id).label("cnt"))
+        .filter(SocialPostLike.post_id.in_(post_ids))
+        .group_by(SocialPostLike.post_id)
+        .all()
+    }
+    comments_counts = {
+        row.post_id: row.cnt
+        for row in db.query(SocialPostComment.post_id, func.count(SocialPostComment.id).label("cnt"))
+        .filter(SocialPostComment.post_id.in_(post_ids))
+        .group_by(SocialPostComment.post_id)
+        .all()
+    }
+    shares_counts = {
+        row.post_id: row.cnt
+        for row in db.query(SocialPostShare.post_id, func.count(SocialPostShare.id).label("cnt"))
+        .filter(SocialPostShare.post_id.in_(post_ids))
+        .group_by(SocialPostShare.post_id)
+        .all()
+    }
+    viewer_liked = {
+        row.post_id
+        for row in db.query(SocialPostLike.post_id)
+        .filter(SocialPostLike.post_id.in_(post_ids), SocialPostLike.user_id == viewer_id)
+        .all()
+    }
+    return likes_counts, comments_counts, shares_counts, viewer_liked
+
+
 def _serialize_post(
     post: SocialPost,
     db: Session,
     viewer_id: int,
+    *,
+    authors_map: Optional[Dict[int, User]] = None,
+    profiles_map: Optional[Dict[int, Dict[str, Any]]] = None,
+    likes_counts: Optional[Dict[int, int]] = None,
+    comments_counts: Optional[Dict[int, int]] = None,
+    shares_counts: Optional[Dict[int, int]] = None,
+    viewer_liked: Optional[set] = None,
 ) -> Dict[str, Any]:
-    author = db.query(User).filter(User.id == post.author_id).first()
+    # Use pre-fetched data when available (batch path), else fall back to single queries.
+    if authors_map is not None:
+        author = authors_map.get(post.author_id)
+    else:
+        author = db.query(User).filter(User.id == post.author_id).first()
     if not author:
         raise HTTPException(status_code=500, detail="Post author missing")
-    prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == post.author_id).first()
-    prof = _parse_profile_row(prow)
+
+    if profiles_map is not None:
+        prof = profiles_map.get(post.author_id, {})
+    else:
+        prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == post.author_id).first()
+        prof = _parse_profile_row(prow)
+
     try:
         tags = json.loads(post.tags_json or "[]")
         if not isinstance(tags, list):
             tags = []
     except Exception:
         tags = []
-    likes_count = db.query(SocialPostLike).filter(SocialPostLike.post_id == post.id).count()
-    comments_count = db.query(SocialPostComment).filter(SocialPostComment.post_id == post.id).count()
-    shares_count = db.query(SocialPostShare).filter(SocialPostShare.post_id == post.id).count()
-    liked = (
-        db.query(SocialPostLike)
-        .filter(SocialPostLike.post_id == post.id, SocialPostLike.user_id == viewer_id)
-        .first()
-        is not None
+
+    lc = likes_counts.get(post.id, 0) if likes_counts is not None else db.query(SocialPostLike).filter(SocialPostLike.post_id == post.id).count()
+    cc = comments_counts.get(post.id, 0) if comments_counts is not None else db.query(SocialPostComment).filter(SocialPostComment.post_id == post.id).count()
+    sc = shares_counts.get(post.id, 0) if shares_counts is not None else db.query(SocialPostShare).filter(SocialPostShare.post_id == post.id).count()
+    liked = (post.id in viewer_liked) if viewer_liked is not None else (
+        db.query(SocialPostLike).filter(SocialPostLike.post_id == post.id, SocialPostLike.user_id == viewer_id).first() is not None
     )
+
     return {
         "id": post.id,
         "author_id": post.author_id,
@@ -91,9 +145,9 @@ def _serialize_post(
         "tags": tags,
         "category": post.category,
         "created_at": post.created_at.isoformat() + "Z",
-        "likes_count": likes_count,
-        "comments_count": comments_count,
-        "shares_count": shares_count,
+        "likes_count": lc,
+        "comments_count": cc,
+        "shares_count": sc,
         "liked": liked,
     }
 
@@ -125,8 +179,32 @@ def list_posts(
         .limit(page_size)
         .all()
     )
+
+    # Batch-fetch all authors, profiles, and interaction counts in 6 queries total.
+    post_ids = [p.id for p in rows]
+    author_ids = list({p.author_id for p in rows})
+    authors_map = {u.id: u for u in db.query(User).filter(User.id.in_(author_ids)).all()}
+    profiles_map = {
+        pr.user_id: _parse_profile_row(pr)
+        for pr in db.query(LegatoProfile).filter(LegatoProfile.user_id.in_(author_ids)).all()
+    }
+    likes_counts, comments_counts, shares_counts, viewer_liked = _batch_post_stats(
+        db, post_ids, current_user.id
+    )
+
     return {
-        "items": [_serialize_post(p, db, current_user.id) for p in rows],
+        "items": [
+            _serialize_post(
+                p, db, current_user.id,
+                authors_map=authors_map,
+                profiles_map=profiles_map,
+                likes_counts=likes_counts,
+                comments_counts=comments_counts,
+                shares_counts=shares_counts,
+                viewer_liked=viewer_liked,
+            )
+            for p in rows
+        ],
         "page": page,
         "page_size": page_size,
         "total": total,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Integer, String, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .session import Base
@@ -34,6 +34,8 @@ class Analysis(Base):
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ocr_used: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0/1
     detected_lang: Mapped[str | None] = mapped_column(String, nullable=True)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    lawyer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User", back_populates="analyses")

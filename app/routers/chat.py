@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -50,6 +51,37 @@ def _get_gemini_client():
         return None
 
 
+def _gemini_generate(client_or_legacy, prompt: str, max_retries: int = 3, delay: float = 2.0) -> str:
+    """Call Gemini with exponential-backoff retry on 429 / quota errors. Returns response text."""
+    last_exc: Optional[Exception] = None
+    for attempt in range(max_retries):
+        try:
+            if isinstance(client_or_legacy, tuple) and client_or_legacy[0] == "legacy":
+                _, model = client_or_legacy
+                response = model.generate_content(prompt)
+                return response.text if hasattr(response, "text") else str(response)
+            else:
+                response = client_or_legacy.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt,
+                )
+                content = getattr(response, "text", None)
+                if not content and getattr(response, "candidates", None) and len(response.candidates):
+                    c = response.candidates[0]
+                    if getattr(c, "content", None) and getattr(c.content, "parts", None) and len(c.content.parts):
+                        content = getattr(c.content.parts[0], "text", None)
+                return content or str(response)
+        except Exception as e:
+            last_exc = e
+            err_str = str(e).lower()
+            is_quota = "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str or "rate limit" in err_str
+            if is_quota and attempt < max_retries - 1:
+                time.sleep(delay * (attempt + 1))
+                continue
+            raise
+    raise last_exc  # type: ignore[misc]
+
+
 class ChatMessage(BaseModel):
     role: str = Field(..., description="user or assistant")
     content: str = Field(..., description="Message content")
@@ -86,6 +118,7 @@ class DocumentChatRequest(BaseModel):
 
 class DocumentChatResponse(BaseModel):
     content: str
+    used_fallback: bool = False
 
 
 def _build_context(result: Dict[str, Any]) -> str:
@@ -148,24 +181,10 @@ def chat_assistant(
             history_str += f"{role}: {m.content}\n"
     full_prompt = f"{system_prompt}\n\n{history_str}User: {payload.message}\n\nAssistant:"
     try:
-        if isinstance(client_or_legacy, tuple) and client_or_legacy[0] == "legacy":
-            _, model = client_or_legacy
-            response = model.generate_content(full_prompt)
-            content = response.text if hasattr(response, "text") else str(response)
-        else:
-            response = client_or_legacy.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=full_prompt,
-            )
-            content = getattr(response, "text", None)
-            if not content and getattr(response, "candidates", None) and len(response.candidates):
-                c = response.candidates[0]
-                if getattr(c, "content", None) and getattr(c.content, "parts", None) and len(c.content.parts):
-                    content = getattr(c.content.parts[0], "text", None)
-            content = content or str(response)
+        content = _gemini_generate(client_or_legacy, full_prompt)
     except Exception as e:
         err_str = str(e).lower()
-        if "429" in err_str or "resource_exhausted" in err_str or ("resource" in err_str and "exhausted" in err_str) or "quota" in err_str or "rate limit" in err_str:
+        if "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str or "rate limit" in err_str:
             content = "The AI chat has reached its usage limit for now. Please try again in a few minutes, or check your API plan and billing."
         else:
             content = "Sorry, the chat request failed. Please try again."
@@ -209,30 +228,16 @@ Be concise. Cite sections or rule IDs when relevant. If the answer is not in the
     full_prompt = f"{system_prompt}\n\nUser: {payload.message}\n\nAssistant:"
 
     try:
-        if isinstance(client_or_legacy, tuple) and client_or_legacy[0] == "legacy":
-            _, model = client_or_legacy
-            response = model.generate_content(full_prompt)
-            content = response.text if hasattr(response, "text") else str(response)
-        else:
-            response = client_or_legacy.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=full_prompt,
-            )
-            content = getattr(response, "text", None)
-            if not content and getattr(response, "candidates", None) and len(response.candidates):
-                c = response.candidates[0]
-                if getattr(c, "content", None) and getattr(c.content, "parts", None) and len(c.content.parts):
-                    content = getattr(c.content.parts[0], "text", None)
-            content = content or str(response)
+        content = _gemini_generate(client_or_legacy, full_prompt)
     except Exception as e:
         err_str = str(e).lower()
-        if "429" in err_str or "resource_exhausted" in err_str or ("resource" in err_str and "exhausted" in err_str) or "quota" in err_str or "rate limit" in err_str:
+        if "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str or "rate limit" in err_str:
             content = (
                 "The AI chat has reached its usage limit for now. "
                 "Please try again in a few minutes, or check your API plan and billing."
             )
         else:
-            content = f"Sorry, the chat request failed. Please try again."
+            content = "Sorry, the chat request failed. Please try again."
     return ChatResponse(content=content, analysis_id=payload.analysis_id)
 
 
@@ -368,21 +373,7 @@ Use prior conversation only to resolve follow-up questions; do not invent facts 
 {ctx}"""
     full_prompt = f"{system_prompt}\n\nUser: {message}\n\nAssistant:"
     try:
-        if isinstance(client_or_legacy, tuple) and client_or_legacy[0] == "legacy":
-            _, model = client_or_legacy
-            response = model.generate_content(full_prompt)
-            out = response.text if hasattr(response, "text") else str(response)
-        else:
-            response = client_or_legacy.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=full_prompt,
-            )
-            out = getattr(response, "text", None)
-            if not out and getattr(response, "candidates", None) and len(response.candidates):
-                c = response.candidates[0]
-                if getattr(c, "content", None) and getattr(c.content, "parts", None) and len(c.content.parts):
-                    out = getattr(c.content.parts[0], "text", None)
-            out = out or str(response)
+        out = _gemini_generate(client_or_legacy, full_prompt)
         return (out or "").strip()
     except Exception as e:
         err_str = str(e).lower()
@@ -439,6 +430,7 @@ def chat_document(
     if not context or not (context or "").strip():
         raise HTTPException(status_code=400, detail="Provide document_context or analysis_id")
 
+    used_fallback = False
     content = _get_lfm_document_reply(context, payload.message, history=payload.history)
     if _local_document_failed(content):
         allow_gemini = os.getenv("DOCUMENT_CHAT_GEMINI_FALLBACK", "1").strip().lower() in {
@@ -451,6 +443,7 @@ def chat_document(
             gemini_reply = _get_gemini_document_reply(context, payload.message, history=payload.history)
             if gemini_reply:
                 content = gemini_reply
+                used_fallback = True
             else:
                 detail = (
                     content.strip("[]")
@@ -459,4 +452,4 @@ def chat_document(
                 raise HTTPException(status_code=503, detail=detail)
         else:
             raise HTTPException(status_code=503, detail=content.strip("[]"))
-    return DocumentChatResponse(content=content)
+    return DocumentChatResponse(content=content, used_fallback=used_fallback)

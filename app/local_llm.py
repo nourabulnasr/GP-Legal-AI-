@@ -103,14 +103,13 @@ def load_model():
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-
     _tokenizer = AutoTokenizer.from_pretrained(path_str, local_files_only=True, trust_remote_code=True)
     _model = AutoModelForCausalLM.from_pretrained(
         path_str,
         local_files_only=True,
-        device_map="auto" if torch.cuda.is_available() else None,
-        torch_dtype=torch_dtype,
+        torch_dtype=torch.float16,
+        low_cpu_mem_usage=True,
+        device_map="cpu",
         trust_remote_code=True,
     )
     if _model.device.type == "cpu":

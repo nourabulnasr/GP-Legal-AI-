@@ -8,7 +8,7 @@ _cwd_env = Path(os.getcwd()) / ".env"
 try:
     from dotenv import load_dotenv
     if _env_path.exists():
-        load_dotenv(_env_path)
+        load_dotenv(_env_path, override=True)
     if _cwd_env.exists() and str(_cwd_env) != str(_env_path):
         load_dotenv(_cwd_env, override=False)
     if not _env_path.exists() and _cwd_env.exists():
@@ -29,11 +29,6 @@ import json
 import hashlib
 import unicodedata
 import threading
-
-def _normalize_contract_text(text: str) -> str:
-    text = unicodedata.normalize("NFKC", text or "")
-    # ... باقي النورمالايز عندك زي ما هو (تشيل تشكيل/تطويل/مسافات..)
-    return text
 
 try:
     import fitz  # PyMuPDF
@@ -405,7 +400,9 @@ app = api  # alias for uvicorn
 # ============================================================
 # CORS — allow frontend (e.g. localhost:5173) to call the API
 # ============================================================
-CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+CORS_ORIGINS = os.getenv(
+    "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+).split(",")
 api.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -1204,6 +1201,21 @@ def startup():
             )
             _startup_report_done = True
 
+    # LFM warmup: load the 2.2 GB model in a background thread so the first
+    # explain-clause / summarize / compare request doesn't block for 30-120 s.
+    if os.getenv("WARMUP_LFM_AT_STARTUP", "0").strip() == "1":
+        def _lfm_warmup():
+            try:
+                from app.local_llm import load_model
+                print("[Startup] LFM warmup: loading model in background thread...")
+                load_model()
+                print("[Startup] LFM warmup: model loaded and ready.")
+            except Exception as e:
+                print("[WARN] LFM warmup failed:", repr(e))
+        threading.Thread(target=_lfm_warmup, daemon=True, name="lfm-warmup").start()
+    else:
+        print("[INFO] LFM warmup skipped (set WARMUP_LFM_AT_STARTUP=1 to preload on startup).")
+
     try:
         from .law_update_service import start_background_poller
 
@@ -1985,6 +1997,11 @@ async def ocr_check_and_search(
             "cross_border_detector": cb,
             "labor_applicability": labor_appx,
             "rag_disabled_reason": rag_disabled_reason,
+
+            # Flag for lawyer review: any rule hit with severity "error" warrants human review
+            "needs_review": any(
+                (h.get("severity") or "").lower() == "error" for h in rule_hits
+            ),
 
             # Non-breaking ML metadata
             "ml_used": ml_used,

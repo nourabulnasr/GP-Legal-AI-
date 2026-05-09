@@ -4,7 +4,7 @@
   scope: "labor"
   law: "قانون العمل رقم 14 لسنة 2025"
   article: "1"
-  severity: "high"
+  severity: "info"
   description: "يجب أن يتضمن عقد العمل بيانات صاحب العمل (الاسم/العنوان/مقر ممارسة النشاط)."
   rationale: "بيانات صاحب العمل جزء أساسي من تكوين عقد العمل وتحديد المسؤوليات."
   match:
@@ -32,7 +32,7 @@
 - id: LABOR25_EMPLOYEE_INFO
   scope: "labor"
   law: "قانون العمل رقم 14 لسنة 2025"
-  severity: "high"
+  severity: "info"
   description: "يجب ذكر بيانات العامل (الاسم/المهنة/الرقم القومي أو التأمين/محل الإقامة)."
   rationale: "الهوية الواضحة للعامل ضرورية لحماية الحقوق."
   match:

@@ -10,6 +10,7 @@ from app.schemas.analyses import (
     AnalysisResponse,
     AnalysisDetailResponse,
     AdminUpdateRoleRequest,
+    FlagRequest,
 )
 from app.core.deps import get_current_user, require_admin  # ✅ IMPORTANT
 
@@ -143,6 +144,35 @@ def admin_update_user_role(
     db.commit()
     db.refresh(target)
     return {"id": target.id, "email": target.email, "role": target.role}
+
+
+@router.patch("/{analysis_id}/flag")
+def flag_analysis(
+    analysis_id: int,
+    payload: FlagRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Flag an analysis for lawyer review, or clear the flag. Owner or admin only."""
+    a = db.query(Analysis).filter(Analysis.id == analysis_id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    is_admin = (getattr(current_user, "role", "user") or "").lower() == "admin"
+    if a.user_id != current_user.id and not is_admin:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    a.needs_review = payload.needs_review
+    if payload.lawyer_note is not None:
+        a.lawyer_note = payload.lawyer_note
+    db.add(a)
+    db.commit()
+    db.refresh(a)
+    return {
+        "id": a.id,
+        "needs_review": a.needs_review,
+        "lawyer_note": a.lawyer_note,
+    }
 
 
 @router.delete("/{analysis_id}")

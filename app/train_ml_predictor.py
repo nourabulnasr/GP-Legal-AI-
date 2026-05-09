@@ -1,25 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Train ML predictor for LegalAI using weak labels from the rule engine.
-
-Goal:
-- Build a multi-label classifier that predicts *rule_id* directly (violation / clause IDs)
-- Use the existing YAML rules in /rules (labor_mandatory.yaml, labor_cross_border.yaml, etc.)
-- Generate labels by running RuleEngine.check_text() on each contract text (silver labels)
-- Save artifacts to: app/ml/artifacts/
-    - vectorizer.joblib
-    - model.joblib
-    - mlb.joblib
-    - thresholds.json
-    - metrics.json
-
-Run (from project root inside Docker or venv):
-    python -m app.train_ml_predictor
-
-Or:
-    python app/train_ml_predictor.py
-"""
-
 from __future__ import annotations
 
 import json
@@ -43,17 +21,8 @@ from app.rules import RuleEngine
 from app.utils_text import normalize_for_rules
 
 
-# -----------------------------
-# Text extraction helpers
-# -----------------------------
-def _extract_text_from_pdf(pdf_path: Path) -> str:
-    """Best-effort PDF text extraction.
 
-    1) Try PyMuPDF (fitz) if available.
-    2) Fallback to pypdf (pure Python) if installed.
-    3) Otherwise, return empty string (training will continue).
-    """
-    # --- 1) PyMuPDF ---
+def _extract_text_from_pdf(pdf_path: Path) -> str:
     try:
         import fitz  # PyMuPDF
     except Exception:
@@ -79,7 +48,7 @@ def _extract_text_from_pdf(pdf_path: Path) -> str:
                 pass
             return "\n".join(text_parts).strip()
 
-    # --- 2) pypdf fallback ---
+    
     try:
         from pypdf import PdfReader  # type: ignore
     except Exception:
@@ -100,7 +69,7 @@ def _extract_text_from_pdf(pdf_path: Path) -> str:
         except Exception:
             return ""
 
-    # --- 3) No PDF extractor available ---
+    # No PDF extractor available 
     print(f"[WARN] PDF extractor unavailable; skipping: {pdf_path.name}")
     return ""
 
@@ -138,9 +107,7 @@ def extract_text(file_path: Path) -> str:
     return ""
 
 
-# -----------------------------
-# Label generation
-# -----------------------------
+
 def build_silver_labels(
     rule_engine: RuleEngine,
     text_norm: str,
@@ -159,9 +126,7 @@ def build_silver_labels(
     return labels
 
 
-# -----------------------------
-# Threshold tuning
-# -----------------------------
+
 def tune_thresholds(
     y_true: np.ndarray,
     y_score: np.ndarray,
@@ -197,9 +162,7 @@ def tune_thresholds(
     return thresholds
 
 
-# -----------------------------
-# Main training
-# -----------------------------
+
 def main() -> None:
     # Layout: this file is in app/, so project root is parent of app/
     app_dir = Path(__file__).resolve().parent

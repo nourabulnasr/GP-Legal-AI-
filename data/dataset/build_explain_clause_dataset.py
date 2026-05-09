@@ -122,7 +122,7 @@ def _law_articles_for_rule(
 
 
 def _tokenize_query_ar(s: str) -> List[str]:
-    # Very lightweight tokenization; good enough for keyword overlap fallback.
+
     s = (s or "").replace("\u200f", " ").replace("\u200e", " ")
     for ch in "،؛:.!?()[]{}\"'“”«»/\\|*_-–—\n\r\t":
         s = s.replace(ch, " ")

@@ -149,7 +149,7 @@ class NegotiationBody(BaseModel):
 
 
 def _negotiation_gemini(context: str, message: str, history: Optional[List[Dict[str, Any]]]) -> str:
-    from app.routers.chat import _get_gemini_client, GEMINI_MODEL
+    from app.routers.chat import _get_gemini_client, _gemini_generate
 
     client_or_legacy = _get_gemini_client()
     if not client_or_legacy:
@@ -166,17 +166,7 @@ def _negotiation_gemini(context: str, message: str, history: Optional[List[Dict[
             hist += f"{role}: {m.get('content', '')}\n"
     full_prompt = f"{sys}\n\n{hist}User: {message}\n\nAssistant:"
     try:
-        if isinstance(client_or_legacy, tuple) and client_or_legacy[0] == "legacy":
-            _, model = client_or_legacy
-            response = model.generate_content(full_prompt)
-            return (response.text if hasattr(response, "text") else str(response)) or ""
-        response = client_or_legacy.models.generate_content(model=GEMINI_MODEL, contents=full_prompt)
-        out = getattr(response, "text", None)
-        if not out and getattr(response, "candidates", None):
-            c = response.candidates[0]
-            if getattr(c, "content", None) and getattr(c.content, "parts", None):
-                out = getattr(c.content.parts[0], "text", None)
-        return (out or str(response)).strip()
+        return _gemini_generate(client_or_legacy, full_prompt)
     except Exception as e:
         return f"[Negotiation chat error: {e!r}]"
 
@@ -204,7 +194,7 @@ def negotiation_chat(
         context = _build_context(result)
 
     content = _negotiation_gemini(context, body.message, body.history)
-    if not content:
+    if not content or content.startswith("[Negotiation chat error:"):
         # Fallback: short LFM reply
         try:
             from app import local_llm as llm

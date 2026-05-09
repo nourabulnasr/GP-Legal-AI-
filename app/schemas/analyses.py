@@ -29,3 +29,8 @@ class AnalysisDetailResponse(AnalysisResponse):
 
 class AdminUpdateRoleRequest(BaseModel):
     role: str = Field(..., description="Must be 'admin' or 'user'")
+
+
+class FlagRequest(BaseModel):
+    needs_review: bool = Field(..., description="True = flag for lawyer review; False = clear flag")
+    lawyer_note: str | None = Field(default=None, description="Optional note from reviewer")
