@@ -401,7 +401,8 @@ app = api  # alias for uvicorn
 # CORS — allow frontend (e.g. localhost:5173) to call the API
 # ============================================================
 CORS_ORIGINS = os.getenv(
-    "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,https://nourabulnasr-legato.hf.space",
 ).split(",")
 api.add_middleware(
     CORSMiddleware,
