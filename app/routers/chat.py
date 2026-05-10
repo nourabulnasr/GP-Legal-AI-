@@ -122,7 +122,7 @@ class DocumentChatResponse(BaseModel):
 
 
 def _build_context(result: Dict[str, Any]) -> str:
-    """Build context string from analysis result_json."""
+    """Build readable context for LFM — plain text only, no raw JSON blobs."""
     parts: List[str] = []
 
     ocr_chunks = result.get("ocr_chunks") or []
@@ -133,29 +133,36 @@ def _build_context(result: Dict[str, Any]) -> str:
             if c.get("normalized_text") or c.get("text")
         )
         if ocr_text:
-            parts.append("## Contract OCR Text\n" + ocr_text[:15000])
+            parts.append("## نص العقد\n" + ocr_text[:10000])
 
     rule_hits = result.get("rule_hits") or []
     if rule_hits:
-        hits_sum = []
-        for h in rule_hits[:50]:
-            rid = h.get("rule_id") or h.get("id")
-            sev = h.get("severity")
-            desc = h.get("description")
-            hits_sum.append(f"- [{sev}] {rid}: {desc}")
-        parts.append("## Analysis Violations / Rule Hits\n" + "\n".join(hits_sum))
+        hits_lines = []
+        for h in rule_hits[:20]:
+            rid = h.get("rule_id") or h.get("id") or "?"
+            sev = h.get("severity") or "?"
+            desc = h.get("description") or ""
+            hits_lines.append(f"- [{sev}] {rid}: {desc}")
+        parts.append("## المخالفات المكتشفة\n" + "\n".join(hits_lines))
 
     labor = result.get("labor_summary") or {}
     if isinstance(labor, dict):
-        labor_str = json.dumps(labor, ensure_ascii=False)[:2000]
-        parts.append("## Labor Summary\n" + labor_str)
+        labor_lines: List[str] = []
+        violations_detected = labor.get("violations_detected")
+        if violations_detected is not None:
+            labor_lines.append(f"مخالفات مكتشفة: {'نعم' if violations_detected else 'لا'}")
+        risk = labor.get("risk_level") or labor.get("risk") or ""
+        if risk:
+            labor_lines.append(f"مستوى المخاطرة: {risk}")
+        if labor_lines:
+            parts.append("## ملخص قانون العمل\n" + "\n".join(labor_lines))
 
     cb = result.get("cross_border_summary") or {}
-    if isinstance(cb, dict):
-        cb_str = json.dumps(cb, ensure_ascii=False)[:1000]
-        parts.append("## Cross-Border Summary\n" + cb_str)
+    if isinstance(cb, dict) and cb.get("is_cross_border"):
+        jur = cb.get("jurisdiction") or cb.get("country") or ""
+        parts.append(f"## ملاحظة: عقد عابر للحدود\nالاختصاص القضائي: {jur}")
 
-    return "\n\n".join(parts) if parts else "No analysis context available."
+    return "\n\n".join(parts) if parts else "لا يوجد سياق متاح."
 
 
 @router.post("/assistant", response_model=AssistantChatResponse)
@@ -296,7 +303,7 @@ def _get_lfm_document_reply(
     message: str,
     *,
     history: Optional[List[ChatMessage]] = None,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 256,
 ) -> str:
     """Call local LFM (app/local_llm first, then llm/generate) for document Q&A."""
     context = (document_context or "").strip()

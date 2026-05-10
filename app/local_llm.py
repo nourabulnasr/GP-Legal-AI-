@@ -107,7 +107,7 @@ def load_model():
     _model = AutoModelForCausalLM.from_pretrained(
         path_str,
         local_files_only=True,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float32,
         low_cpu_mem_usage=True,
         device_map="cpu",
         trust_remote_code=True,
@@ -157,6 +157,7 @@ def generate(
         text = text.split(prompt_clean)[-1].strip()
     # Fallback: strip by last instruction line so we don't show prompt
     for sentinel in (
+        "الجواب:",
         "الشرح والتصحيح المقترح (بناءً على النصوص أعلاه فقط):",
         "explanation and suggested correction (based only on the texts above):",
         "الشرح والتصحيح",
