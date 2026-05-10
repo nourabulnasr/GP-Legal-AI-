@@ -27,6 +27,7 @@ from typing import Any, List, Dict, Optional, Generator
 import io
 import json
 import hashlib
+import re as _re
 import unicodedata
 import threading
 
@@ -404,9 +405,14 @@ CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173,https://nourabulnasr-legato.hf.space",
 ).split(",")
+
+# Matches any localhost/127.0.0.1 port — covers Flutter Web dev on random ports
+_LOCALHOST_RE = _re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+
 api.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -416,7 +422,7 @@ api.add_middleware(
 def _cors_headers(request: Request) -> dict:
     """Return CORS headers using request origin if allowed, else first allowed origin."""
     origin = request.headers.get("origin", "").strip()
-    if origin not in CORS_ORIGINS:
+    if origin not in CORS_ORIGINS and not _LOCALHOST_RE.match(origin):
         origin = CORS_ORIGINS[0]
     return {
         "Access-Control-Allow-Origin": origin,
