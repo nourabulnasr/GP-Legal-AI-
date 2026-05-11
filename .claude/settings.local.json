@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(not exist *)",
+      "PowerShell(New-Item *)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Head *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter build *)",
+      "Bash(flutter pub *)",
+      "Bash(grep -E \"^error|^Error|lib\\\\\\\\\\\\\\\\|lib/\")",
+      "Bash(Remove-Item -Recurse -Force \"C:\\\\dev\\\\legato_mobile1\\\\.dart_tool\\\\flutter_build\" -ErrorAction SilentlyContinue)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
