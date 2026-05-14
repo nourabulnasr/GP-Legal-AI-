@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -135,7 +135,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: LegatoLinkedInTheme.background,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
         child: RefreshIndicator(
           onRefresh: _load,
@@ -280,7 +280,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
         minChildSize: 0.5,
         maxChildSize: 0.95,
         builder: (ctx, scrollCtrl) => Material(
-          color: LegatoLinkedInTheme.background,
+          color: Theme.of(context).scaffoldBackgroundColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           child: ListView(
             controller: scrollCtrl,
@@ -292,7 +292,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: LegatoLinkedInTheme.textSecondary.withValues(alpha: 0.4),
+                    color: LegatoLinkedInTheme.textSecondaryAdaptive(context).withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -387,7 +387,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
     showModalBottomSheet<void>(
       context: context,
       builder: (ctx) => Material(
-        color: LegatoLinkedInTheme.background,
+        color: Theme.of(context).scaffoldBackgroundColor,
         child: SafeArea(
           child: ListView(
             children: [
@@ -472,7 +472,7 @@ class _StatsGrid extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
-            Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary)),
+            Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
           ],
         ),
       ),

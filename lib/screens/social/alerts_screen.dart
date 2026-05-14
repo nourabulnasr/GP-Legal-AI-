@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -80,7 +80,6 @@ class _AlertsScreenState extends State<AlertsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('Alerts')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -98,7 +97,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                   if (_invites.isEmpty)
                     Text(
                       'No pending invitations.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                     )
                   else
                     ..._invites.map((raw) {
@@ -125,7 +124,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                   if (_timeline.isEmpty)
                     Text(
                       'No milestones yet.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                     )
                   else
                     ..._timeline.map((raw) {

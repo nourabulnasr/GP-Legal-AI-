@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/screens/history/analysis_detail_screen.dart';
-import 'package:legato_mobile/theme/linkedin_theme.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -50,14 +49,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        backgroundColor: LegatoLinkedInTheme.background,
         appBar: AppBar(title: const Text('History')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_err != null) {
       return Scaffold(
-        backgroundColor: LegatoLinkedInTheme.background,
         appBar: AppBar(title: const Text('History')),
         body: Center(
           child: Padding(
@@ -76,13 +73,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
     if (_items.isEmpty) {
       return Scaffold(
-        backgroundColor: LegatoLinkedInTheme.background,
         appBar: AppBar(title: const Text('History')),
         body: const Center(child: Text('No saved analyses yet.')),
       );
     }
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('History')),
       body: RefreshIndicator(
       onRefresh: _load,

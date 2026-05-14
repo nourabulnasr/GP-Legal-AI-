@@ -1,4 +1,4 @@
-import 'dart:convert' show JsonEncoder, base64Encode, utf8;
+﻿import 'dart:convert' show JsonEncoder, base64Encode, utf8;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -104,7 +104,7 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
         children: [
           Text(
             'Stores an acknowledgment record in the Legato database. Draw your signature below.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -152,7 +152,7 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
           const SizedBox(height: 4),
           Text(
             'Draw your signature in the box above',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ),
           const SizedBox(height: 12),
           CheckboxListTile(
@@ -265,14 +265,13 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('Compare contracts')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
             'Load a plain .txt file, or paste contract text directly. For PDF/DOCX contracts, use two analysis IDs instead.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ),
           const SizedBox(height: 12),
           Row(
@@ -451,14 +450,13 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('Explain clause')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
             'Paste the clause text. Add an analysis id for richer context (OCR + rule hits).',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ),
           const SizedBox(height: 12),
           TextField(controller: _clause, decoration: const InputDecoration(labelText: 'Clause text'), maxLines: 8),
@@ -502,7 +500,7 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
             const SizedBox(height: 8),
             Text(
               'Informational only — not legal advice.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ),
           ],
         ],
@@ -670,7 +668,7 @@ class _RiskResultCard extends StatelessWidget {
             const SizedBox(width: 8),
             _RiskStat(label: 'Warnings', value: warnings, color: const Color(0xFFD97706)),
             const SizedBox(width: 8),
-            _RiskStat(label: 'Total hits', value: total, color: LegatoLinkedInTheme.textSecondary),
+            _RiskStat(label: 'Total hits', value: total, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ],
         ),
         if (hits.isNotEmpty) ...[
@@ -732,7 +730,7 @@ class _RiskStat extends StatelessWidget {
         child: Column(
           children: [
             Text('$value', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: color)),
-            Text(label, style: TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondary)),
+            Text(label, style: TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
           ],
         ),
       ),

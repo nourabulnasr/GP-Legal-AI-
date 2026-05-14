@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/screens/analyze/analyze_screen.dart';
 import 'package:legato_mobile/screens/features/features_hub_screen.dart';
@@ -12,7 +12,7 @@ class ContractsTabScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: LegatoLinkedInTheme.background,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
@@ -24,7 +24,7 @@ class ContractsTabScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Analyze documents, review saved analyses, and open all Legato tools.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ),
             const SizedBox(height: 20),
             Card(

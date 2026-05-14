@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -164,7 +164,6 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('My Documents')),
       floatingActionButton: FloatingActionButton(
         backgroundColor: LegatoLinkedInTheme.navActiveGold,
@@ -213,7 +212,7 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
                       padding: const EdgeInsets.only(bottom: 16),
                       child: Text(
                         'No saved analyses yet. Use Contracts → Analyze contract.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                       ),
                     )
                   else
@@ -236,7 +235,7 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
                   if (_items.isEmpty)
                     Text(
                       'No profile links yet. Tap + to add a title and URL.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                     )
                   else
                     ..._items.map((raw) {

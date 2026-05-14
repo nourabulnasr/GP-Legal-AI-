@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -76,7 +76,6 @@ class _ProfileSkillsScreenState extends State<ProfileSkillsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('Skills & Endorsements')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -92,7 +91,7 @@ class _ProfileSkillsScreenState extends State<ProfileSkillsScreen> {
                   ),
                   const SizedBox(height: 8),
                   if (_items.isEmpty)
-                    Text('No endorsements yet.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary))
+                    Text('No endorsements yet.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)))
                   else
                     ..._items.map((raw) {
                       final m = raw as Map<String, dynamic>;

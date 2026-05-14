@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -151,15 +151,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final email = auth.user?.email ?? '';
 
     if (_loading) {
-      return const ColoredBox(
-        color: LegatoLinkedInTheme.background,
+      return ColoredBox(
+        color: Theme.of(context).scaffoldBackgroundColor,
         child: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_err != null || _data == null) {
       return ColoredBox(
-        color: LegatoLinkedInTheme.background,
+        color: Theme.of(context).scaffoldBackgroundColor,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -186,7 +186,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
 
     return ColoredBox(
-      color: LegatoLinkedInTheme.background,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: RefreshIndicator(
         onRefresh: _load,
         child: CustomScrollView(
@@ -322,7 +322,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 Text(
                                   '${d['title'] ?? ''}${(d['title']?.toString().isNotEmpty == true) && (d['company']?.toString().isNotEmpty == true) ? ' · ' : ''}${d['company'] ?? ''}',
                                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                        color: LegatoLinkedInTheme.textSecondary,
+                                        color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
                                       ),
                                 ),
                               ],
@@ -330,11 +330,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [
-                                    const Icon(Icons.place_outlined, size: 15, color: LegatoLinkedInTheme.textSecondary),
+                                    Icon(Icons.place_outlined, size: 15, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                                     const SizedBox(width: 3),
                                     Text(
                                       d['location'].toString(),
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                                     ),
                                   ],
                                 ),
@@ -399,7 +399,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ? d['bio'].toString()
                           : 'Add a short bio to let your network know who you are.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: d['bio']?.toString().isNotEmpty == true ? null : LegatoLinkedInTheme.textSecondary,
+                            color: d['bio']?.toString().isNotEmpty == true ? null : LegatoLinkedInTheme.textSecondaryAdaptive(context),
                             height: 1.55,
                           ),
                     ),
@@ -436,7 +436,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _Section(
                     title: 'Experience',
                     child: experience.isEmpty
-                        ? Text('No experience added yet.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary))
+                        ? Text('No experience added yet.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)))
                         : Column(
                             children: experience.indexed.map((item) {
                               final (i, raw) = item;
@@ -466,7 +466,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                               Text(m['company'].toString(), style: Theme.of(context).textTheme.bodySmall),
                                             Text(
                                               '${m['startDate'] ?? ''} – ${m['endDate'] ?? 'Present'}',
-                                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                                             ),
                                             if (m['description']?.toString().isNotEmpty == true) ...[
                                               const SizedBox(height: 4),
@@ -496,7 +496,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: const Text('+ Add'),
                     ),
                     child: education.isEmpty
-                        ? Text('No education added yet.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary))
+                        ? Text('No education added yet.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)))
                         : Column(
                             children: education.indexed.map((item) {
                               final (i, raw) = item;
@@ -524,7 +524,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                             Text(m['school']?.toString() ?? '', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
                                             Text(
                                               '${m['degree'] ?? ''}${m['degree']?.toString().isNotEmpty == true && m['year']?.toString().isNotEmpty == true ? ' · ' : ''}${m['year'] ?? ''}',
-                                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                                             ),
                                           ],
                                         ),
@@ -574,7 +574,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           title: const Text('Skills & Endorsements', style: TextStyle(fontWeight: FontWeight.w600)),
                           subtitle: const Text('Manage skills your network can endorse'),
-                          trailing: const Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondary),
+                          trailing: Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(builder: (_) => const ProfileSkillsScreen()),
                           ),
@@ -592,7 +592,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           title: const Text('My Documents', style: TextStyle(fontWeight: FontWeight.w600)),
                           subtitle: const Text('Contracts and legal documents'),
-                          trailing: const Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondary),
+                          trailing: Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(builder: (_) => const ProfileDocumentsScreen()),
                           ),
@@ -610,7 +610,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           title: const Text('Recommendations', style: TextStyle(fontWeight: FontWeight.w600)),
                           subtitle: const Text('Give and receive recommendations'),
-                          trailing: const Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondary),
+                          trailing: Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(builder: (_) => const ProfileRecommendationsScreen()),
                           ),
@@ -684,7 +684,7 @@ class _StatPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: LegatoLinkedInTheme.background,
+        color: Theme.of(context).scaffoldBackgroundColor,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.3)),
       ),
@@ -696,7 +696,7 @@ class _StatPill extends StatelessWidget {
           ),
           Text(
             label,
-            style: const TextStyle(fontSize: 10, color: LegatoLinkedInTheme.textSecondary),
+            style: TextStyle(fontSize: 10, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ),
         ],
       ),

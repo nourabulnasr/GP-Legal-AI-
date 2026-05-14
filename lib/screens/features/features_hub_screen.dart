@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/screens/chat/chat_assistant_screen.dart';
 import 'package:legato_mobile/screens/features/phase5_screens.dart';
@@ -26,7 +26,6 @@ class FeaturesHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(
         title: const Text('Tools'),
       ),
@@ -75,7 +74,7 @@ class FeaturesHubScreen extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: LegatoLinkedInTheme.textSecondary,
+                            color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
                             fontSize: 11,
                             height: 1.25,
                           ),

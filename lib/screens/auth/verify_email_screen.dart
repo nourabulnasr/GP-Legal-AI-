@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/services/auth_service.dart';

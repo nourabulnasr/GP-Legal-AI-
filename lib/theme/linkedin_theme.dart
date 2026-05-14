@@ -8,6 +8,11 @@ abstract final class LegatoLinkedInTheme {
   static const Color border = Color(0xFFE0DFDC);
   static const Color textSecondary = Color(0xFF666666);
 
+  /// Returns [textSecondary] in light mode and [_darkText2] in dark mode.
+  /// Use instead of the const [textSecondary] wherever BuildContext is available.
+  static Color textSecondaryAdaptive(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? _darkText2 : textSecondary;
+
   // Dark surface palette — used by dark() only.
   static const Color _darkBg      = Color(0xFF1B1F23);
   static const Color _darkSurface = Color(0xFF23272B);

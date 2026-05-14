@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/app_services.dart';
@@ -44,7 +44,7 @@ class _DashboardTabState extends State<DashboardTab> {
     final initial = email.isNotEmpty ? email[0].toUpperCase() : '?';
 
     return ColoredBox(
-      color: LegatoLinkedInTheme.background,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -128,7 +128,7 @@ class _DashboardTabState extends State<DashboardTab> {
                               Text(
                                 'Analyze contracts, review history, and use legal tools — same API as the web app.',
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: LegatoLinkedInTheme.textSecondary,
+                                      color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
                                     ),
                               ),
                             ],
@@ -147,7 +147,7 @@ class _DashboardTabState extends State<DashboardTab> {
                   Text(
                     'Quick actions',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: LegatoLinkedInTheme.textSecondary,
+                          color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
                           fontWeight: FontWeight.w600,
                         ),
                   ),
@@ -182,7 +182,7 @@ class _DashboardTabState extends State<DashboardTab> {
                   Text(
                     'System',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: LegatoLinkedInTheme.textSecondary,
+                          color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
                           fontWeight: FontWeight.w600,
                         ),
                   ),
@@ -270,14 +270,14 @@ class _ActionCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondary),
+              Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ],
           ),
         ),

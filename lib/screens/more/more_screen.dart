@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -18,7 +18,7 @@ class MoreScreen extends StatelessWidget {
     final user = context.watch<AuthProvider>().user;
 
     return ColoredBox(
-      color: LegatoLinkedInTheme.background,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -30,7 +30,7 @@ class MoreScreen extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Tools and preferences',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ),
             const SizedBox(height: 20),
             _SectionLabel(title: 'Legal workspace'),
@@ -119,7 +119,7 @@ class _SectionLabel extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: LegatoLinkedInTheme.textSecondary,
+              color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
               fontWeight: FontWeight.w600,
             ),
       ),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io' show HttpClient;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
@@ -171,7 +172,7 @@ class ApiClient {
 
   /// Long-running multipart — mirrors `analyzeContract` in `api.ts`.
   Future<Map<String, dynamic>> postMultipartOcrCheck({
-    required String filePath,
+    required Uint8List fileBytes,
     required String filename,
     bool useRag = true,
     bool useMl = true,
@@ -187,7 +188,7 @@ class ApiClient {
       request.headers['Authorization'] = 'Bearer $t';
     }
     request.files.add(
-      await http.MultipartFile.fromPath('file', filePath, filename: filename),
+      http.MultipartFile.fromBytes('file', fileBytes, filename: filename),
     );
     request.fields['use_rag'] = useRag.toString();
     request.fields['use_ml'] = useMl.toString();

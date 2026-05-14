@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/screens/chat/chat_assistant_screen.dart';
 import 'package:legato_mobile/screens/chat/chat_analysis_screen.dart';
@@ -11,7 +11,7 @@ class ChatHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: LegatoLinkedInTheme.background,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -23,7 +23,7 @@ class ChatHubScreen extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Assistant uses the cloud API. Document and analysis chat use your local LFM.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ),
             const SizedBox(height: 20),
             Card(

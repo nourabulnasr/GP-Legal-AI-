@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+﻿import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -85,7 +85,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
       foregroundColor: const Color(0xFF1B1F23),
     );
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
@@ -97,7 +96,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
             const SizedBox(height: 8),
             Text(
               'Upload a PDF, DOCX, or image to check your contract',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ),
           const SizedBox(height: 16),
           SwitchListTile(

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -52,7 +52,6 @@ class _LoginScreenState extends State<LoginScreen> {
     final sessionMsg = context.watch<AuthProvider>().error;
 
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('Sign in')),
       body: SafeArea(
         child: Center(
@@ -81,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Text(
                           'Legal intelligence for your contracts.',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: LegatoLinkedInTheme.textSecondary,
+                                color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
                               ),
                         ),
                 if (sessionMsg != null && sessionMsg.isNotEmpty) ...[

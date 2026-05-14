@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -49,7 +49,6 @@ class _ProfileRecommendationsScreenState extends State<ProfileRecommendationsScr
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('Recommendations')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -67,7 +66,7 @@ class _ProfileRecommendationsScreenState extends State<ProfileRecommendationsScr
                   if (_items.isEmpty)
                     Text(
                       'None yet. Ask a colleague to recommend you from their app (write recommendation to your profile).',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                     )
                   else
                     ..._items.map((raw) {

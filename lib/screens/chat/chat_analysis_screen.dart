@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -166,7 +166,7 @@ class _ChatAnalysisScreenState extends State<ChatAnalysisScreen> {
                   if (_thread.isEmpty)
                     Text(
                       'Ask anything about the selected contract analysis. Runs on local LFM.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                     ),
                   ..._thread.map((m) {
                     final isUser = m['role'] == 'user';

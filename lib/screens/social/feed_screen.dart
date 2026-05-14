@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -128,7 +128,7 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: LegatoLinkedInTheme.background,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -191,7 +191,7 @@ class _FeedScreenState extends State<FeedScreen> {
                         await _load(reset: true);
                       },
                       selectedColor: const Color(0xFF1B1F23),
-                      labelStyle: TextStyle(color: sel ? Colors.white : LegatoLinkedInTheme.textSecondary),
+                      labelStyle: TextStyle(color: sel ? Colors.white : LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                     ),
                   );
                 }).toList(),
@@ -214,7 +214,7 @@ class _FeedScreenState extends State<FeedScreen> {
                         Expanded(
                           child: Text(
                             'Share an update or insight…',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                           ),
                         ),
                         Icon(Icons.add_circle, color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95)),
@@ -330,7 +330,7 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Material(
-        color: LegatoLinkedInTheme.background,
+        color: Theme.of(context).scaffoldBackgroundColor,
         child: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -614,13 +614,13 @@ class _PostCardState extends State<_PostCard> {
                         ),
                         Text(
                           p['author_subtitle']?.toString() ?? '',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
                           _relativeTime(p['created_at']?.toString() ?? ''),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary, fontSize: 12),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context), fontSize: 12),
                         ),
                       ],
                     ),
@@ -647,7 +647,7 @@ class _PostCardState extends State<_PostCard> {
             const SizedBox(height: 8),
             Text(
               '$lc likes · $cc comments · $sc shares',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ),
             const Divider(height: 20),
             Row(
@@ -681,9 +681,9 @@ class _PostCardState extends State<_PostCard> {
                   child: Text(_commentsErr!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
                 )
               else if (_comments.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('No comments yet. Be the first!', style: TextStyle(fontSize: 13, color: LegatoLinkedInTheme.textSecondary)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No comments yet. Be the first!', style: TextStyle(fontSize: 13, color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
                 ),
               ..._comments.map(
                 (c) => ListTile(

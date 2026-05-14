@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -118,21 +118,21 @@ class _ViolationsTab extends StatelessWidget {
             child: Row(
               children: [
                 const Text('ML risk score: ', style: TextStyle(fontWeight: FontWeight.w500)),
-                Text(unifiedRisk.toString(), style: const TextStyle(color: LegatoLinkedInTheme.textSecondary)),
+                Text(unifiedRisk.toString(), style: TextStyle(color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
               ],
             ),
           ),
         if (hits.isEmpty)
-          const Center(
+          Center(
             child: Padding(
-              padding: EdgeInsets.all(32),
+              padding: const EdgeInsets.all(32),
               child: Column(
                 children: [
-                  Icon(Icons.check_circle_outline, size: 48, color: Color(0xFF059669)),
-                  SizedBox(height: 12),
-                  Text('No violations found', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                  SizedBox(height: 4),
-                  Text('The contract passed all rule checks.', style: TextStyle(color: LegatoLinkedInTheme.textSecondary)),
+                  const Icon(Icons.check_circle_outline, size: 48, color: Color(0xFF059669)),
+                  const SizedBox(height: 12),
+                  const Text('No violations found', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text('The contract passed all rule checks.', style: TextStyle(color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
                 ],
               ),
             ),
@@ -140,7 +140,7 @@ class _ViolationsTab extends StatelessWidget {
         else ...[
           Text(
             '${hits.length} violation${hits.length == 1 ? '' : 's'} found',
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: LegatoLinkedInTheme.textSecondary),
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ),
           const SizedBox(height: 10),
           for (final raw in hits)
@@ -158,7 +158,7 @@ class _ViolationCard extends StatelessWidget {
   final Map<String, dynamic> hit;
   final int? analysisId;
 
-  Color _severityColor(String? sev) {
+  Color _severityColor(BuildContext context, String? sev) {
     switch (sev?.toLowerCase()) {
       case 'error':
       case 'critical':
@@ -170,7 +170,7 @@ class _ViolationCard extends StatelessWidget {
       case 'low':
         return const Color(0xFF0369A1);
       default:
-        return LegatoLinkedInTheme.textSecondary;
+        return LegatoLinkedInTheme.textSecondaryAdaptive(context);
     }
   }
 
@@ -222,7 +222,7 @@ class _ViolationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sev = hit['severity']?.toString();
-    final color = _severityColor(sev);
+    final color = _severityColor(context, sev);
     final bg = _severityBg(sev);
     final desc = _description();
     final explanation = hit['explanation']?.toString() ?? '';
@@ -280,7 +280,7 @@ class _ViolationCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('LFM explanation', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: LegatoLinkedInTheme.textSecondary)),
+                              Text('LFM explanation', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
                     const SizedBox(height: 4),
                     Text(explanation, style: const TextStyle(fontSize: 13, height: 1.4)),
                   ],
@@ -365,10 +365,10 @@ class _RagTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (ragList.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text('No RAG hits for this analysis.', style: TextStyle(color: LegatoLinkedInTheme.textSecondary)),
+          padding: const EdgeInsets.all(32),
+          child: Text('No RAG hits for this analysis.', style: TextStyle(color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
         ),
       );
     }
@@ -399,7 +399,7 @@ class _RagTab extends StatelessWidget {
                 ),
                 Text(
                   '${hitList.length} article${hitList.length == 1 ? '' : 's'}',
-                  style: const TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondary),
+                  style: TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                 ),
               ],
             ),
@@ -454,7 +454,7 @@ class _RagHitTile extends StatelessWidget {
                   const Spacer(),
                   Text(
                     score,
-                    style: const TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondary),
+                    style: TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                   ),
                 ],
               ],
@@ -463,7 +463,7 @@ class _RagHitTile extends StatelessWidget {
           if (text.isNotEmpty)
             Text(
               text,
-              style: const TextStyle(fontSize: 12, height: 1.4, color: LegatoLinkedInTheme.textSecondary),
+              style: TextStyle(fontSize: 12, height: 1.4, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ),
         ],
       ),

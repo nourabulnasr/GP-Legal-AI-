@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -74,7 +74,6 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     final me = auth.user?.id;
 
     return Scaffold(
-      backgroundColor: LegatoLinkedInTheme.background,
       appBar: AppBar(title: const Text('Profile')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -85,7 +84,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                 children: [
                   if (_err != null) Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   if (_data == null)
-                    Text('Not available', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary))
+                    Text('Not available', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)))
                   else ...[
                     _HeaderCard(data: _data!),
                     const SizedBox(height: 12),
@@ -144,18 +143,18 @@ class _HeaderCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         '${data['title'] ?? ''}${(data['title']?.toString().isNotEmpty == true) && (data['company']?.toString().isNotEmpty == true) ? ' · ' : ''}${data['company'] ?? ''}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                       ),
                       if ((data['location']?.toString().isNotEmpty ?? false))
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Row(
                             children: [
-                              const Icon(Icons.place_outlined, size: 16, color: LegatoLinkedInTheme.textSecondary),
+                                              Icon(Icons.place_outlined, size: 16, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                               const SizedBox(width: 4),
                               Text(
                                 data['location'].toString(),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                               ),
                             ],
                           ),
