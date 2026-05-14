@@ -16,9 +16,6 @@ class AnalyzeScreen extends StatefulWidget {
 }
 
 class _AnalyzeScreenState extends State<AnalyzeScreen> {
-  bool _useRag = true;
-  bool _useMl = true;
-  bool _useLlm = true;
   bool _save = true;
   final _query = TextEditingController();
   bool _busy = false;
@@ -35,14 +32,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf', 'docx', 'png', 'jpg', 'jpeg'],
-      withData: false,
+      withData: true,
     );
     if (result == null || result.files.isEmpty) return;
     if (!context.mounted) return;
     final f = result.files.single;
-    final path = f.path;
-    if (path == null) {
-      setState(() => _err = 'Could not read file path');
+    final bytes = f.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      setState(() => _err = 'Could not read file data. Please try again.');
       return;
     }
     final name = f.name;
@@ -53,11 +50,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
     await WakelockPlus.enable();
     try {
       final data = await app.legato.analyzeContract(
-            path,
+            bytes,
             name,
-            useRag: _useRag,
-            useMl: _useMl,
-            useLlm: _useLlm,
+            useRag: true,
+            useMl: true,
+            useLlm: true,
             save: _save,
             query: _query.text.trim().isEmpty ? null : _query.text.trim(),
           );
@@ -99,26 +96,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Upload PDF, DOCX, or image — POST /ocr_check_and_search',
+              'Upload a PDF, DOCX, or image to check your contract',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
             ),
           const SizedBox(height: 16),
-          SwitchListTile(
-            title: const Text('Use RAG'),
-            value: _useRag,
-            onChanged: _busy ? null : (v) => setState(() => _useRag = v),
-          ),
-          SwitchListTile(
-            title: const Text('Use ML assist'),
-            value: _useMl,
-            onChanged: _busy ? null : (v) => setState(() => _useMl = v),
-          ),
-          SwitchListTile(
-            title: const Text('Local LFM explanations (recommended)'),
-            subtitle: const Text('Core path: RAG + LFM on the server; turn off only for faster smoke tests'),
-            value: _useLlm,
-            onChanged: _busy ? null : (v) => setState(() => _useLlm = v),
-          ),
           SwitchListTile(
             title: const Text('Save to history'),
             subtitle: const Text('Requires login; backend rejects save without auth'),

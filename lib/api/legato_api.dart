@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:legato_mobile/api/api_client.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/config/app_config.dart';
@@ -58,7 +60,7 @@ class LegatoApi {
   final ApiClient _api;
 
   Future<Map<String, dynamic>> analyzeContract(
-    String filePath,
+    Uint8List fileBytes,
     String filename, {
     bool useRag = true,
     bool useMl = true,
@@ -69,7 +71,7 @@ class LegatoApi {
     String? query,
   }) {
     return _api.postMultipartOcrCheck(
-      filePath: filePath,
+      fileBytes: fileBytes,
       filename: filename,
       useRag: useRag,
       useMl: useMl,
@@ -207,7 +209,7 @@ class LegatoApi {
       if (analysisIdA != null) 'analysis_id_a': analysisIdA,
       if (analysisIdB != null) 'analysis_id_b': analysisIdB,
       if (language != null) 'language': language,
-    });
+    }, timeout: AppConfig.chatTimeout);
   }
 
   Future<Map<String, dynamic>> negotiationChat({
@@ -388,6 +390,9 @@ class LegatoApi {
       _api.postJson('/api/network/invites', {'to_user_id': toUserId});
 
   Future<Map<String, dynamic>> getPendingInvites() => _api.getJson('/api/network/invites');
+
+  Future<Map<String, dynamic>> getNetworkConnections() =>
+      _api.getJson('/api/network/connections');
 
   Future<Map<String, dynamic>> acceptNetworkInvite(int inviteId) =>
       _api.postJson('/api/network/invites/$inviteId/accept', {});

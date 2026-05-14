@@ -20,6 +20,7 @@ class FeaturesHubScreen extends StatelessWidget {
     _FeatureItem('Contract timeline', 'Milestones (admin)', Icons.timeline_outlined, TimelineAdminFeatureScreen()),
     _FeatureItem('Deal messaging', 'Threads per analysis', Icons.forum_outlined, DealMessagingFeatureScreen()),
     _FeatureItem('Legal network', 'Profiles and directory', Icons.groups_outlined, LegalNetworkFeatureScreen()),
+    _FeatureItem('Biometrics', 'Face ID info · JWT storage notes', Icons.fingerprint_outlined, BiometricInfoScreen()),
   ];
 
   @override

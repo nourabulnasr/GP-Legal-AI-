@@ -20,6 +20,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
   Map<String, dynamic>? _stats;
   List<dynamic> _suggestions = [];
   List<dynamic> _pending = [];
+  List<dynamic> _connections = [];
   bool _searching = false;
   List<dynamic> _results = [];
   final Set<int> _sentInvites = {};
@@ -46,6 +47,15 @@ class _NetworkScreenState extends State<NetworkScreen> {
       final st = await api.getNetworkStats();
       final sug = await api.getNetworkSuggestions();
       final pend = await api.getPendingInvites();
+      List<dynamic> conn = [];
+      try {
+        final connRes = await api.getNetworkConnections();
+        conn = (connRes['items'] as List<dynamic>?) ??
+            (connRes['connections'] as List<dynamic>?) ??
+            <dynamic>[];
+      } on ApiException catch (e) {
+        if (e.statusCode != 404) rethrow; // 404 = endpoint not yet deployed, silently ignore
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _stats = st;
@@ -56,6 +66,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
         _pending = (pend['items'] as List<dynamic>?) ??
             (pend['invitations'] as List<dynamic>?) ??
             <dynamic>[];
+        _connections = conn;
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -199,11 +210,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
                         title: const Text('Connections'),
                         subtitle: const Text('Manage your network'),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Open a connection from suggestions below.')),
-                          );
-                        },
+                        onTap: () => _showConnectionsSheet(context),
                       ),
                     ),
                     if (_pending.isNotEmpty)
@@ -258,6 +265,119 @@ class _NetworkScreenState extends State<NetworkScreen> {
                     }),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+
+  void _showConnectionsSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.95,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (ctx, scrollCtrl) => Material(
+          color: LegatoLinkedInTheme.background,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: ListView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.all(16),
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: LegatoLinkedInTheme.textSecondary.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Text('My Network', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+              const SizedBox(height: 16),
+              if (_connections.isNotEmpty) ...[
+                Text(
+                  'Active connections (${_connections.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                for (final raw in _connections)
+                  Builder(builder: (ctx2) {
+                    final m = Map<String, dynamic>.from(raw as Map);
+                    final uid = (m['user_id'] as num?)?.toInt() ?? 0;
+                    return ListTile(
+                      leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                      title: Text(m['name']?.toString() ?? m['display_name']?.toString() ?? 'Member'),
+                      subtitle: Text(m['subtitle']?.toString() ?? m['title']?.toString() ?? ''),
+                      onTap: uid > 0
+                          ? () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => MemberProfileScreen(userId: uid),
+                                ),
+                              )
+                          : null,
+                    );
+                  }),
+                const Divider(height: 24),
+              ] else if (_stats != null) ...[
+                Text(
+                  '${_stats!['connections_count'] ?? _stats!['total_connections'] ?? _stats!['connections'] ?? 0} connections',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const Divider(height: 24),
+              ],
+              if (_pending.isNotEmpty) ...[
+                Text(
+                  'Pending invitations (${_pending.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                for (final raw in _pending)
+                  _PendingTile(
+                    raw: raw,
+                    onAccept: (id) async {
+                      try {
+                        await context.read<AppServices>().legato.acceptNetworkInvite(id);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        await _load();
+                      } on ApiException catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context)
+                              .showSnackBar(SnackBar(content: Text(e.message)));
+                        }
+                      }
+                    },
+                  ),
+                const Divider(height: 24),
+              ],
+              const Text(
+                'People you may know',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              const SizedBox(height: 8),
+              for (final raw in _suggestions)
+                Builder(builder: (ctx2) {
+                  final m = Map<String, dynamic>.from(raw as Map);
+                  final uid = (m['user_id'] as num?)?.toInt() ?? 0;
+                  final sent = _sentInvites.contains(uid);
+                  return ListTile(
+                    leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                    title: Text(m['name']?.toString() ?? 'Member'),
+                    subtitle: Text(m['subtitle']?.toString() ?? ''),
+                    trailing: sent
+                        ? const Chip(label: Text('Sent ✓'))
+                        : FilledButton.tonal(
+                            onPressed: uid > 0 ? () => _invite(uid) : null,
+                            child: const Text('Connect'),
+                          ),
+                  );
+                }),
+            ],
+          ),
         ),
       ),
     );

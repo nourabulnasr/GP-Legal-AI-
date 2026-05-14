@@ -198,10 +198,7 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
   final _idB = TextEditingController();
   bool _busy = false;
   String? _err;
-  String? _diff;
-  String? _summary;
-  int? _linesAdded;
-  int? _linesRemoved;
+  String? _comparison;
 
   @override
   void dispose() {
@@ -213,13 +210,22 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
   }
 
   Future<void> _pick(bool left) async {
-    final r = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
+    final r = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['txt'],
+      withData: true,
+    );
     if (r == null || r.files.isEmpty) return;
     final f = r.files.single;
     final bytes = f.bytes;
     if (bytes == null) return;
-    final txt = utf8.decode(bytes, allowMalformed: true);
+    if (bytes.length > 300000) {
+      setState(() => _err = 'File too large. Paste the contract text directly or use an analysis ID.');
+      return;
+    }
+    final txt = utf8.decode(bytes, allowMalformed: false);
     setState(() {
+      _err = null;
       if (left) {
         _a.text = txt;
       } else {
@@ -232,10 +238,7 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
     setState(() {
       _busy = true;
       _err = null;
-      _diff = null;
-      _summary = null;
-      _linesAdded = null;
-      _linesRemoved = null;
+      _comparison = null;
     });
     try {
       final api = context.read<AppServices>().legato;
@@ -248,12 +251,7 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
         analysisIdB: ib,
       );
       setState(() {
-        _diff = res['unified_diff']?.toString();
-        _summary = res['ai_summary']?.toString();
-        final la = res['lines_added'];
-        final lr = res['lines_removed'];
-        _linesAdded = la is int ? la : int.tryParse('$la');
-        _linesRemoved = lr is int ? lr : int.tryParse('$lr');
+        _comparison = res['comparison']?.toString();
       });
     } on ApiException catch (e) {
       setState(() => _err = e.message);
@@ -273,7 +271,7 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            'Prefer two analysis IDs (same account). Paste text only — not raw PDF bytes.',
+            'Load a plain .txt file, or paste contract text directly. For PDF/DOCX contracts, use two analysis IDs instead.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondary),
           ),
           const SizedBox(height: 12),
@@ -294,77 +292,24 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
             const SizedBox(height: 8),
             Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ],
-          if (_linesAdded != null || _linesRemoved != null) ...[
+          if (_comparison != null && _comparison!.trim().isNotEmpty) ...[
             const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    _StatChip(label: 'Added', value: '${_linesAdded ?? '—'}', color: const Color(0xFF057642)),
-                    const SizedBox(width: 12),
-                    _StatChip(label: 'Removed', value: '${_linesRemoved ?? '—'}', color: const Color(0xFFB24020)),
-                  ],
-                ),
-              ),
+            Text(
+              'Comparison',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
             ),
-          ],
-          if (_diff != null) ...[
-            const SizedBox(height: 12),
-            Text('Changes (unified diff)', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 child: SelectableText(
-                  _diff!.isEmpty ? '(No line-level diff — texts may be identical.)' : _diff!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace', fontSize: 11, height: 1.35),
+                  _comparison!,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5),
                 ),
-              ),
-            ),
-          ],
-          if (_summary != null && _summary!.trim().isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text('AI summary', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: SelectableText(_summary!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4)),
               ),
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  const _StatChip({required this.label, required this.value, required this.color});
-
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: TextStyle(fontSize: 12, color: LegatoLinkedInTheme.textSecondary)),
-            const SizedBox(height: 2),
-            Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color)),
-          ],
-        ),
       ),
     );
   }
@@ -520,7 +465,7 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
           TextField(controller: _aid, decoration: const InputDecoration(labelText: 'Optional analysis id'), keyboardType: TextInputType.number),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: _language,
+            initialValue: _language,
             decoration: const InputDecoration(labelText: 'Explanation language'),
             items: const [
               DropdownMenuItem(value: 'auto', child: Text('Auto (detect)')),
