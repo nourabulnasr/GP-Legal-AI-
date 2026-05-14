@@ -44,7 +44,9 @@ export default function AnalyzePage({ user, onLogout }: Props) {
   const [translateToAr, setTranslateToAr] = useState(false);
   const [translatePerChunkMt, setTranslatePerChunkMt] = useState(false);
   const [translationOnly, setTranslationOnly] = useState(false);
+  const [sourceLanguageMode, setSourceLanguageMode] = useState<"auto" | "manual">("auto");
   const [sourceLanguageOverride, setSourceLanguageOverride] = useState("");
+  const [translationTargetLang, setTranslationTargetLang] = useState<"ar" | "en" | "fr" | "de">("ar");
   const [ocrTextVariant, setOcrTextVariant] = useState<"original" | "arabic">("original");
 
   const [severityFilter, setSeverityFilter] = useState<string>("all");
@@ -65,7 +67,9 @@ export default function AnalyzePage({ user, onLogout }: Props) {
   const hasArabicTranslation = useMemo(() => {
     const chunks = (data?.ocr_chunks as Record<string, unknown>[]) ?? [];
     return chunks.some(
-      (c) => typeof c.translated_ar_text === "string" && String(c.translated_ar_text).trim().length > 0
+      (c) =>
+        (typeof c.translated_text === "string" && String(c.translated_text).trim().length > 0) ||
+        (typeof c.translated_ar_text === "string" && String(c.translated_ar_text).trim().length > 0)
     );
   }, [data?.ocr_chunks]);
 
@@ -159,7 +163,9 @@ export default function AnalyzePage({ user, onLogout }: Props) {
         translateToAr,
         translatePerChunkMt,
         translationOnly,
-        sourceLanguageOverride: sourceLanguageOverride.trim() || undefined,
+        sourceLanguageMode,
+        sourceLanguageOverride: sourceLanguageMode === "manual" ? (sourceLanguageOverride.trim() || undefined) : undefined,
+        translationTargetLang,
       });
       const resObj = res as Record<string, unknown>;
       setData(resObj);
@@ -176,7 +182,7 @@ export default function AnalyzePage({ user, onLogout }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [file, useMl, useLlm, translateToAr, translatePerChunkMt, translationOnly, sourceLanguageOverride]);
+  }, [file, useMl, useLlm, translateToAr, translatePerChunkMt, translationOnly, sourceLanguageMode, sourceLanguageOverride, translationTargetLang]);
 
   useEffect(() => {
     if (!analysisIdFromUrl) return;
@@ -388,14 +394,30 @@ export default function AnalyzePage({ user, onLogout }: Props) {
                 </label>
                 <label className="flex items-center justify-between gap-3 cursor-pointer">
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">Translate to Arabic (cloud MT)</span>
+                    <span className="text-sm font-medium">Translate output (MT)</span>
                     <span className="text-xs text-muted-foreground">
-                      Uses Google Cloud Translation when credentials are configured, with offline Argos as fallback.
-                      Original OCR is retained. If detection confidence is low, set an override below.
+                      When the server has Google Cloud Translation configured, Arabic output uses Google first
+                      (en/fr/de and other supported sources), then local LFM if Google is unavailable. Other output
+                      languages use local LFM only. Original OCR is retained. Choose source mode and output language
+                      below.
                     </span>
                   </div>
                   <Checkbox checked={translateToAr} onCheckedChange={(v) => setTranslateToAr(!!v)} />
                 </label>
+                <div className="pl-1">
+                  <label className="text-xs text-muted-foreground block mb-1">Output language</label>
+                  <select
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    value={translationTargetLang}
+                    onChange={(e) => setTranslationTargetLang(e.target.value as "ar" | "en" | "fr" | "de")}
+                    disabled={!translateToAr}
+                  >
+                    <option value="ar">Arabic</option>
+                    <option value="en">English</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                  </select>
+                </div>
                 <label className="flex items-center justify-between gap-3 cursor-pointer pl-1">
                   <div className="flex flex-col gap-0.5">
                     <span className="text-sm font-medium">Per-page source language for MT</span>
@@ -412,14 +434,24 @@ export default function AnalyzePage({ user, onLogout }: Props) {
                   />
                 </label>
                 <div className="pl-1">
-                  <label className="text-xs text-muted-foreground block mb-1">Source language override (optional, ISO 639-1)</label>
+                  <label className="text-xs text-muted-foreground block mb-1">Source language mode</label>
+                  <select
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm mb-2"
+                    value={sourceLanguageMode}
+                    onChange={(e) => setSourceLanguageMode(e.target.value as "auto" | "manual")}
+                    disabled={!translateToAr}
+                  >
+                    <option value="auto">Auto detect</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                  <label className="text-xs text-muted-foreground block mb-1">Source language override (ISO 639-1)</label>
                   <input
                     type="text"
-                    placeholder="e.g. fr, de — leave empty for auto-detect"
+                    placeholder="e.g. fr, de"
                     className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
                     value={sourceLanguageOverride}
                     onChange={(e) => setSourceLanguageOverride(e.target.value)}
-                    disabled={!translateToAr}
+                    disabled={!translateToAr || sourceLanguageMode !== "manual"}
                   />
                 </div>
               </div>
@@ -783,7 +815,7 @@ export default function AnalyzePage({ user, onLogout }: Props) {
                         onClick={() => setOcrTextVariant("arabic")}
                         dir="rtl"
                       >
-                        العربية
+                        Translated
                       </Button>
                     </div>
                   )}
@@ -791,7 +823,9 @@ export default function AnalyzePage({ user, onLogout }: Props) {
                     <div className="space-y-4">
                       {((data?.ocr_chunks as Record<string, unknown>[]) ?? []).map((c) => {
                         const orig = String(c.normalized_text ?? c.text ?? "");
-                        const ar = typeof c.translated_ar_text === "string" ? c.translated_ar_text : "";
+                        const ar = typeof c.translated_text === "string"
+                          ? c.translated_text
+                          : (typeof c.translated_ar_text === "string" ? c.translated_ar_text : "");
                         const display =
                           ocrTextVariant === "arabic" && ar.trim() ? ar : orig;
                         const rtl = ocrTextVariant === "arabic" && ar.trim();

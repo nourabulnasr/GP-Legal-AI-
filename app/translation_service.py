@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Machine translation to Arabic:
-  1) Google Cloud Translation v2 (when credentials exist and EXTERNAL_MT_DISABLED is off)
-  2) Argos Translate (offline, local) — fallback when Google is unavailable or disabled
+Machine translation (Arabic: Google, then local LFM, then Argos; other targets: local LFM only):
+
+  For target Arabic (ar):
+  1) Google Cloud Translation v2 when the client is available (API key or ADC) and not disabled
+  2) Local LFM when Google is unavailable or returns no usable translation
+  3) Argos Translate (offline) as last resort for Arabic
 
 Set EXTERNAL_MT_DISABLED=1 to block Google Translation API calls; Argos still works unless DISABLE_ARGOS_MT=1.
-Optional DISABLE_GOOGLE_MT=1 to skip Google and use Argos only.
+Optional DISABLE_GOOGLE_MT=1 to skip Google (LFM then Argos for ar).
+ENABLE_LOCAL_LLM_TRANSLATION=0 disables LFM MT.
 
 Optional: LEGALAI_MT_CACHE_DIR for on-disk MT chunk cache. Argos: pip install argostranslate.
 """
@@ -13,15 +17,19 @@ Optional: LEGALAI_MT_CACHE_DIR for on-disk MT chunk cache. Argos: pip install ar
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
 import os
 import re
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlencode
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +37,7 @@ _CHUNK_CHARS = 4500
 _ARGOS_CHUNK_CHARS = 1200
 _MAX_ATTEMPTS = 3
 _TRANSLATION_CACHE_MAX = 512
+_SUPPORTED_TARGET_LANGS = {"ar", "en", "fr", "de"}
 
 _v2_client = None
 _translation_cache: "OrderedDict[str, Tuple[str, str]]" = OrderedDict()
@@ -67,6 +76,76 @@ def google_mt_disabled() -> bool:
     return os.getenv("DISABLE_GOOGLE_MT", "").strip().lower() in ("1", "true", "yes")
 
 
+def local_lfm_mt_enabled() -> bool:
+    return os.getenv("ENABLE_LOCAL_LLM_TRANSLATION", "1").strip().lower() not in ("0", "false", "no")
+
+
+def _normalize_lang_code(value: str, *, fallback: str = "en") -> str:
+    code = (value or "").strip().lower().split("-")[0]
+    if len(code) == 3:
+        code = _ISO639_3_TO_2.get(code, code[:2])
+    if not code:
+        return fallback
+    return code
+
+
+def _normalize_target_lang(value: Optional[str]) -> str:
+    code = _normalize_lang_code(value or "ar", fallback="ar")
+    if code not in _SUPPORTED_TARGET_LANGS:
+        return "ar"
+    return code
+
+
+class _TranslateV2RestApiKeyClient:
+    """
+    Cloud Translation v2 via REST ?key=…
+
+    The ``google.cloud.translate_v2.Client`` constructor accepts ``ClientOptions(api_key=…)`` but
+    does not pass the key into requests; it still loads Application Default Credentials. For API-key
+    auth we call the public REST endpoint instead.
+    """
+
+    _URL = "https://translation.googleapis.com/language/translate/v2"
+
+    def __init__(self, api_key: str):
+        self._api_key = api_key
+
+    def translate(
+        self,
+        values: Any,
+        target_language: Optional[str] = None,
+        format_: Optional[str] = None,
+        source_language: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        if not isinstance(values, str):
+            raise TypeError("REST API key client expects a single string per call")
+        url = f"{self._URL}?{urlencode({'key': self._api_key})}"
+        body: Dict[str, Any] = {
+            "q": values,
+            "target": target_language or "ar",
+            "format": (format_ or "text") or "text",
+        }
+        if source_language and str(source_language).strip().lower() not in ("und", "unknown", ""):
+            body["source"] = source_language
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                parsed = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")[:800]
+            raise RuntimeError(f"Cloud Translation HTTP {e.code}: {detail}") from e
+        translations = (parsed.get("data") or {}).get("translations") or ()
+        if not translations or not isinstance(translations[0], dict):
+            raise ValueError("Cloud Translation returned no translations")
+        return translations[0]
+
+
 def _get_translate_v2_client():
     global _v2_client
     if _v2_client is not None:
@@ -76,7 +155,17 @@ def _get_translate_v2_client():
     try:
         from google.cloud import translate_v2 as translate_v2
 
-        _v2_client = translate_v2.Client()
+        api_key = os.getenv("GOOGLE_TRANSLATION_API_KEY", "").strip()
+        if api_key:
+            creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+            if creds_path and not Path(creds_path).expanduser().is_file():
+                _LOGGER.warning(
+                    "GOOGLE_APPLICATION_CREDENTIALS points to a missing file; "
+                    "ignoring it and using GOOGLE_TRANSLATION_API_KEY (REST) for Translation v2."
+                )
+            _v2_client = _TranslateV2RestApiKeyClient(api_key)
+        else:
+            _v2_client = translate_v2.Client()
     except Exception as e:
         _LOGGER.warning("Google Cloud Translation v2 unavailable: %s", e)
         _v2_client = None
@@ -375,35 +464,150 @@ def _translate_via_argos(text: str, src: str, pairs: List[Tuple[str, str]]) -> T
     return "".join(chunks_out), overall
 
 
+def _translate_piece_local_lfm(piece: str, src: str, target: str) -> Optional[str]:
+    if not local_lfm_mt_enabled():
+        return None
+    try:
+        from . import local_llm as local_llm_mod
+    except Exception:
+        return None
+    if not getattr(local_llm_mod, "is_available", lambda: False)():
+        return None
+
+    src_code = _normalize_lang_code(src, fallback="en")
+    target_code = _normalize_target_lang(target)
+    piece_clean = html.unescape(piece or "")
+    piece_clean = re.sub(r"[\u200B-\u200F\u202A-\u202E\u2066-\u2069]", "", piece_clean)
+    prompt = (
+        "You are a strict legal translation assistant.\n"
+        f"Translate the input from {src_code} to {target_code}.\n"
+        "Rules:\n"
+        "- Keep placeholders like [Name], [Date], [Montant], and article numbers exactly as-is.\n"
+        "- Keep line breaks and clause order.\n"
+        "- Do not add explanations, labels, or quotes.\n"
+        "- Output only the translation text.\n\n"
+        "Input:\n"
+        f"{piece_clean}"
+    )
+    out = local_llm_mod.generate(prompt, max_new_tokens=700, do_sample=False)
+    if not isinstance(out, str):
+        return None
+    out = out.strip()
+    if not out or out.startswith("[LLM load error:"):
+        return None
+    out = html.unescape(out)
+    out = out.replace("&quot;", '"').replace("quot;", '"').replace("&amp;", "&")
+    out = re.sub(r"[\u200B-\u200F\u202A-\u202E\u2066-\u2069]", "", out)
+    return out.strip()
+
+
+def _translate_via_local_lfm(
+    text: str,
+    src: str,
+    target_lang: str,
+    pairs: List[Tuple[str, str]],
+) -> Tuple[Optional[str], str]:
+    chunks_out: List[str] = []
+    overall = "ok"
+    backend = f"local_lfm_{target_lang}"
+    t = text
+    i = 0
+    while i < len(t):
+        piece = t[i : i + _ARGOS_CHUNK_CHARS]
+        i += _ARGOS_CHUNK_CHARS
+        cached = _cache_get(backend, src, piece)
+        if cached is not None:
+            chunks_out.append(cached[0])
+            if cached[1] == "partial":
+                overall = "partial"
+            continue
+        out = _translate_piece_local_lfm(piece, src, target_lang)
+        if out is None:
+            overall = "partial"
+            out_piece = piece
+            st_piece = "partial"
+        else:
+            out_piece = out
+            st_piece = "ok"
+        if target_lang == "ar":
+            out_piece = _apply_glossary_ar(out_piece, pairs)
+        _cache_put(backend, src, piece, (out_piece, st_piece))
+        chunks_out.append(out_piece)
+    return "".join(chunks_out), overall
+
+
+def _google_ar_result_usable(original: str, g_out: Optional[str], g_st: str) -> bool:
+    """True when Google returned text we should accept instead of falling back to LFM or Argos."""
+    if g_out is None:
+        return False
+    o = (original or "").strip()
+    g = (g_out or "").strip()
+    if not g:
+        return False
+    if g_st == "partial" and g == o:
+        return False
+    return True
+
+
+def translate_plain_to_target(
+    text: str,
+    source_lang: str,
+    *,
+    target_lang: str = "ar",
+    apply_glossary: bool = True,
+) -> Tuple[str, str, str]:
+    """
+    Returns (output_text, status, provider) where:
+      status: ok | partial | skipped
+      provider: google_cloud_translate_v2 | local_lfm_translate | argos_translate | none
+
+    For Arabic: Google first, then local LFM, then Argos. For other targets (en/fr/de): local LFM only.
+    """
+    src = _normalize_lang_code(source_lang, fallback="und")
+    target = _normalize_target_lang(target_lang)
+    if not isinstance(text, str) or not text.strip():
+        return "", "skipped", "none"
+    if src == target or src == "und":
+        return text.strip(), "skipped", "none"
+
+    pairs = (load_glossary_pairs_for_source(src) if apply_glossary and target == "ar" else [])
+
+    if target == "ar":
+        g_out, g_st = _translate_via_google(text, src, pairs)
+        if _google_ar_result_usable(text, g_out, g_st):
+            return g_out, g_st, "google_cloud_translate_v2"
+
+        llm_out, llm_st = _translate_via_local_lfm(text, src, target, pairs)
+        if llm_out is not None:
+            if not (llm_st == "partial" and llm_out.strip() == text.strip()):
+                return llm_out, llm_st, "local_lfm_translate"
+
+        a_out, a_st = _translate_via_argos(text, src, pairs)
+        if a_out is None:
+            return text, "skipped", "none"
+        if a_st == "partial" and a_out.strip() == text.strip():
+            return text, "skipped", "none"
+        return a_out, a_st, "argos_translate"
+
+    llm_out, llm_st = _translate_via_local_lfm(text, src, target, pairs)
+    if llm_out is not None:
+        if not (llm_st == "partial" and llm_out.strip() == text.strip()):
+            return llm_out, llm_st, "local_lfm_translate"
+    return text, "skipped", "none"
+
+
 def translate_plain_to_arabic(
     text: str,
     source_lang: str,
     *,
     apply_glossary: bool = True,
 ) -> Tuple[str, str, str]:
-    """
-    Returns (output_text, status, provider) where:
-      status: ok | partial | skipped
-      provider: google_cloud_translate_v2 | argos_translate | none
-    """
-    src = (source_lang or "").strip().lower().split("-")[0]
-    if not isinstance(text, str) or not text.strip():
-        return "", "skipped", "none"
-    if src == "ar" or src == "und":
-        return text.strip(), "skipped", "none"
-
-    pairs = (load_glossary_pairs_for_source(src) if apply_glossary else [])
-
-    g_out, g_st = _translate_via_google(text, src, pairs)
-    if g_out is not None:
-        return g_out, g_st, "google_cloud_translate_v2"
-
-    a_out, a_st = _translate_via_argos(text, src, pairs)
-    if a_out is None:
-        return text, "skipped", "none"
-    if a_st == "partial" and a_out == text:
-        return text, "skipped", "none"
-    return a_out, a_st, "argos_translate"
+    return translate_plain_to_target(
+        text,
+        source_lang,
+        target_lang="ar",
+        apply_glossary=apply_glossary,
+    )
 
 
 def enrich_ocr_chunks_with_arabic(
@@ -413,6 +617,7 @@ def enrich_ocr_chunks_with_arabic(
     requested: bool,
     per_chunk: bool = False,
     document_is_mixed: bool = False,
+    target_lang: str = "ar",
 ) -> Dict[str, Any]:
     """
     Adds `translated_ar_text` to each chunk when MT succeeds. Always returns a metadata dict.
@@ -426,25 +631,27 @@ def enrich_ocr_chunks_with_arabic(
         "glossary_version": gv,
         "translation_status": "disabled",
         "translation_provider": None,
+        "translation_target_lang": _normalize_target_lang(target_lang),
         "per_chunk": bool(per_chunk),
         "skip_reason": None,
         "unsupported_languages": [],
     }
     if not requested:
         return meta
-    if external_mt_disabled() and argos_mt_disabled():
+    if external_mt_disabled() and argos_mt_disabled() and not local_lfm_mt_enabled():
         meta["translation_status"] = "skipped"
         meta["skip_reason"] = "EXTERNAL_MT_DISABLED"
         return meta
 
     doc_src = (source_lang or "").strip().lower().split("-")[0]
-    if not per_chunk and doc_src in ("ar", "und"):
+    target = _normalize_target_lang(target_lang)
+    if not per_chunk and doc_src in (target, "und"):
         meta["translation_status"] = "skipped"
-        meta["skip_reason"] = "source_already_ar_or_undetermined"
+        meta["skip_reason"] = "source_already_target_or_undetermined"
         return meta
 
     google_ok = _get_translate_v2_client() is not None
-    if not google_ok and argos_mt_disabled():
+    if not google_ok and argos_mt_disabled() and not local_lfm_mt_enabled():
         meta["translation_status"] = "skipped"
         meta["skip_reason"] = "google_translate_client_unavailable_and_argos_disabled"
         return meta
@@ -467,17 +674,21 @@ def enrich_ocr_chunks_with_arabic(
             elif doc_src not in ("ar", "und"):
                 eff = doc_src
 
-        if eff in ("ar",):
-            c["translated_ar_text"] = raw
+        if eff in (target,):
+            c["translated_text"] = raw
+            if target == "ar":
+                c["translated_ar_text"] = raw
             continue
 
         if eff == "und":
-            eff = doc_src if doc_src not in ("ar", "und") else "en"
+            eff = doc_src if doc_src not in (target, "und") else "en"
 
-        ar, st, prov = translate_plain_to_arabic(raw, eff)
-        if prov == "none" and st == "skipped" and raw.strip() and eff not in ("ar", "und"):
+        translated, st, prov = translate_plain_to_target(raw, eff, target_lang=target)
+        if prov == "none" and st == "skipped" and raw.strip() and eff not in (target, "und"):
             unsupported.append(eff)
-        c["translated_ar_text"] = ar
+        c["translated_text"] = translated
+        if target == "ar":
+            c["translated_ar_text"] = translated
         if prov != "none":
             provider_used = prov
         if st == "partial":

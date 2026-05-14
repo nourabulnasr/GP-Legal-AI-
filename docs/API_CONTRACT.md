@@ -19,6 +19,66 @@ Base URL: `AppConfig.apiBaseUrl` in Flutter (e.g. `http://10.0.2.2:8000` for And
 | `deleteAnalysis` | `DELETE /analyses/{id}` | — |
 | Admin methods | `/analyses/admin/*` | admin only |
 
+### `POST /ocr_check_and_search` translation/language fields
+
+Request (multipart) additions:
+- `source_language_mode`: `auto` or `manual` (default `auto`).
+- `source_language_override`: used only when `source_language_mode=manual` and must be a valid language tag.
+- `translation_target_lang`: one of `ar`, `en`, `fr`, `de` (default `ar`).
+
+Response additions (non-breaking):
+- `source_language_mode`: effective source mode used by backend.
+- `source_language_effective`: effective source language code after detect/override/fallback.
+- `translation_target_lang`: effective output translation language.
+- `translated_chunks`: generic translated chunk list (`id`, `page`, `translated_text`).
+
+Existing compatibility fields are still returned:
+- `ar_translated_chunks` remains for Arabic-target flows.
+- `translation` object still includes `translation_status` and `translation_provider`.
+- `language_detection` still includes `language_code`, `confidence`, and `is_mixed`.
+
+Example request (multipart):
+
+```bash
+curl -X POST "http://127.0.0.1:8000/ocr_check_and_search" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@sample_contract.pdf" \
+  -F "use_rag=true" \
+  -F "use_ml=true" \
+  -F "use_llm=false" \
+  -F "translate_to_ar=true" \
+  -F "translation_only=false" \
+  -F "source_language_mode=auto" \
+  -F "translation_target_lang=fr"
+```
+
+Example response (trimmed):
+
+```json
+{
+  "language_detection": {
+    "language_code": "de",
+    "confidence": 0.78,
+    "is_mixed": false,
+    "lfm_fallback_enabled": true,
+    "lfm_fallback_used": false
+  },
+  "translation": {
+    "translation_status": "ok",
+    "translation_provider": "local_lfm_translate",
+    "translation_target_lang": "fr",
+    "per_chunk": false
+  },
+  "source_language_mode": "auto",
+  "source_language_effective": "de",
+  "translation_target_lang": "fr",
+  "translated_chunks": [
+    { "id": "page_0", "page": 0, "translated_text": "..." }
+  ],
+  "ar_translated_chunks": []
+}
+```
+
 ## Chat (Gemini = navigation / contract Q&A per product rules)
 
 | Dart | HTTP | Notes |

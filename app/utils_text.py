@@ -56,6 +56,7 @@ def _kana_count(s: str) -> int:
 
 
 _ft_lid_model: Any = None  # fasttext model or False if unavailable
+_SUPPORTED_LID_CODES = {"ar", "en", "fr", "de", "ru", "es", "it", "pt", "zh", "ja", "ko"}
 
 
 def _get_fasttext_lid_model() -> Any:
@@ -372,6 +373,85 @@ def detect_language_for_document(
         language_code=base.language_code,
         confidence=base.confidence,
         is_mixed=is_mixed or base.is_mixed,
+    )
+
+
+def local_lfm_lid_fallback_enabled() -> bool:
+    return os.getenv("ENABLE_LOCAL_LLM_LID_FALLBACK", "1").strip().lower() not in ("0", "false", "no")
+
+
+def local_lfm_lid_threshold() -> float:
+    raw = (os.getenv("LOCAL_LLM_LID_THRESHOLD") or "").strip()
+    try:
+        v = float(raw) if raw else 0.35
+    except Exception:
+        v = 0.35
+    return max(0.0, min(v, 1.0))
+
+
+def _detect_language_with_local_lfm(s: str) -> Optional[str]:
+    if not local_lfm_lid_fallback_enabled():
+        return None
+    try:
+        from . import local_llm as local_llm_mod
+    except Exception:
+        return None
+    if not getattr(local_llm_mod, "is_available", lambda: False)():
+        return None
+    compact = re.sub(r"\s+", " ", (s or "").strip())[:3500]
+    if len(compact) < 10:
+        return None
+    prompt = (
+        "Classify the language of this legal text.\n"
+        "Return ONLY the 2-letter ISO 639-1 language code.\n"
+        "Allowed output examples: ar, en, fr, de, ru, es, it, pt, zh, ja, ko.\n"
+        "If uncertain, return: und.\n\n"
+        "Text:\n"
+        f"{compact}"
+    )
+    out = local_llm_mod.generate(prompt, max_new_tokens=8, do_sample=False)
+    if not isinstance(out, str):
+        return None
+    code = out.strip().lower()
+    m = re.search(r"\b([a-z]{2,3})\b", code)
+    if not m:
+        return None
+    code = m.group(1)
+    if len(code) == 3 and code in ("ara", "eng", "deu", "fra", "spa"):
+        iso3_to2 = {"ara": "ar", "eng": "en", "deu": "de", "fra": "fr", "spa": "es"}
+        code = iso3_to2.get(code, code[:2])
+    if code == "und":
+        return None
+    if code not in _SUPPORTED_LID_CODES:
+        return None
+    return code
+
+
+def detect_language_with_lfm_fallback(
+    s: str,
+    *,
+    min_chars: int = 20,
+) -> Tuple[LanguageDetectionResult, bool]:
+    base = detect_language_detailed(s, min_chars=min_chars)
+    if not local_lfm_lid_fallback_enabled():
+        return base, False
+    needs_fallback = (
+        base.language_code in ("und", "")
+        or base.confidence < local_lfm_lid_threshold()
+        or (base.is_mixed and base.confidence < max(0.55, local_lfm_lid_threshold()))
+    )
+    if not needs_fallback:
+        return base, False
+    llm_code = _detect_language_with_local_lfm(s)
+    if not llm_code:
+        return base, False
+    return (
+        LanguageDetectionResult(
+            language_code=llm_code,
+            confidence=max(base.confidence, 0.7),
+            is_mixed=base.is_mixed,
+        ),
+        True,
     )
 
 

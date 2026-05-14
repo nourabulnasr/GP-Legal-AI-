@@ -43,7 +43,9 @@ export async function analyzeContract(
     translatePerChunkMt?: boolean;
     /** OCR + detect + optional MT only; skips Egyptian labor rules, ML, RAG, LLM */
     translationOnly?: boolean;
+    sourceLanguageMode?: "auto" | "manual";
     sourceLanguageOverride?: string;
+    translationTargetLang?: "ar" | "en" | "fr" | "de";
   }
 ) {
   const form = new FormData();
@@ -58,7 +60,9 @@ export async function analyzeContract(
   form.append("translate_to_ar", String(options?.translateToAr ?? false));
   form.append("translate_per_chunk_mt", String(options?.translatePerChunkMt ?? false));
   form.append("translation_only", String(options?.translationOnly ?? false));
-  if (options?.sourceLanguageOverride?.trim())
+  form.append("source_language_mode", String(options?.sourceLanguageMode ?? "auto"));
+  form.append("translation_target_lang", String(options?.translationTargetLang ?? "ar"));
+  if (options?.sourceLanguageMode === "manual" && options?.sourceLanguageOverride?.trim())
     form.append("source_language_override", options.sourceLanguageOverride.trim());
 
   const { data } = await api.post("/ocr_check_and_search", form, {

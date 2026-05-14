@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import html
+import re
 from pathlib import Path
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 _cwd_env = Path(os.getcwd()) / ".env"
@@ -68,7 +70,9 @@ from .utils_text import (
     detect_language,
     detect_language_detailed,
     detect_language_for_document,
+    detect_language_with_lfm_fallback,
     is_valid_bcp47_primary_override,
+    local_lfm_lid_fallback_enabled,
     llm_locale_from_detection,
     norm_ar,
     normalize_for_rules,
@@ -636,7 +640,10 @@ def _docx_images_to_text(data: bytes) -> str:
 def _normalize_contract_text(raw_text: str) -> str:
     if not raw_text:
         return ""
-    t = norm_ar(raw_text)
+    t = html.unescape(raw_text)
+    # Strip invisible bidi/control chars that often break OCR/translation rendering.
+    t = re.sub(r"[\u200B-\u200F\u202A-\u202E\u2066-\u2069]", "", t)
+    t = norm_ar(t)
     t = t.replace("ًل", "لا").replace("اًل", "ال")
     fixes = [
         ("جميه", "جنيه"),
@@ -663,6 +670,10 @@ def _normalize_contract_text(raw_text: str) -> str:
     for a, b in fixes:
         t = t.replace(a, b)
 
+    # Normalize common broken quote/entity leftovers after OCR.
+    t = t.replace("&quot;", '"').replace("quot;", '"').replace("&amp;", "&")
+    t = re.sub(r"\s*;\s*", "; ", t)
+    t = re.sub(r"\s+", " ", t)
     return t.strip()
 
 
@@ -1545,6 +1556,8 @@ async def ocr_check_and_search(
     translate_to_ar: bool = Form(False),
     translate_per_chunk_mt: bool = Form(False),
     translation_only: bool = Form(False),
+    translation_target_lang: str = Form("ar"),
+    source_language_mode: str = Form("auto"),
     source_language_override: Optional[str] = Form(None),
     db: Session = Depends(get_db),  # type: ignore
     current_user: Any = Depends(get_current_user_optional),  # type: ignore
@@ -1553,10 +1566,20 @@ async def ocr_check_and_search(
         import numpy as np
         np.random.seed(42)  # reproducibility: same contract -> same score
         ovr_chk = (source_language_override or "").strip()
-        if ovr_chk and not is_valid_bcp47_primary_override(ovr_chk):
+        source_mode = (source_language_mode or "auto").strip().lower()
+        if source_mode not in ("auto", "manual"):
+            source_mode = "auto"
+        if source_mode == "manual" and ovr_chk and not is_valid_bcp47_primary_override(ovr_chk):
             raise HTTPException(
                 status_code=422,
                 detail="Invalid source_language_override: use a BCP-47 language tag (e.g. en, fr, de, ar-EG).",
+            )
+        allowed_target_langs = {"ar", "en", "fr", "de"}
+        target_lang = (translation_target_lang or "ar").strip().lower().split("-")[0]
+        if target_lang not in allowed_target_langs:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid translation_target_lang: allowed values are ar, en, fr, de.",
             )
         data = await file.read()
 
@@ -1659,7 +1682,15 @@ async def ocr_check_and_search(
 
         annotate_ocr_chunks_language(ocr_chunks)
         lang_det = detect_language_for_document(full_text, ocr_chunks)
-        ovr = (source_language_override or "").strip().lower()
+        lfm_lid_fallback_used = False
+        fallback_result, lfm_lid_fallback_used = detect_language_with_lfm_fallback(full_text)
+        if lfm_lid_fallback_used:
+            lang_det = LanguageDetectionResult(
+                language_code=fallback_result.language_code,
+                confidence=max(lang_det.confidence, fallback_result.confidence),
+                is_mixed=lang_det.is_mixed or fallback_result.is_mixed,
+            )
+        ovr = (source_language_override or "").strip().lower() if source_mode == "manual" else ""
         if ovr and len(ovr) >= 2:
             lang_det = LanguageDetectionResult(
                 language_code=ovr.split("-")[0],
@@ -1687,6 +1718,7 @@ async def ocr_check_and_search(
                 requested=True,
                 per_chunk=use_per_chunk,
                 document_is_mixed=lang_det.is_mixed,
+                target_lang=target_lang,
             )
             _LOG.info(
                 "translation_audit provider=%s status=%s",
@@ -2119,11 +2151,14 @@ async def ocr_check_and_search(
             "is_mixed": lang_det.is_mixed,
             "chunks_language_annotated": True,
             "fasttext_lid_configured": bool((os.getenv("FASTTEXT_LID_MODEL") or "").strip()),
+            "lfm_fallback_enabled": local_lfm_lid_fallback_enabled(),
+            "lfm_fallback_used": lfm_lid_fallback_used,
         }
         if lang_det.confidence < 0.22 and len((full_text or "").strip()) >= 20:
             language_detection_payload["warning"] = "detection_confidence_low"
 
         ar_translated_chunks: List[Dict[str, Any]] = []
+        translated_chunks: List[Dict[str, Any]] = []
         for _chunk in ocr_chunks:
             tx = _chunk.get("translated_ar_text")
             if isinstance(tx, str) and tx.strip():
@@ -2132,6 +2167,15 @@ async def ocr_check_and_search(
                         "id": _chunk.get("id"),
                         "page": _chunk.get("page"),
                         "translated_ar_text": tx,
+                    }
+                )
+            tx_any = _chunk.get("translated_text")
+            if isinstance(tx_any, str) and tx_any.strip():
+                translated_chunks.append(
+                    {
+                        "id": _chunk.get("id"),
+                        "page": _chunk.get("page"),
+                        "translated_text": tx_any,
                     }
                 )
 
@@ -2167,6 +2211,10 @@ async def ocr_check_and_search(
             "language_detection": language_detection_payload,
             "translation": translation_meta,
             "ar_translated_chunks": ar_translated_chunks,
+            "translated_chunks": translated_chunks,
+            "source_language_mode": source_mode,
+            "source_language_effective": lang_det.language_code,
+            "translation_target_lang": target_lang,
         }
 
         response["cross_border_evidence"] = _rule_evidence(
