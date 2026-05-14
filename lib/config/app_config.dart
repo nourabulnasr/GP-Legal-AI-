@@ -3,7 +3,7 @@ class AppConfig {
   /// Backend must listen on `0.0.0.0` (not only 127.0.0.1) so the emulator can reach it.
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8002',
+    defaultValue: 'http://localhost:8000',
   );
 
   /// Optional override for web admin / Swagger (e.g. separate Next.js host). If empty, uses [backendDocsUri].
