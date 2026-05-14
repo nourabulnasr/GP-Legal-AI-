@@ -31,6 +31,21 @@ class _Artifacts:
     classes: List[str]
 
 
+def _patch_sklearn_compat(model: Any) -> None:
+    """Fix scikit-learn >=1.5 compat: LogisticRegression no longer stores multi_class on
+    estimators saved with older sklearn, but predict_proba still references it."""
+    try:
+        from sklearn.multiclass import OneVsRestClassifier
+        if isinstance(model, OneVsRestClassifier):
+            for est in getattr(model, "estimators_", []):
+                if not hasattr(est, "multi_class"):
+                    est.multi_class = "ovr"
+        elif not hasattr(model, "multi_class"):
+            model.multi_class = "ovr"
+    except Exception:
+        pass
+
+
 def _candidate_artifact_dirs() -> List[Path]:
     here = Path(__file__).resolve()
     candidates = [
@@ -88,6 +103,7 @@ def _load_artifacts() -> Tuple[bool, Optional[_Artifacts], Optional[Exception]]:
 
     try:
         model = joblib.load(artifacts_dir / "model.joblib")
+        _patch_sklearn_compat(model)
         vectorizer = joblib.load(artifacts_dir / "vectorizer.joblib")
         mlb = joblib.load(artifacts_dir / "mlb.joblib")
 

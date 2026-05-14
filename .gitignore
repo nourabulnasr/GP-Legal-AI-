@@ -95,6 +95,16 @@ models/LFM2.5-1.2B-Instruct/
 htmlcov/
 
 # =========================
+# Nested repo copy (not needed in git history)
+# =========================
+GP-Legal-AI-/
+
+# =========================
+# Claude Code session files
+# =========================
+.claude/
+
+# =========================
 # Optional: raw data (uncomment to avoid pushing large PDFs)
 # =========================
 # data/raw/
