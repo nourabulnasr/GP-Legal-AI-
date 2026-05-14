@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,11 @@ MAX_PROMPT_CHARS = 6000
 _tokenizer = None
 _model = None
 _loaded_path: Optional[str] = None
+
+# Single-thread executor: Lfm2ForCausalLM has thread-local state — load and
+# generate must both execute in the same thread to avoid the "Tensor on device
+# cpu is not on the expected device meta!" error when called cross-thread.
+_model_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lfm-worker")
 
 
 def _model_path() -> Optional[Path]:
@@ -108,12 +114,8 @@ def load_model():
         path_str,
         local_files_only=True,
         torch_dtype=torch.float32,
-        low_cpu_mem_usage=True,
-        device_map="cpu",
         trust_remote_code=True,
     )
-    if _model.device.type == "cpu":
-        _model = _model.to("cpu")
     _model.eval()
     _loaded_path = path_str
     return _tokenizer, _model
@@ -132,25 +134,47 @@ def generate(
         return ""
     prompt = (prompt[:MAX_PROMPT_CHARS] + "...") if len(prompt) > MAX_PROMPT_CHARS else prompt
 
+    def _run_in_model_thread():
+        import gc
+        import torch
+
+        try:
+            tokenizer, model = load_model()
+        except Exception as e:
+            return f"[LLM load error: {e!r}]"
+
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
+        gen_kwargs = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": do_sample,
+            "pad_token_id": tokenizer.eos_token_id,
+            "repetition_penalty": 1.3,
+            "no_repeat_ngram_size": 4,
+        }
+        if do_sample:
+            gen_kwargs["temperature"] = temperature
+        try:
+            with torch.no_grad():
+                out = model.generate(**inputs, **gen_kwargs)
+        except RuntimeError as e:
+            # Lfm2Cache conv_state can get corrupted between calls (mark_static_address
+            # interaction). Reset model so next call reloads fresh.
+            global _tokenizer, _model, _loaded_path
+            _tokenizer = None
+            _model = None
+            _loaded_path = None
+            gc.collect()
+            return f"[LLM generate error: {e!r}]"
+        input_len = int(inputs["input_ids"].shape[1])
+        gen_ids = out[0][input_len:]
+        raw = tokenizer.decode(gen_ids, skip_special_tokens=True)
+        gc.collect()  # Release Lfm2Cache before next call to prevent conv_state address reuse
+        return raw
+
     try:
-        tokenizer, model = load_model()
+        text = _model_executor.submit(_run_in_model_thread).result(timeout=600)
     except Exception as e:
-        return f"[LLM load error: {e!r}]"
-
-    import torch
-
-    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
-    if hasattr(model, "device") and next(model.parameters()).device.type != "cpu":
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
-    gen_kwargs = {"max_new_tokens": max_new_tokens, "do_sample": do_sample, "pad_token_id": tokenizer.eos_token_id}
-    if do_sample:
-        gen_kwargs["temperature"] = temperature
-    with torch.no_grad():
-        out = model.generate(**inputs, **gen_kwargs)
-    # Decode only newly generated tokens — avoids echoing the full prompt (esp. long doc chat).
-    input_len = int(inputs["input_ids"].shape[1])
-    gen_ids = out[0][input_len:]
-    text = tokenizer.decode(gen_ids, skip_special_tokens=True)
+        return f"[LLM generate error: {e!r}]"
     # Fallback: strip prompt if tokenizer left overlap
     prompt_clean = prompt.strip()
     if prompt_clean and prompt_clean in text:
@@ -203,7 +227,7 @@ def build_explanation_prompt(
         art = meta.get("article", "")
         law = meta.get("law", "")
         if text:
-            law_block.append(f"المادة {art} - {law}:\n{text[:1500]}")
+            law_block.append(f"المادة {art} - {law}:\n{text[:200]}")
     law_str = "\n\n---\n\n".join(law_block) if law_block else "لم تُقدّم مواد قانونية."
 
     sys_prompt = EXPLANATION_SYSTEM if language == "ar" else EXPLANATION_SYSTEM_EN
@@ -213,7 +237,7 @@ def build_explanation_prompt(
 الوصف: {description}
 
 نص العقد المعني:
-{matched_text[:1500]}
+{matched_text[:300]}
 
 النصوص القانونية المقدمة:
 {law_str}

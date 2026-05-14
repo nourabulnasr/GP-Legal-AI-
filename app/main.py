@@ -1191,6 +1191,17 @@ def startup():
         )
     )
 
+    # Pre-initialize torch + transformers in the main thread before spawning background threads.
+    # Both RAG (sentence_transformers) and LFM warmup import transformers concurrently — if
+    # transformers is not yet in sys.modules, one thread gets a partially-initialized module,
+    # leaving some model weights on the meta device and causing NotImplementedError on .to().
+    try:
+        import torch as _torch_pre  # noqa: F401
+        import transformers as _transformers_pre  # noqa: F401
+        print("[Startup] torch + transformers pre-initialized for thread safety.")
+    except Exception as _pre_e:
+        print("[Startup][WARN] Pre-init failed:", repr(_pre_e))
+
     # RAG init: heavy work runs in a daemon thread so /health and /auth/google respond immediately.
     enable_startup_rag = os.getenv("ENABLE_STARTUP_RAG", "0").strip() == "1"
     if enable_startup_rag:
@@ -1213,9 +1224,27 @@ def startup():
     if os.getenv("WARMUP_LFM_AT_STARTUP", "0").strip() == "1":
         def _lfm_warmup():
             try:
-                from app.local_llm import load_model
+                from app.local_llm import load_model, _model_executor, _model, _tokenizer
+                import torch, gc
                 print("[Startup] LFM warmup: loading model in background thread...")
-                load_model()
+                # Submit load to the model executor so load + generate share the same worker thread.
+                _model_executor.submit(load_model).result(timeout=600)
+                # Dry-run generate to initialize Lfm2Cache conv_state — prevents meta-tensor
+                # error on the first real API call after fresh load.
+                def _dry_run():
+                    import app.local_llm as _llm
+                    import torch, gc
+                    try:
+                        tok = _llm._tokenizer
+                        mdl = _llm._model
+                        if tok and mdl:
+                            ids = tok("test", return_tensors="pt")
+                            with torch.no_grad():
+                                mdl.generate(**ids, max_new_tokens=1, pad_token_id=tok.eos_token_id)
+                            gc.collect()
+                    except Exception:
+                        pass
+                _model_executor.submit(_dry_run).result(timeout=60)
                 print("[Startup] LFM warmup: model loaded and ready.")
             except Exception as e:
                 print("[WARN] LFM warmup failed:", repr(e))
