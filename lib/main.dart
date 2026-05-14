@@ -50,6 +50,15 @@ class LegatoApp extends StatelessWidget {
             theme: LegatoLinkedInTheme.light(),
             darkTheme: LegatoLinkedInTheme.dark(),
             themeMode: theme.isDark ? ThemeMode.dark : ThemeMode.light,
+            builder: (context, child) => ColoredBox(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 600),
+                  child: child!,
+                ),
+              ),
+            ),
             home: const AuthGate(),
           ),
         ),
