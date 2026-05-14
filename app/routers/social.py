@@ -949,3 +949,47 @@ def list_pending_invites(
             }
         )
     return {"items": out}
+
+
+@router.get("/network/connections")
+def list_connections(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return accepted connections for the current user."""
+    uid = current_user.id
+    rows = (
+        db.query(NetworkInvite)
+        .filter(
+            NetworkInvite.status == "accepted",
+            or_(NetworkInvite.requester_id == uid, NetworkInvite.addressee_id == uid),
+        )
+        .order_by(NetworkInvite.id.desc())
+        .limit(limit)
+        .all()
+    )
+    out: List[Dict[str, Any]] = []
+    for inv in rows:
+        peer_id = inv.addressee_id if inv.requester_id == uid else inv.requester_id
+        u = db.query(User).filter(User.id == peer_id).first()
+        if not u:
+            continue
+        pr = _parse_profile_row(
+            db.query(LegatoProfile).filter(LegatoProfile.user_id == peer_id).first()
+        )
+        out.append(
+            {
+                "invite_id": inv.id,
+                "user_id": peer_id,
+                "name": _display_name(u, pr),
+                "subtitle": _title_company(pr),
+                "location": pr.get("location") or "",
+                "connected_at": (
+                    inv.updated_at.isoformat() + "Z"
+                    if getattr(inv, "updated_at", None)
+                    else inv.created_at.isoformat() + "Z"
+                ),
+            }
+        )
+    return {"items": out}
