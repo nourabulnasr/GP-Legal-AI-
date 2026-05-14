@@ -25,8 +25,8 @@ class AnalysisDetailScreen extends StatelessWidget {
     final needsReview = payload['needs_review'] == true;
     final labor = payload['labor_summary'];
     final unifiedRisk = payload['full_text_unified_risk'];
-    final ragHits = payload['rag_hits'] ?? payload['rag_results'];
-    final ragList = ragHits is List ? ragHits : <dynamic>[];
+    final ragByViolation = payload['rag_by_violation'];
+    final ragList = ragByViolation is List ? ragByViolation : <dynamic>[];
 
     return DefaultTabController(
       length: 3,
@@ -274,7 +274,7 @@ class _ViolationCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Column(
@@ -372,38 +372,101 @@ class _RagTab extends StatelessWidget {
         ),
       );
     }
-    return ListView.separated(
+    return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: ragList.length,
-      separatorBuilder: (_, _) => const Divider(height: 16),
       itemBuilder: (context, i) {
-        final h = ragList[i];
-        if (h is! Map) return const SizedBox.shrink();
-        final m = Map<String, dynamic>.from(h);
-        final article = m['article']?.toString() ?? m['source']?.toString() ?? 'Article ${i + 1}';
-        final text = m['text']?.toString() ?? m['content']?.toString() ?? m['snippet']?.toString() ?? '';
-        final score = m['score']?.toString() ?? '';
+        final block = ragList[i];
+        if (block is! Map) return const SizedBox.shrink();
+        final b = Map<String, dynamic>.from(block);
+        final ruleId = b['rule_id']?.toString() ?? 'Rule ${i + 1}';
+        final hits = b['hits'];
+        final hitList = hits is List ? hits : <dynamic>[];
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (i > 0) const SizedBox(height: 16),
             Row(
               children: [
-                const Icon(Icons.gavel_outlined, size: 16, color: LegatoLinkedInTheme.navActiveGold),
+                const Icon(Icons.gavel_outlined, size: 15, color: LegatoLinkedInTheme.navActiveGold),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(article, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                  child: Text(
+                    ruleId,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
                 ),
-                if (score.isNotEmpty)
-                  Text(score, style: const TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondary)),
+                Text(
+                  '${hitList.length} article${hitList.length == 1 ? '' : 's'}',
+                  style: const TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondary),
+                ),
               ],
             ),
-            if (text.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(text, style: const TextStyle(fontSize: 13, height: 1.4, color: LegatoLinkedInTheme.textSecondary)),
-            ],
+            const SizedBox(height: 8),
+            for (final raw in hitList)
+              if (raw is Map)
+                _RagHitTile(hit: Map<String, dynamic>.from(raw)),
+            if (i < ragList.length - 1) const Divider(height: 24),
           ],
         );
       },
+    );
+  }
+}
+
+class _RagHitTile extends StatelessWidget {
+  const _RagHitTile({required this.hit});
+
+  final Map<String, dynamic> hit;
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = hit['metadata'];
+    final metaMap = meta is Map ? Map<String, dynamic>.from(meta) : <String, dynamic>{};
+    final article = hit['article']?.toString() ?? metaMap['article']?.toString() ?? metaMap['source']?.toString() ?? '';
+    final text = hit['text']?.toString() ?? hit['content']?.toString() ?? '';
+    final score = hit['score']?.toString() ?? metaMap['score']?.toString() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (article.isNotEmpty)
+            Row(
+              children: [
+                Text(
+                  'Article $article',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    color: LegatoLinkedInTheme.navActiveGold,
+                  ),
+                ),
+                if (score.isNotEmpty) ...[
+                  const Spacer(),
+                  Text(
+                    score,
+                    style: const TextStyle(fontSize: 11, color: LegatoLinkedInTheme.textSecondary),
+                  ),
+                ],
+              ],
+            ),
+          if (article.isNotEmpty && text.isNotEmpty) const SizedBox(height: 4),
+          if (text.isNotEmpty)
+            Text(
+              text,
+              style: const TextStyle(fontSize: 12, height: 1.4, color: LegatoLinkedInTheme.textSecondary),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -68,7 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 4),
           Text(
             'Override the API base URL for switching between local and production without rebuilding the APK.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -88,7 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: FilledButton(
                   onPressed: _saving ? null : _saveUrl,
                   child: _saving
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1B1F23)))
                       : const Text('Save URL'),
                 ),
               ),

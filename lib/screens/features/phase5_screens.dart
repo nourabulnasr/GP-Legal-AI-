@@ -133,7 +133,7 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
           Container(
             height: 160,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: const Color(0xFFD1D5DB), width: 1.5),
             ),
@@ -165,7 +165,7 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
           FilledButton(
             onPressed: _busy ? null : _submit,
             child: _busy
-                ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1B1F23)))
                 : const Text('Submit record'),
           ),
           if (_err != null) ...[
@@ -482,7 +482,7 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
           FilledButton(
             onPressed: _busy ? null : _go,
             child: _busy
-                ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1B1F23)))
                 : const Text('Explain'),
           ),
           if (_err != null) ...[
@@ -569,7 +569,7 @@ class _RiskFeatureScreenState extends State<RiskFeatureScreen> {
           FilledButton(
             onPressed: _busy ? null : _load,
             child: _busy
-                ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1B1F23)))
                 : const Text('Load risk summary'),
           ),
           if (_err != null) ...[

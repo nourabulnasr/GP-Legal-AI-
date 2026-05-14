@@ -155,7 +155,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
                         hintText: 'Search lawyers, firms, or specialties…',
                         prefixIcon: const Icon(Icons.search),
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: Theme.of(context).colorScheme.surface,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                       textInputAction: TextInputAction.search,
@@ -463,7 +463,7 @@ class _StatsGrid extends StatelessWidget {
 
   Widget _statCard(BuildContext context, String value, String label) {
     return Material(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(12),

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
+import 'package:legato_mobile/providers/theme_notifier.dart';
 import 'package:legato_mobile/screens/features/features_hub_screen.dart';
 import 'package:legato_mobile/screens/more/more_screen.dart';
 import 'package:legato_mobile/screens/social/profile_documents_screen.dart';
@@ -255,7 +256,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   // ── Hero card ─────────────────────────────────────────
                   Container(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,7 +270,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               Container(
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 4),
+                                  border: Border.all(color: Theme.of(context).colorScheme.surface, width: 4),
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.black.withValues(alpha: 0.18),
@@ -540,9 +541,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   // ── More ──────────────────────────────────────────────
                   Container(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     child: Column(
                       children: [
+                        Consumer<ThemeNotifier>(
+                          builder: (_, theme, _) => SwitchListTile(
+                            secondary: Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(Icons.dark_mode_outlined, size: 20, color: Color(0xFF8B7318)),
+                            ),
+                            title: const Text('Dark mode', style: TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: const Text('Switch between light and dark'),
+                            value: theme.isDark,
+                            onChanged: (_) => theme.toggle(),
+                          ),
+                        ),
+                        const Divider(height: 1, indent: 70),
                         ListTile(
                           leading: Container(
                             width: 38,
@@ -695,7 +714,7 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

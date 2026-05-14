@@ -6,22 +6,26 @@ import 'package:provider/provider.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/config/runtime_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
+import 'package:legato_mobile/providers/theme_notifier.dart';
 import 'package:legato_mobile/screens/auth_gate.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RuntimeConfig.init();
+  final themeNotifier = await ThemeNotifier.init();
   FlutterError.onError = FlutterError.presentError;
   PlatformDispatcher.instance.onError = (error, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: error, stack: stack));
     return true;
   };
-  runApp(const LegatoApp());
+  runApp(LegatoApp(themeNotifier: themeNotifier));
 }
 
 class LegatoApp extends StatelessWidget {
-  const LegatoApp({super.key});
+  const LegatoApp({super.key, required this.themeNotifier});
+
+  final ThemeNotifier themeNotifier;
 
   @override
   Widget build(BuildContext context) {
@@ -37,12 +41,17 @@ class LegatoApp extends StatelessWidget {
             return p;
           },
         ),
+        ChangeNotifierProvider<ThemeNotifier>.value(value: themeNotifier),
       ],
       child: _AppLifecycle(
-        child: MaterialApp(
-          title: 'Legato',
-          theme: LegatoLinkedInTheme.light(),
-          home: const AuthGate(),
+        child: Consumer<ThemeNotifier>(
+          builder: (_, theme, _) => MaterialApp(
+            title: 'Legato',
+            theme: LegatoLinkedInTheme.light(),
+            darkTheme: LegatoLinkedInTheme.dark(),
+            themeMode: theme.isDark ? ThemeMode.dark : ThemeMode.light,
+            home: const AuthGate(),
+          ),
         ),
       ),
     );

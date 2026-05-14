@@ -6,8 +6,6 @@ import 'package:legato_mobile/screens/social/contracts_tab_screen.dart';
 import 'package:legato_mobile/screens/social/feed_screen.dart';
 import 'package:legato_mobile/screens/social/network_screen.dart';
 import 'package:legato_mobile/screens/social/profile_screen.dart';
-import 'package:legato_mobile/theme/linkedin_theme.dart';
-
 /// Main shell: Feed | Network | Contracts | Alerts | Profile (LexConnect-style bottom nav).
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -30,55 +28,31 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: Theme.of(context).copyWith(
-        navigationBarTheme: NavigationBarThemeData(
-          indicatorColor: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.18),
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return IconThemeData(
-              color: selected ? LegatoLinkedInTheme.navActiveGold : LegatoLinkedInTheme.textSecondary,
-              size: 24,
-            );
-          }),
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return TextStyle(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              color: selected ? LegatoLinkedInTheme.navActiveGold : LegatoLinkedInTheme.textSecondary,
-            );
-          }),
-        ),
+    return Scaffold(
+      body: IndexedStack(
+        index: _index,
+        children: const [
+          DashboardTab(),
+          FeedScreen(),
+          NetworkScreen(),
+          ContractsTabScreen(),
+          AlertsScreen(),
+          ProfileScreen(),
+        ],
       ),
-      child: Scaffold(
-        backgroundColor: LegatoLinkedInTheme.background,
-        body: IndexedStack(
-          index: _index,
-          children: const [
-            DashboardTab(),
-            FeedScreen(),
-            NetworkScreen(),
-            ContractsTabScreen(),
-            AlertsScreen(),
-            ProfileScreen(),
-          ],
-        ),
-        bottomNavigationBar: NavigationBar(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-          selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: [
-            for (final t in _tabs)
-              NavigationDestination(
-                icon: Icon(t.outlined),
-                selectedIcon: Icon(t.filled),
-                label: t.label,
-              ),
-          ],
-        ),
+      bottomNavigationBar: NavigationBar(
+        surfaceTintColor: Colors.transparent,
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        destinations: [
+          for (final t in _tabs)
+            NavigationDestination(
+              icon: Icon(t.outlined),
+              selectedIcon: Icon(t.filled),
+              label: t.label,
+            ),
+        ],
       ),
     );
   }

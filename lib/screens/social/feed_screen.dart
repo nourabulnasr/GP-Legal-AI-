@@ -200,7 +200,7 @@ class _FeedScreenState extends State<FeedScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
               child: Material(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(8),
                 child: InkWell(
                   onTap: _openComposer,

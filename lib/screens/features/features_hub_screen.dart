@@ -42,7 +42,7 @@ class FeaturesHubScreen extends StatelessWidget {
         itemBuilder: (context, i) {
           final it = _items[i];
           return Material(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
