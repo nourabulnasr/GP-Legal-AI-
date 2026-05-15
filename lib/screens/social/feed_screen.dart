@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -287,6 +288,9 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
   late final TextEditingController _textCtrl;
   late String _category;
   final Set<String> _tags = {};
+  Uint8List? _imageBytes;
+  String? _imageFilename;
+  bool _posting = false;
 
   @override
   void initState() {
@@ -301,14 +305,39 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
     super.dispose();
   }
 
+  Future<void> _pickImage() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+    if (mounted) {
+      setState(() {
+        _imageBytes = file.bytes;
+        _imageFilename = file.name;
+      });
+    }
+  }
+
+  void _removeImage() => setState(() {
+        _imageBytes = null;
+        _imageFilename = null;
+      });
+
   Future<void> _submit() async {
     final body = _textCtrl.text.trim();
     if (body.isEmpty) return;
+    setState(() => _posting = true);
     try {
       await widget.app.legato.createPost(
         content: body,
         tags: _tags.toList(),
         category: _category,
+        imageBytes: _imageBytes,
+        imageFilename: _imageFilename,
       );
       if (!mounted) return;
       final posted = widget.onPosted;
@@ -316,10 +345,12 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
       await posted();
     } on ApiException catch (e) {
       if (mounted) {
+        setState(() => _posting = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _posting = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
@@ -352,6 +383,51 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
                   minLines: 4,
                   maxLines: 10,
                 ),
+                const SizedBox(height: 8),
+                // Image attach row
+                Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: _posting ? null : _pickImage,
+                      icon: const Icon(Icons.photo_outlined, size: 20),
+                      label: const Text('Photo'),
+                    ),
+                  ],
+                ),
+                // Image preview
+                if (_imageBytes != null) ...[
+                  const SizedBox(height: 8),
+                  Stack(
+                    alignment: Alignment.topRight,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          _imageBytes!,
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Material(
+                          color: Colors.black54,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: _removeImage,
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.close, size: 18, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Text('Category', style: Theme.of(context).textTheme.labelLarge),
                 const SizedBox(height: 6),
@@ -392,8 +468,14 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
                 ),
                 const SizedBox(height: 20),
                 FilledButton(
-                  onPressed: _submit,
-                  child: const Text('Post'),
+                  onPressed: _posting ? null : _submit,
+                  child: _posting
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Post'),
                 ),
               ],
             ),
@@ -630,6 +712,19 @@ class _PostCardState extends State<_PostCard> {
             ),
             const SizedBox(height: 10),
             SelectableText(p['content']?.toString() ?? '', style: Theme.of(context).textTheme.bodyMedium),
+            if ((p['image_url'] as String?)?.isNotEmpty == true) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  p['image_url'] as String,
+                  width: double.infinity,
+                  height: 240,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, _) => const SizedBox.shrink(),
+                ),
+              ),
+            ],
             if (tags.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(

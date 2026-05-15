@@ -309,12 +309,19 @@ class LegatoApi {
     required String content,
     List<String>? tags,
     String category = 'All Updates',
+    Uint8List? imageBytes,
+    String? imageFilename,
   }) {
-    return _api.postJson('/api/posts', {
-      'content': content,
-      'tags': tags ?? <String>[],
-      'category': category,
-    });
+    return _api.postMultipartPost(
+      '/api/posts',
+      fields: {
+        'content': content,
+        'category': category,
+        'tags': (tags ?? []).join(','),
+      },
+      imageBytes: imageBytes,
+      imageFilename: imageFilename,
+    );
   }
 
   Future<Map<String, dynamic>> togglePostLike(int postId) => _api.postJson('/api/posts/$postId/like', {});
