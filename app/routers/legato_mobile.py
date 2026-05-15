@@ -23,6 +23,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app import legato_service
+from app.utils_text import detect_language, llm_locale_from_detection
 
 router = APIRouter(prefix="/legato", tags=["legato-mobile"])
 
@@ -87,7 +88,8 @@ def summarize_clauses(
 ):
     lang = (body.language or "ar").lower()
     if lang not in ("ar", "en"):
-        lang = "ar"
+        sample = "\n\n".join((c or "").strip() for c in (body.clauses or [])[:5])[:8000]
+        lang = llm_locale_from_detection(detect_language(sample))
     try:
         summaries = legato_service.summarize_clauses_llm(body.clauses, lang)
         return {"summaries": summaries, "language": lang}
@@ -110,10 +112,6 @@ def compare_contracts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    lang = (body.language or "ar").lower()
-    if lang not in ("ar", "en"):
-        lang = "ar"
-
     def _load_text(aid: Optional[int]) -> str:
         if aid is None:
             return ""
@@ -134,6 +132,11 @@ def compare_contracts(
     tb = (body.text_b or "").strip() or _load_text(body.analysis_id_b)
     if not ta or not tb:
         raise HTTPException(status_code=400, detail="Provide text_a/text_b or both analysis ids")
+    lang = (body.language or "").strip().lower()
+    if not lang:
+        lang = llm_locale_from_detection(detect_language((ta or "") + "\n\n" + (tb or ""))[:8000])
+    elif lang not in ("ar", "en"):
+        lang = llm_locale_from_detection(detect_language((ta or "") + "\n\n" + (tb or ""))[:8000])
     try:
         comparison = legato_service.compare_contracts_llm(ta, tb, lang)
         return {"comparison": comparison, "language": lang}

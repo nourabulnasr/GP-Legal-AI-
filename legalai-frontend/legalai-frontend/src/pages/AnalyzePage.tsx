@@ -41,6 +41,13 @@ export default function AnalyzePage({ user, onLogout }: Props) {
   const [keyDataOcr, setKeyDataOcr] = useState(false);
   const [useMl, setUseMl] = useState(true);
   const [useLlm, setUseLlm] = useState(false);
+  const [translateToAr, setTranslateToAr] = useState(false);
+  const [translatePerChunkMt, setTranslatePerChunkMt] = useState(false);
+  const [translationOnly, setTranslationOnly] = useState(false);
+  const [sourceLanguageMode, setSourceLanguageMode] = useState<"auto" | "manual">("auto");
+  const [sourceLanguageOverride, setSourceLanguageOverride] = useState("");
+  const [translationTargetLang, setTranslationTargetLang] = useState<"ar" | "en" | "fr" | "de">("ar");
+  const [ocrTextVariant, setOcrTextVariant] = useState<"original" | "arabic">("original");
 
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [analysisId, setAnalysisId] = useState<number | null>(null);
@@ -56,6 +63,15 @@ export default function AnalyzePage({ user, onLogout }: Props) {
   const [documentChatLoading, setDocumentChatLoading] = useState(false);
   const [documentChatError, setDocumentChatError] = useState<string | null>(null);
   const documentChatScrollRef = useRef<HTMLDivElement>(null);
+
+  const hasArabicTranslation = useMemo(() => {
+    const chunks = (data?.ocr_chunks as Record<string, unknown>[]) ?? [];
+    return chunks.some(
+      (c) =>
+        (typeof c.translated_text === "string" && String(c.translated_text).trim().length > 0) ||
+        (typeof c.translated_ar_text === "string" && String(c.translated_ar_text).trim().length > 0)
+    );
+  }, [data?.ocr_chunks]);
 
   const ruleHits = useMemo(() => (data?.rule_hits as Record<string, unknown>[]) ?? [], [data]);
   const filteredHits = useMemo(() => {
@@ -138,12 +154,18 @@ export default function AnalyzePage({ user, onLogout }: Props) {
     setAnalysisId(null);
     try {
       const res = await analyzeContract(file, {
-        useRag: true,
-        useMl,
-        useLlm,
+        useRag: !translationOnly,
+        useMl: translationOnly ? false : useMl,
+        useLlm: translationOnly ? false : useLlm,
         llmTopK: 2,
         llmMaxNewTokens: 200,
         save: true,
+        translateToAr,
+        translatePerChunkMt,
+        translationOnly,
+        sourceLanguageMode,
+        sourceLanguageOverride: sourceLanguageMode === "manual" ? (sourceLanguageOverride.trim() || undefined) : undefined,
+        translationTargetLang,
       });
       const resObj = res as Record<string, unknown>;
       setData(resObj);
@@ -160,7 +182,7 @@ export default function AnalyzePage({ user, onLogout }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [file, useMl, useLlm]);
+  }, [file, useMl, useLlm, translateToAr, translatePerChunkMt, translationOnly, sourceLanguageMode, sourceLanguageOverride, translationTargetLang]);
 
   useEffect(() => {
     if (!analysisIdFromUrl) return;
@@ -359,6 +381,79 @@ export default function AnalyzePage({ user, onLogout }: Props) {
                   <span className="text-sm font-medium">LLM explanations (LFM)</span>
                   <Checkbox checked={useLlm} onCheckedChange={(v) => setUseLlm(!!v)} />
                 </label>
+              </div>
+              <div className="space-y-2 p-3 rounded-lg bg-background/80 border border-border/60">
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">Translation only (no Egyptian labor analysis)</span>
+                    <span className="text-xs text-muted-foreground">
+                      OCR + language detection + optional Arabic MT only. Skips rules, ML, RAG, and LLM — use for foreign contracts.
+                    </span>
+                  </div>
+                  <Checkbox checked={translationOnly} onCheckedChange={(v) => setTranslationOnly(!!v)} />
+                </label>
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">Translate output (MT)</span>
+                    <span className="text-xs text-muted-foreground">
+                      When the server has Google Cloud Translation configured, Arabic output uses Google first
+                      (en/fr/de and other supported sources), then local LFM if Google is unavailable. Other output
+                      languages use local LFM only. Original OCR is retained. Choose source mode and output language
+                      below.
+                    </span>
+                  </div>
+                  <Checkbox checked={translateToAr} onCheckedChange={(v) => setTranslateToAr(!!v)} />
+                </label>
+                <div className="pl-1">
+                  <label className="text-xs text-muted-foreground block mb-1">Output language</label>
+                  <select
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    value={translationTargetLang}
+                    onChange={(e) => setTranslationTargetLang(e.target.value as "ar" | "en" | "fr" | "de")}
+                    disabled={!translateToAr}
+                  >
+                    <option value="ar">Arabic</option>
+                    <option value="en">English</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                  </select>
+                </div>
+                <label className="flex items-center justify-between gap-3 cursor-pointer pl-1">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">Per-page source language for MT</span>
+                    <span className="text-xs text-muted-foreground">
+                      Uses each page’s detected language (recommended for mixed Arabic/English PDFs). When off,
+                      mixed documents still auto-use per-page MT unless you set{" "}
+                      <code className="text-xs">MT_AUTO_PER_CHUNK_MIXED=0</code> on the server.
+                    </span>
+                  </div>
+                  <Checkbox
+                    checked={translatePerChunkMt}
+                    onCheckedChange={(v) => setTranslatePerChunkMt(!!v)}
+                    disabled={!translateToAr}
+                  />
+                </label>
+                <div className="pl-1">
+                  <label className="text-xs text-muted-foreground block mb-1">Source language mode</label>
+                  <select
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm mb-2"
+                    value={sourceLanguageMode}
+                    onChange={(e) => setSourceLanguageMode(e.target.value as "auto" | "manual")}
+                    disabled={!translateToAr}
+                  >
+                    <option value="auto">Auto detect</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                  <label className="text-xs text-muted-foreground block mb-1">Source language override (ISO 639-1)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. fr, de"
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    value={sourceLanguageOverride}
+                    onChange={(e) => setSourceLanguageOverride(e.target.value)}
+                    disabled={!translateToAr || sourceLanguageMode !== "manual"}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -580,6 +675,48 @@ export default function AnalyzePage({ user, onLogout }: Props) {
                               {data?.ml_used === true ? "Yes" : data?.ml_used === false ? "No" : "—"}
                             </td>
                           </tr>
+                          <tr>
+                            <td className="px-4 py-3 font-medium text-muted-foreground">Detected language</td>
+                            <td className="px-4 py-3">
+                              {data?.language_detection &&
+                              typeof data.language_detection === "object" &&
+                              data.language_detection !== null
+                                ? (() => {
+                                    const ld = data.language_detection as Record<string, unknown>;
+                                    const code = String(ld.language_code ?? "—");
+                                    const conf =
+                                      typeof ld.confidence === "number"
+                                        ? ` (confidence ${(ld.confidence as number).toFixed(2)})`
+                                        : "";
+                                    const mixed = ld.is_mixed ? " — mixed script/pages" : "";
+                                    const warn =
+                                      ld.warning === "detection_confidence_low"
+                                        ? ". Low confidence: consider a source language override."
+                                        : "";
+                                    const ft = ld.fasttext_lid_configured ? " FastText LID enabled." : "";
+                                    return `${code}${conf}${mixed}${warn}${ft}`;
+                                  })()
+                                : "—"}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="px-4 py-3 font-medium text-muted-foreground">Translation</td>
+                            <td className="px-4 py-3">
+                              {data?.translation && typeof data.translation === "object" && data.translation !== null
+                                ? (() => {
+                                    const tr = data.translation as Record<string, unknown>;
+                                    const st = String(tr.translation_status ?? "—");
+                                    const sr = tr.skip_reason != null ? ` — ${String(tr.skip_reason)}` : "";
+                                    const pc = tr.per_chunk === true ? " (per-page)" : "";
+                                    const uns = Array.isArray(tr.unsupported_languages)
+                                      ? (tr.unsupported_languages as string[]).filter(Boolean).join(", ")
+                                      : "";
+                                    const unsPart = uns ? ` — unsupported: ${uns}` : "";
+                                    return `${st}${pc}${sr}${unsPart}`;
+                                  })()
+                                : "—"}
+                            </td>
+                          </tr>
                         </tbody>
                       </table>
                     </div>
@@ -660,21 +797,55 @@ export default function AnalyzePage({ user, onLogout }: Props) {
                 </TabsContent>
 
                 <TabsContent value="ocr" className="mt-0">
+                  {hasArabicTranslation && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-xs text-muted-foreground">View:</span>
+                      <Button
+                        type="button"
+                        variant={ocrTextVariant === "original" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setOcrTextVariant("original")}
+                      >
+                        Original OCR
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={ocrTextVariant === "arabic" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setOcrTextVariant("arabic")}
+                        dir="rtl"
+                      >
+                        Translated
+                      </Button>
+                    </div>
+                  )}
                   <ScrollArea className="h-[500px]">
                     <div className="space-y-4">
-                      {((data?.ocr_chunks as Record<string, unknown>[]) ?? []).map((c) => (
-                        <Card key={String(c.id)}>
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="font-medium">Page {Number(c.page ?? 0) + 1}</span>
-                              <Badge variant="outline">{String(c.id ?? "")}</Badge>
-                            </div>
-                            <p className="text-sm whitespace-pre-wrap leading-relaxed text-muted-foreground">
-                              {String(c.normalized_text ?? c.text ?? "")}
-                            </p>
-                          </CardContent>
-                        </Card>
-                      ))}
+                      {((data?.ocr_chunks as Record<string, unknown>[]) ?? []).map((c) => {
+                        const orig = String(c.normalized_text ?? c.text ?? "");
+                        const ar = typeof c.translated_text === "string"
+                          ? c.translated_text
+                          : (typeof c.translated_ar_text === "string" ? c.translated_ar_text : "");
+                        const display =
+                          ocrTextVariant === "arabic" && ar.trim() ? ar : orig;
+                        const rtl = ocrTextVariant === "arabic" && ar.trim();
+                        return (
+                          <Card key={String(c.id)}>
+                            <CardContent className="p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-medium">Page {Number(c.page ?? 0) + 1}</span>
+                                <Badge variant="outline">{String(c.id ?? "")}</Badge>
+                              </div>
+                              <p
+                                className={`text-sm whitespace-pre-wrap leading-relaxed text-muted-foreground ${rtl ? "text-right" : ""}`}
+                                dir={rtl ? "rtl" : "ltr"}
+                              >
+                                {display}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </div>
                   </ScrollArea>
                 </TabsContent>

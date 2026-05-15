@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import html
+import re
 from pathlib import Path
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 _cwd_env = Path(os.getcwd()) / ".env"
@@ -30,6 +32,7 @@ import hashlib
 import re as _re
 import unicodedata
 import threading
+import logging
 
 try:
     import fitz  # PyMuPDF
@@ -57,7 +60,22 @@ from .schema import (
     ClauseCheckResponse,
     ClauseCheckResponseWithML,
 )
-from .utils_text import detect_language, norm_ar, normalize_for_rules, split_into_clauses
+from .utils_text import (
+    LanguageDetectionResult,
+    annotate_ocr_chunks_language,
+    detect_language,
+    detect_language_detailed,
+    detect_language_for_document,
+    detect_language_with_lfm_fallback,
+    is_valid_bcp47_primary_override,
+    local_lfm_lid_fallback_enabled,
+    llm_locale_from_detection,
+    norm_ar,
+    normalize_for_rules,
+    split_into_clauses,
+)
+
+_LOG = logging.getLogger(__name__)
 from .rag_rule_mapping import chunks_to_rule_ids
 
 try:
@@ -89,6 +107,8 @@ from .pdf_text_pipeline import (
 
 # [OK] cross-border detector
 from .cross_border import detect_cross_border
+
+from .labor_scope import egyptian_labor_content_related as _egyptian_labor_content_related
 
 # ============================================================
 # [OK] Phase B: ML predictor import (SAFE)
@@ -629,7 +649,10 @@ def _docx_images_to_text(data: bytes) -> str:
 def _normalize_contract_text(raw_text: str) -> str:
     if not raw_text:
         return ""
-    t = norm_ar(raw_text)
+    t = html.unescape(raw_text)
+    # Strip invisible bidi/control chars that often break OCR/translation rendering.
+    t = re.sub(r"[\u200B-\u200F\u202A-\u202E\u2066-\u2069]", "", t)
+    t = norm_ar(t)
     t = t.replace("ًل", "لا").replace("اًل", "ال")
     fixes = [
         ("جميه", "جنيه"),
@@ -656,6 +679,10 @@ def _normalize_contract_text(raw_text: str) -> str:
     for a, b in fixes:
         t = t.replace(a, b)
 
+    # Normalize common broken quote/entity leftovers after OCR.
+    t = t.replace("&quot;", '"').replace("quot;", '"').replace("&amp;", "&")
+    t = re.sub(r"\s*;\s*", "; ", t)
+    t = re.sub(r"\s+", " ", t)
     return t.strip()
 
 
@@ -1036,7 +1063,12 @@ def check_clause(req: ClauseCheckRequest):
     try:
         text = req.clause_text or ""
         lang = (getattr(req, "language", None) or detect_language(text)).lower()
-        text_norm = normalize_for_rules(text) if lang == "ar" else text.strip()
+        lang_primary = lang.split("-")[0] if lang else "en"
+        text_norm = (
+            normalize_for_rules(text)
+            if (lang_primary == "ar" or lang_primary.startswith("ar"))
+            else text.strip()
+        )
 
         law_scope = req.law_scope or ["labor"]
 
@@ -1574,12 +1606,34 @@ async def ocr_check_and_search(
     llm_top_k: int = Form(2),  # limit number of violations explained by LLM
     llm_max_new_tokens: int = Form(200),  # cap tokens for faster inference
     save: bool = Form(False),
+    translate_to_ar: bool = Form(False),
+    translate_per_chunk_mt: bool = Form(False),
+    translation_only: bool = Form(False),
+    translation_target_lang: str = Form("ar"),
+    source_language_mode: str = Form("auto"),
+    source_language_override: Optional[str] = Form(None),
     db: Session = Depends(get_db),  # type: ignore
     current_user: Any = Depends(get_current_user_optional),  # type: ignore
 ):
     try:
         import numpy as np
         np.random.seed(42)  # reproducibility: same contract -> same score
+        ovr_chk = (source_language_override or "").strip()
+        source_mode = (source_language_mode or "auto").strip().lower()
+        if source_mode not in ("auto", "manual"):
+            source_mode = "auto"
+        if source_mode == "manual" and ovr_chk and not is_valid_bcp47_primary_override(ovr_chk):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid source_language_override: use a BCP-47 language tag (e.g. en, fr, de, ar-EG).",
+            )
+        allowed_target_langs = {"ar", "en", "fr", "de"}
+        target_lang = (translation_target_lang or "ar").strip().lower().split("-")[0]
+        if target_lang not in allowed_target_langs:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid translation_target_lang: allowed values are ar, en, fr, de.",
+            )
         data = await file.read()
 
         # ---------- detect file types ----------
@@ -1679,7 +1733,67 @@ async def ocr_check_and_search(
 
         full_text = "\n\n".join((c.get("normalized_text") or "") for c in ocr_chunks)
 
+        annotate_ocr_chunks_language(ocr_chunks)
+        lang_det = detect_language_for_document(full_text, ocr_chunks)
+        lfm_lid_fallback_used = False
+        fallback_result, lfm_lid_fallback_used = detect_language_with_lfm_fallback(full_text)
+        if lfm_lid_fallback_used:
+            lang_det = LanguageDetectionResult(
+                language_code=fallback_result.language_code,
+                confidence=max(lang_det.confidence, fallback_result.confidence),
+                is_mixed=lang_det.is_mixed or fallback_result.is_mixed,
+            )
+        ovr = (source_language_override or "").strip().lower() if source_mode == "manual" else ""
+        if ovr and len(ovr) >= 2:
+            lang_det = LanguageDetectionResult(
+                language_code=ovr.split("-")[0],
+                confidence=1.0,
+                is_mixed=lang_det.is_mixed,
+            )
+
         full_text_rules = normalize_for_rules(full_text)
+
+        translation_meta: Dict[str, Any] = {
+            "translation_version": "1",
+            "translation_status": "disabled",
+            "translation_provider": None,
+            "glossary_version": None,
+        }
+        if translate_to_ar:
+            from .translation_service import enrich_ocr_chunks_with_arabic, mt_auto_per_chunk_for_mixed
+
+            use_per_chunk = bool(translate_per_chunk_mt) or (
+                lang_det.is_mixed and mt_auto_per_chunk_for_mixed()
+            )
+            translation_meta = enrich_ocr_chunks_with_arabic(
+                ocr_chunks,
+                lang_det.language_code,
+                requested=True,
+                per_chunk=use_per_chunk,
+                document_is_mixed=lang_det.is_mixed,
+                target_lang=target_lang,
+            )
+            _LOG.info(
+                "translation_audit provider=%s status=%s",
+                translation_meta.get("translation_provider"),
+                translation_meta.get("translation_status"),
+            )
+            if translation_meta.get("translation_provider") == "argos_translate":
+                translation_meta["full_arabic_hint"] = (
+                    "Offline Argos often leaves source language in long legal text. "
+                    "For full Arabic output, use Google Cloud Translation "
+                    "(set GOOGLE_APPLICATION_CREDENTIALS; unset EXTERNAL_MT_DISABLED)."
+                )
+
+        if translate_to_ar and translation_meta.get("translation_provider"):
+            _joined = "\n\n".join(
+                (c.get("translated_ar_text") or "").strip()
+                for c in ocr_chunks
+                if (c.get("translated_ar_text") or "").strip()
+            )
+            gate_text = _joined if _joined else full_text
+        else:
+            gate_text = full_text
 
         # Clause splitting (for linking rule hits to contract clauses)
         clause_spans = split_into_clauses(full_text, min_clause_len=15)
@@ -1695,7 +1809,7 @@ async def ocr_check_and_search(
             _use_law = True
         elif _HAS_UNIFIED_PREDICTOR and unified_predict_violation_risk_safe:
             _use_law = False
-        if _predict_risk is not None:
+        if _predict_risk is not None and not translation_only:
             try:
                 for s, e, t in clause_spans:
                     if len(t.strip()) < 15:
@@ -1763,266 +1877,363 @@ async def ocr_check_and_search(
                 tags.append("cross_border")
             return tags
 
-        contract_type = detect_contract_type(full_text)
-        contract_tags = detect_contract_tags(full_text)
-
-        cb = detect_cross_border(full_text)
-
-        # Heuristic fallback
-        if not cb.get("enabled"):
-            import re
-            if re.search(r"(الامارات|الاماره|الامارا|الإمارات|uae|united\s*arab\s*emirates)", full_text.lower()) or re.search(
-                r"(دبي|ديب|dubai)", full_text.lower()
-            ):
-                cb = {"enabled": True, "reason": "heuristic_geo", "matches": ["geo_signal_detected"]}
-
-        is_cb = bool(cb.get("enabled"))
-        if is_cb and "cross_border" not in contract_tags:
-            contract_tags.append("cross_border")
-
-        # Labor applicability gate
-        labor_appx = _labor_applicability(full_text, cb, contract_tags)
-        labor_applicable = bool(labor_appx.get("applicable"))
-
-        rag_disabled_reason: Optional[str] = None
-        if use_rag and not labor_applicable:
-            rag_disabled_reason = "Labor-law RAG disabled because Egyptian labor scope is not applicable for this contract."
-
-        # dynamic scopes
-        scopes_to_run: List[List[str]] = []
-        if labor_applicable:
-            scopes_to_run.append(["labor"])
-        if is_cb:
-            scopes_to_run.append(["cross_border"])
-
-        # ============================================================
-        # 2.8) HYBRID: Rule engine (source of truth) + ML assist (severity/prioritization)
-        # ============================================================
-        rule_hits: List[Dict[str, Any]] = []
-        ml_predictions: List[Dict[str, Any]] = []
-        ml_used = False
-        rag_drove_rules = False  # Rule engine is authoritative when used
-
-        # ---------- 2.9a) Rule engine first (authoritative violations) ----------
-        if rule_engine is not None and full_text_rules.strip():
-            try:
-                flat_scope = []
-                for s in scopes_to_run:
-                    flat_scope.extend(s)
-                engine_hits = rule_engine.check_text(
-                    full_text_rules,
-                    law_scope=flat_scope or None,
-                    contract_type=contract_type,
-                    contract_tags=contract_tags,
-                )
-                if engine_hits:
-                    for h in engine_hits:
-                        h["chunk_id"] = h.get("chunk_id") or (ocr_chunks[0].get("id") if ocr_chunks else "page_0")
-                    rule_hits = engine_hits
-            except Exception as e:
-                print(f"[RuleEngine][WARN] {e!r}")
-
-        # ---------- 2.9b) ML assist: add severity/priority or fallback when no rule engine hits (only when use_ml=True) ----------
-        if use_ml and _HAS_MODEL_ML_PREDICTOR and model_ml_predict_rule_scores_full is not None and model_ml_rule_scores_to_rule_hits is not None:
-            try:
-                full_text_rules_15k = full_text[:15000] if len(full_text) > 15000 else full_text
-                preds_full = model_ml_predict_rule_scores_full(full_text_rules_15k, sort=True, use_law_retrieval=True)
-                ml_predictions = preds_full
-                ml_used = True
-                # If we have rule-engine hits, attach ML scores for severity/prioritization only
-                if rule_hits:
-                    rid_to_score = {p.get("rule_id"): p.get("score") for p in (preds_full or []) if p.get("rule_id")}
-                    for h in rule_hits:
-                        h["ml_severity_score"] = rid_to_score.get(h.get("rule_id"))
-                else:
-                    # No rule engine: use ML hits as fallback (backward compatible)
-                    first_chunk_id = ocr_chunks[0].get("id") if ocr_chunks else "page_0"
-                    rule_hits = model_ml_rule_scores_to_rule_hits(preds_full, chunk_id=first_chunk_id)
-                    for c in ocr_chunks:
-                        text_norm = c.get("normalized_text") or ""
-                        if len(text_norm.strip()) < 40:
-                            continue
-                        preds = model_ml_predict_rule_scores_full(text_norm, sort=True, use_law_retrieval=True)
-                        chunk_id = c.get("id") or "page_0"
-                        hits = model_ml_rule_scores_to_rule_hits(preds, chunk_id=chunk_id)
-                        seen_rid_chunk = {(x.get("rule_id"), x.get("chunk_id")) for x in rule_hits}
-                        for h in hits:
-                            if (h.get("rule_id"), h.get("chunk_id")) not in seen_rid_chunk:
-                                rule_hits.append(h)
-                                seen_rid_chunk.add((h.get("rule_id"), h.get("chunk_id")))
-            except Exception as e:
-                print(f"[ML][WARN] Model-ML prediction failed: {e!r}")
-                ml_used = False
-                ml_predictions = []
-
-        # 3.1) Deduplicate
-        seen = set()
-        deduped_list: List[Dict[str, Any]] = []
-        for h in rule_hits:
-            key = (h.get("rule_id"), h.get("chunk_id"), h.get("matched_text"))
-            if key in seen:
-                continue
-            seen.add(key)
-            deduped_list.append(h)
-        rule_hits = deduped_list
-
-        # 3.5) Summaries
-        labor_summary = _build_labor_summary(rule_hits)
-        labor_summary = _apply_leave_waiver_to_summary(labor_summary, rule_hits)
-        cross_border_summary = _build_cross_border_summary(rule_hits, contract_tags, cb)
-
-        if not labor_applicable:
+        if translation_only:
+            contract_type = "unknown"
+            contract_tags = []
+            cb = {"enabled": False, "reason": "translation_only", "matches": []}
+            is_cb = False
+            labor_appx = {
+                "applicable": False,
+                "status": "translation_only",
+                "reason": "translation_only_mode",
+                "jurisdiction": None,
+                "is_cross_border": False,
+            }
+            labor_applicable = False
+            rag_disabled_reason = "translation_only_mode"
+            rule_hits = []
+            ml_predictions = []
+            ml_used = False
+            rag_drove_rules = False
+            rag_results = []
+            contract_local_matches = []
+            rag_by_violation = []
+            rag_global_hits = []
             labor_summary = {
                 "enabled": False,
-                "status": "not_applicable",
-                "message": "قانون العمل المصري غير منطبق لأن العقد يخضع لقانون/اختصاص أجنبي (مذكور صراحة أو بإشارات قوية).",
-                "reason": labor_appx.get("reason"),
-                "jurisdiction": labor_appx.get("jurisdiction"),
-                "is_cross_border": labor_appx.get("is_cross_border"),
+                "status": "translation_only",
+                "message": "Translation-only: Egyptian labor law analysis was not run.",
             }
+            cross_border_summary = {
+                "enabled": False,
+                "status": "translation_only",
+                "message": "Translation-only: cross-border analysis was not run.",
+            }
+            law_scope_used = []
+            pipeline_steps = ["ocr"]
 
-        # ============================================================
-        # 4) Query: local matches + RAG (manual query)
-        # ============================================================
-        rag_results: List[Dict[str, Any]] = []
-        contract_local_matches: List[Dict[str, Any]] = []
+        if not translation_only:
+            contract_type = detect_contract_type(full_text)
+            contract_tags = detect_contract_tags(full_text)
 
-        if query:
-            qnorm = norm_ar(query)
-            for c in ocr_chunks:
-                if qnorm and qnorm in (c.get("normalized_text") or ""):
-                    contract_local_matches.append({"chunk_id": c.get("id"), "text": c.get("text")})
+            cb = detect_cross_border(full_text)
+
+            # Heuristic fallback
+            if not cb.get("enabled"):
+                import re
+                if re.search(r"(الامارات|الاماره|الامارا|الإمارات|uae|united\s*arab\s*emirates)", full_text.lower()) or re.search(
+                    r"(دبي|ديب|dubai)", full_text.lower()
+                ):
+                    cb = {"enabled": True, "reason": "heuristic_geo", "matches": ["geo_signal_detected"]}
+
+            is_cb = bool(cb.get("enabled"))
+            if is_cb and "cross_border" not in contract_tags:
+                contract_tags.append("cross_border")
+
+            # Labor applicability gate (prefer post-translation Arabic when MT ran)
+            labor_appx = _labor_applicability(gate_text, cb, contract_tags)
+            content_related = _egyptian_labor_content_related(gate_text, lang_det.language_code)
+            labor_appx = {**labor_appx, "egyptian_labor_content_related": content_related}
+            labor_applicable = bool(labor_appx.get("applicable"))
+            if labor_applicable and not content_related:
+                labor_appx = {
+                    **labor_appx,
+                    "applicable": False,
+                    "status": "not_applicable",
+                    "reason": "egyptian_labor_content_not_detected",
+                }
+                labor_applicable = False
+
+            rag_disabled_reason: Optional[str] = None
+            if use_rag and not labor_applicable:
+                rag_disabled_reason = "Labor-law RAG disabled because Egyptian labor scope is not applicable for this contract."
+
+            # dynamic scopes
+            scopes_to_run: List[List[str]] = []
+            if labor_applicable:
+                scopes_to_run.append(["labor"])
+            if is_cb:
+                scopes_to_run.append(["cross_border"])
+
+            # ============================================================
+            # 2.8) HYBRID: Rule engine (source of truth) + ML assist (severity/prioritization)
+            # ============================================================
+            rule_hits: List[Dict[str, Any]] = []
+            ml_predictions: List[Dict[str, Any]] = []
+            ml_used = False
+            rag_drove_rules = False  # Rule engine is authoritative when used
+
+            # ---------- 2.9a) Rule engine first (authoritative violations) ----------
+            if rule_engine is not None and full_text_rules.strip():
+                try:
+                    flat_scope = []
+                    for s in scopes_to_run:
+                        flat_scope.extend(s)
+                    engine_hits = rule_engine.check_text(
+                        full_text_rules,
+                        law_scope=flat_scope or None,
+                        contract_type=contract_type,
+                        contract_tags=contract_tags,
+                    )
+                    if engine_hits:
+                        for h in engine_hits:
+                            h["chunk_id"] = h.get("chunk_id") or (ocr_chunks[0].get("id") if ocr_chunks else "page_0")
+                        rule_hits = engine_hits
+                except Exception as e:
+                    print(f"[RuleEngine][WARN] {e!r}")
+
+            # ---------- 2.9b) ML assist: add severity/priority or fallback when no rule engine hits (only when use_ml=True) ----------
+            if use_ml and _HAS_MODEL_ML_PREDICTOR and model_ml_predict_rule_scores_full is not None and model_ml_rule_scores_to_rule_hits is not None:
+                try:
+                    full_text_rules_15k = full_text[:15000] if len(full_text) > 15000 else full_text
+                    preds_full = model_ml_predict_rule_scores_full(full_text_rules_15k, sort=True, use_law_retrieval=True)
+                    ml_predictions = preds_full
+                    ml_used = True
+                    # If we have rule-engine hits, attach ML scores for severity/prioritization only
+                    if rule_hits:
+                        rid_to_score = {p.get("rule_id"): p.get("score") for p in (preds_full or []) if p.get("rule_id")}
+                        for h in rule_hits:
+                            h["ml_severity_score"] = rid_to_score.get(h.get("rule_id"))
+                    else:
+                        # No rule engine: use ML hits as fallback (backward compatible)
+                        first_chunk_id = ocr_chunks[0].get("id") if ocr_chunks else "page_0"
+                        rule_hits = model_ml_rule_scores_to_rule_hits(preds_full, chunk_id=first_chunk_id)
+                        for c in ocr_chunks:
+                            text_norm = c.get("normalized_text") or ""
+                            if len(text_norm.strip()) < 40:
+                                continue
+                            preds = model_ml_predict_rule_scores_full(text_norm, sort=True, use_law_retrieval=True)
+                            chunk_id = c.get("id") or "page_0"
+                            hits = model_ml_rule_scores_to_rule_hits(preds, chunk_id=chunk_id)
+                            seen_rid_chunk = {(x.get("rule_id"), x.get("chunk_id")) for x in rule_hits}
+                            for h in hits:
+                                if (h.get("rule_id"), h.get("chunk_id")) not in seen_rid_chunk:
+                                    rule_hits.append(h)
+                                    seen_rid_chunk.add((h.get("rule_id"), h.get("chunk_id")))
+                except Exception as e:
+                    print(f"[ML][WARN] Model-ML prediction failed: {e!r}")
+                    ml_used = False
+                    ml_predictions = []
+
+            # 3.1) Deduplicate
+            seen = set()
+            deduped_list: List[Dict[str, Any]] = []
+            for h in rule_hits:
+                key = (h.get("rule_id"), h.get("chunk_id"), h.get("matched_text"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped_list.append(h)
+            rule_hits = deduped_list
+
+            # 3.5) Summaries
+            labor_summary = _build_labor_summary(rule_hits)
+            labor_summary = _apply_leave_waiver_to_summary(labor_summary, rule_hits)
+            cross_border_summary = _build_cross_border_summary(rule_hits, contract_tags, cb)
+
+            if not labor_applicable:
+                if labor_appx.get("reason") == "egyptian_labor_content_not_detected":
+                    _lm = (
+                        "لم يُطبق تحليل قانون العمل المصري لأن نص العقد (بعد الترجمة إن وُجدت) لا يشير إلى موضوع "
+                        "مرتبط بقانون العمل المصري."
+                    )
+                else:
+                    _lm = (
+                        "قانون العمل المصري غير منطبق لأن العقد يخضع لقانون/اختصاص أجنبي (مذكور صراحة أو بإشارات قوية)."
+                    )
+                labor_summary = {
+                    "enabled": False,
+                    "status": "not_applicable",
+                    "message": _lm,
+                    "reason": labor_appx.get("reason"),
+                    "jurisdiction": labor_appx.get("jurisdiction"),
+                    "is_cross_border": labor_appx.get("is_cross_border"),
+                }
+
+            # ============================================================
+            # 4) Query: local matches + RAG (manual query)
+            # ============================================================
+            rag_results: List[Dict[str, Any]] = []
+            contract_local_matches: List[Dict[str, Any]] = []
+
+            if query:
+                qnorm = norm_ar(query)
+                for c in ocr_chunks:
+                    if qnorm and qnorm in (c.get("normalized_text") or ""):
+                        contract_local_matches.append({"chunk_id": c.get("id"), "text": c.get("text")})
+
+                if use_rag and labor_applicable and _rag_backend_ready():
+                    boosted_query = build_rag_query(query, full_text, contract_tags)
+
+                    ms = _rag_min_score()
+                    rag_results = _rag_search_labor_corpus(boosted_query, top_k=10, min_score=ms)
+                    rag_results = _filter_to_labor_only(_dedupe_rag_hits_by_metadata(rag_results))[:5]
+
+            # ============================================================
+            # 4.2) RAG by violations
+            # ============================================================
+            rag_by_violation: List[Dict[str, Any]] = []
+            rag_global_hits: List[Dict[str, Any]] = []
+
+            def _mk_query_from_violation(h: Dict[str, Any]) -> str:
+                rid = (h.get("rule_id") or "").upper()
+                desc = h.get("description") or ""
+                matched = h.get("matched_text") or ""
+
+                matched_short = (matched or "").strip()
+                if len(matched_short) > 220:
+                    matched_short = matched_short[:220]
+
+                boosts: List[str] = []
+                if "WORKING_HOURS" in rid:
+                    boosts = ["ساعات العمل", "الحد الأقصى", "8 ساعات", "الراحة", "ساعات العمل اليومية", "قانون العمل 14 لسنة 2025"]
+                elif "ANNUAL_LEAVE" in rid:
+                    boosts = ["الإجازة السنوية", "الحد الأدنى", "15 يوم", "21 يوم", "30 يوم", "قانون العمل 14 لسنة 2025"]
+                elif "PROBATION" in rid:
+                    boosts = ["فترة الاختبار", "لا تزيد عن", "3 أشهر", "قانون العمل 14 لسنة 2025"]
+                elif "SALARY" in rid:
+                    boosts = ["الأجر", "طريقة الصرف", "موعد صرف الأجر", "استقطاعات", "تأمينات", "ضرائب", "قانون العمل 14 لسنة 2025"]
+                elif "EMPLOYER_INFO" in rid:
+                    boosts = ["بيانات صاحب العمل", "الاسم", "العنوان", "مقر ممارسة النشاط", "قانون العمل 14 لسنة 2025"]
+                elif "EMPLOYEE_INFO" in rid:
+                    boosts = ["بيانات العامل", "الاسم", "الرقم القومي", "محل الإقامة", "المهنة", "قانون العمل 14 لسنة 2025"]
+                elif "PLACEHOLDER" in rid:
+                    boosts = ["بيانات غير مستكملة", "نقاط", "استكمال البيانات", "بيانات الأطراف", "قانون العمل 14 لسنة 2025"]
+
+                q = " ".join([desc] + boosts + ([matched_short] if matched_short else []))
+                return norm_ar(q)
 
             if use_rag and labor_applicable and _rag_backend_ready():
-                boosted_query = build_rag_query(query, full_text, contract_tags)
+                important = [h for h in rule_hits if (h.get("severity") in ["error", "high"])][:6]
+                ms_v = _rag_min_score()
 
-                ms = _rag_min_score()
-                rag_results = _rag_search_labor_corpus(boosted_query, top_k=10, min_score=ms)
-                rag_results = _filter_to_labor_only(_dedupe_rag_hits_by_metadata(rag_results))[:5]
+                for vh in important:
+                    qv = _mk_query_from_violation(vh)
+                    qv_boosted = build_rag_query(qv, full_text, contract_tags)
 
-        # ============================================================
-        # 4.2) RAG by violations
-        # ============================================================
-        rag_by_violation: List[Dict[str, Any]] = []
-        rag_global_hits: List[Dict[str, Any]] = []
+                    hits_v = _rag_search_labor_corpus(qv_boosted, top_k=14, min_score=ms_v)
+                    hits_v = _filter_to_labor_only(_dedupe_rag_hits_by_metadata(hits_v))
+                    hits_v = _rag_prioritize_hits_for_rule_hit(hits_v, vh)[:4]
 
-        def _mk_query_from_violation(h: Dict[str, Any]) -> str:
-            rid = (h.get("rule_id") or "").upper()
-            desc = h.get("description") or ""
-            matched = h.get("matched_text") or ""
+                    rag_by_violation.append({
+                        "rule_id": vh.get("rule_id"),
+                        "severity": vh.get("severity"),
+                        "violation_desc": vh.get("description"),
+                        "rag_query_used": qv_boosted,
+                        "hits": hits_v,
+                    })
+                    rag_global_hits.extend(hits_v)
 
-            matched_short = (matched or "").strip()
-            if len(matched_short) > 220:
-                matched_short = matched_short[:220]
+                rag_global_hits = _dedupe_rag_hits_by_metadata(rag_global_hits)
+                rag_by_violation = _dedupe_rag_blocks_by_rule(rag_by_violation)
 
-            boosts: List[str] = []
-            if "WORKING_HOURS" in rid:
-                boosts = ["ساعات العمل", "الحد الأقصى", "8 ساعات", "الراحة", "ساعات العمل اليومية", "قانون العمل 14 لسنة 2025"]
-            elif "ANNUAL_LEAVE" in rid:
-                boosts = ["الإجازة السنوية", "الحد الأدنى", "15 يوم", "21 يوم", "30 يوم", "قانون العمل 14 لسنة 2025"]
-            elif "PROBATION" in rid:
-                boosts = ["فترة الاختبار", "لا تزيد عن", "3 أشهر", "قانون العمل 14 لسنة 2025"]
-            elif "SALARY" in rid:
-                boosts = ["الأجر", "طريقة الصرف", "موعد صرف الأجر", "استقطاعات", "تأمينات", "ضرائب", "قانون العمل 14 لسنة 2025"]
-            elif "EMPLOYER_INFO" in rid:
-                boosts = ["بيانات صاحب العمل", "الاسم", "العنوان", "مقر ممارسة النشاط", "قانون العمل 14 لسنة 2025"]
-            elif "EMPLOYEE_INFO" in rid:
-                boosts = ["بيانات العامل", "الاسم", "الرقم القومي", "محل الإقامة", "المهنة", "قانون العمل 14 لسنة 2025"]
-            elif "PLACEHOLDER" in rid:
-                boosts = ["بيانات غير مستكملة", "نقاط", "استكمال البيانات", "بيانات الأطراف", "قانون العمل 14 لسنة 2025"]
+            # ---------- Local LFM explanation per violation (explanation only, no decision) ----------
+            _local_llm_ok = _local_llm_module is not None and getattr(_local_llm_module, "is_available", lambda: False)()
+            _pkg_llm_ok = _llm_explain_violation is not None and _llm_is_available()
+            _llm_available = _local_llm_ok or _pkg_llm_ok
+            _explain_lang = (
+                llm_locale_from_detection(lang_det.language_code)
+                if (full_text_rules or "").strip()
+                else "ar"
+            )
+            if use_llm and _llm_available:
+                top_k_llm = max(0, int(llm_top_k or 0))
+                max_new = max(32, int(llm_max_new_tokens or 200))
+                _explain_fn = None
+                if _local_llm_ok:
+                    _explain_fn = getattr(_local_llm_module, "explain_violation", None)
+                if _explain_fn is None and _pkg_llm_ok:
+                    _explain_fn = _llm_explain_violation
+                for block in (rag_by_violation or [])[:top_k_llm]:
+                    rule_id = block.get("rule_id") or ""
+                    violation_desc = block.get("violation_desc") or ""
+                    hits_v = block.get("hits") or []
+                    matched = ""
+                    for h in (rule_hits or []):
+                        if h.get("rule_id") == rule_id:
+                            matched = (h.get("matched_text") or "")[:800]
+                            break
+                    law_articles = [{"text": x.get("text", ""), "metadata": x.get("metadata") or {}} for x in hits_v]
+                    try:
+                        if _explain_fn:
+                            expl = _explain_fn(
+                                rule_id=rule_id,
+                                description=violation_desc,
+                                matched_text=matched or violation_desc,
+                                law_articles=law_articles,
+                                max_new_tokens=max_new,
+                                language=_explain_lang,
+                            )
+                        else:
+                            expl = "[LLM not available]"
+                        align, align_note = _llm_alignment_with_severity(expl, block.get("severity"))
+                        block["llm_severity_alignment"] = align
+                        if align == "conflict" and align_note:
+                            block["llm_severity_note"] = align_note
+                            block["llm_explanation"] = f"{align_note}\n\n{expl}"
+                        else:
+                            block["llm_explanation"] = expl
+                    except Exception as e:
+                        block["llm_explanation"] = f"[LLM error: {e!r}]"
+                        block["llm_severity_alignment"] = "unknown"
 
-            q = " ".join([desc] + boosts + ([matched_short] if matched_short else []))
-            return norm_ar(q)
+            # Dynamic law_scope_used
+            law_scope_used: List[str] = []
+            if labor_applicable:
+                law_scope_used.append("labor")
+            if is_cb:
+                law_scope_used.append("cross_border")
 
-        if use_rag and labor_applicable and _rag_backend_ready():
-            important = [h for h in rule_hits if (h.get("severity") in ["error", "high"])][:6]
-            ms_v = _rag_min_score()
+            # Pipeline audit (plan Step 5): which steps ran
+            pipeline_steps: List[str] = ["ocr"]
+            if rule_engine is not None and full_text_rules.strip():
+                pipeline_steps.append("rule_engine")
+            if ml_used:
+                pipeline_steps.append("ml_assist")
+            if use_rag:
+                pipeline_steps.append("rag")
+            if use_llm and _llm_available:
+                pipeline_steps.append("llm")
 
-            for vh in important:
-                qv = _mk_query_from_violation(vh)
-                qv_boosted = build_rag_query(qv, full_text, contract_tags)
+        if translate_to_ar and translation_meta.get("translation_provider"):
+            pipeline_steps.append("translation")
 
-                hits_v = _rag_search_labor_corpus(qv_boosted, top_k=14, min_score=ms_v)
-                hits_v = _filter_to_labor_only(_dedupe_rag_hits_by_metadata(hits_v))
-                hits_v = _rag_prioritize_hits_for_rule_hit(hits_v, vh)[:4]
+        language_detection_payload: Dict[str, Any] = {
+            "language_code": lang_det.language_code,
+            "confidence": lang_det.confidence,
+            "is_mixed": lang_det.is_mixed,
+            "chunks_language_annotated": True,
+            "fasttext_lid_configured": bool((os.getenv("FASTTEXT_LID_MODEL") or "").strip()),
+            "lfm_fallback_enabled": local_lfm_lid_fallback_enabled(),
+            "lfm_fallback_used": lfm_lid_fallback_used,
+        }
+        if lang_det.confidence < 0.22 and len((full_text or "").strip()) >= 20:
+            language_detection_payload["warning"] = "detection_confidence_low"
 
-                rag_by_violation.append({
-                    "rule_id": vh.get("rule_id"),
-                    "severity": vh.get("severity"),
-                    "violation_desc": vh.get("description"),
-                    "rag_query_used": qv_boosted,
-                    "hits": hits_v,
-                })
-                rag_global_hits.extend(hits_v)
-
-            rag_global_hits = _dedupe_rag_hits_by_metadata(rag_global_hits)
-            rag_by_violation = _dedupe_rag_blocks_by_rule(rag_by_violation)
-
-        # ---------- Local LFM explanation per violation (explanation only, no decision) ----------
-        _local_llm_ok = _local_llm_module is not None and getattr(_local_llm_module, "is_available", lambda: False)()
-        _pkg_llm_ok = _llm_explain_violation is not None and _llm_is_available()
-        _llm_available = _local_llm_ok or _pkg_llm_ok
-        _explain_lang = detect_language(full_text_rules) if (full_text_rules or "").strip() else "ar"
-        if use_llm and _llm_available:
-            top_k_llm = max(0, int(llm_top_k or 0))
-            max_new = max(32, int(llm_max_new_tokens or 200))
-            _explain_fn = None
-            if _local_llm_ok:
-                _explain_fn = getattr(_local_llm_module, "explain_violation", None)
-            if _explain_fn is None and _pkg_llm_ok:
-                _explain_fn = _llm_explain_violation
-            for block in (rag_by_violation or [])[:top_k_llm]:
-                rule_id = block.get("rule_id") or ""
-                violation_desc = block.get("violation_desc") or ""
-                hits_v = block.get("hits") or []
-                matched = ""
-                for h in (rule_hits or []):
-                    if h.get("rule_id") == rule_id:
-                        matched = (h.get("matched_text") or "")[:800]
-                        break
-                law_articles = [{"text": x.get("text", ""), "metadata": x.get("metadata") or {}} for x in hits_v]
-                try:
-                    if _explain_fn:
-                        expl = _explain_fn(
-                            rule_id=rule_id,
-                            description=violation_desc,
-                            matched_text=matched or violation_desc,
-                            law_articles=law_articles,
-                            max_new_tokens=max_new,
-                            language=_explain_lang,
-                        )
-                    else:
-                        expl = "[LLM not available]"
-                    align, align_note = _llm_alignment_with_severity(expl, block.get("severity"))
-                    block["llm_severity_alignment"] = align
-                    if align == "conflict" and align_note:
-                        block["llm_severity_note"] = align_note
-                        block["llm_explanation"] = f"{align_note}\n\n{expl}"
-                    else:
-                        block["llm_explanation"] = expl
-                except Exception as e:
-                    block["llm_explanation"] = f"[LLM error: {e!r}]"
-                    block["llm_severity_alignment"] = "unknown"
-
-        # Dynamic law_scope_used
-        law_scope_used: List[str] = []
-        if labor_applicable:
-            law_scope_used.append("labor")
-        if is_cb:
-            law_scope_used.append("cross_border")
-
-        # Pipeline audit (plan Step 5): which steps ran
-        pipeline_steps: List[str] = ["ocr"]
-        if rule_engine is not None and full_text_rules.strip():
-            pipeline_steps.append("rule_engine")
-        if ml_used:
-            pipeline_steps.append("ml_assist")
-        if use_rag:
-            pipeline_steps.append("rag")
-        if use_llm and _llm_available:
-            pipeline_steps.append("llm")
+        ar_translated_chunks: List[Dict[str, Any]] = []
+        translated_chunks: List[Dict[str, Any]] = []
+        for _chunk in ocr_chunks:
+            tx = _chunk.get("translated_ar_text")
+            if isinstance(tx, str) and tx.strip():
+                ar_translated_chunks.append(
+                    {
+                        "id": _chunk.get("id"),
+                        "page": _chunk.get("page"),
+                        "translated_ar_text": tx,
+                    }
+                )
+            tx_any = _chunk.get("translated_text")
+            if isinstance(tx_any, str) and tx_any.strip():
+                translated_chunks.append(
+                    {
+                        "id": _chunk.get("id"),
+                        "page": _chunk.get("page"),
+                        "translated_text": tx_any,
+                    }
+                )
 
         response: Dict[str, Any] = {
+            "translation_only": bool(translation_only),
             "ocr_chunks": ocr_chunks,
             "clauses": clauses_for_response,
             "rule_hits": rule_hits,
@@ -2055,6 +2266,13 @@ async def ocr_check_and_search(
 
             # Pipeline audit (structured, auditable)
             "pipeline_steps": pipeline_steps,
+            "language_detection": language_detection_payload,
+            "translation": translation_meta,
+            "ar_translated_chunks": ar_translated_chunks,
+            "translated_chunks": translated_chunks,
+            "source_language_mode": source_mode,
+            "source_language_effective": lang_det.language_code,
+            "translation_target_lang": target_lang,
         }
 
         response["cross_border_evidence"] = _rule_evidence(
@@ -2079,7 +2297,7 @@ async def ocr_check_and_search(
                 raise HTTPException(status_code=401, detail="Unauthorized.")
 
             sha256 = hashlib.sha256(data).hexdigest()
-            detected_lang = detect_language(full_text)
+            detected_lang = lang_det.language_code
 
             a = Analysis(
                 user_id=current_user.id,

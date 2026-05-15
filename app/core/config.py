@@ -25,5 +25,16 @@ class Settings:
     # App
     ENV: str = os.getenv("ENV", "dev")
 
+    # Translation: EXTERNAL_MT_DISABLED=1 blocks Google Cloud Translation; Argos offline MT still works unless DISABLE_ARGOS_MT=1.
+    # Arabic MT order: Google v2 first, then local LFM (if enabled), then Argos.
+    EXTERNAL_MT_DISABLED: bool = os.getenv("EXTERNAL_MT_DISABLED", "").strip().lower() in ("1", "true", "yes")
+    # Optional: FASTTEXT_LID_MODEL=path/to/lid.176.ftz for stronger LID; LEGALAI_MT_CACHE_DIR for on-disk MT chunk cache.
+    LEGALAI_MT_CACHE_DIR: str = os.getenv("LEGALAI_MT_CACHE_DIR", "")
+    MT_AUTO_PER_CHUNK_MIXED: bool = os.getenv("MT_AUTO_PER_CHUNK_MIXED", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
 
 settings = Settings()

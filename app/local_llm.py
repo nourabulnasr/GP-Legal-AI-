@@ -257,6 +257,8 @@ def explain_violation(
     """
     One-shot: build prompt and generate explanation. Returns LLM text only.
     language: ar | en (drives system prompt in build_explanation_prompt).
+    Callers map ISO detection via ``llm_locale_from_detection``: non-English, non-Arabic
+    languages use ``ar`` prompts so explanations stay Arabic-first while clause text may be FR/DE/… .
     """
     prompt = build_explanation_prompt(
         rule_id, description, matched_text, law_articles, language=language

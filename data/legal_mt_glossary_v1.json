@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "description": "Reference term pairs for post-translation touch-ups. `pairs` apply to all sources; `by_source` adds ISO 639-1 keys (e.g. fr, de).",
+  "pairs": [
+    ["probation period", "فترة التجربة"],
+    ["governing law", "القانون الواجب التطبيق"],
+    ["termination", "إنهاء"],
+    ["notice period", "فترة الإشعار"]
+  ],
+  "by_source": {
+    "fr": [
+      ["période d'essai", "فترة التجربة"],
+      ["durée du préavis", "فترة الإشعار"]
+    ],
+    "de": [
+      ["kündigungsfrist", "فترة الإشعار"],
+      ["probezeit", "فترة التجربة"]
+    ]
+  }
+}
