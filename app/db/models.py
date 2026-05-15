@@ -114,6 +114,7 @@ class SocialPost(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     tags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     category: Mapped[str] = mapped_column(String(64), nullable=False, default="All Updates", index=True)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 

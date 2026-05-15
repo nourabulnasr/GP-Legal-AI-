@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +30,8 @@ from app.db.models import (
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api", tags=["social"])
+
+_IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "http://localhost:8000")
 
 
 def _parse_profile_row(row: Optional[LegatoProfile]) -> Dict[str, Any]:
@@ -149,6 +153,7 @@ def _serialize_post(
         "comments_count": cc,
         "shares_count": sc,
         "liked": liked,
+        "image_url": f"{_IMAGE_BASE_URL}/{post.image_url}" if post.image_url else None,
     }
 
 
@@ -212,17 +217,35 @@ def list_posts(
 
 
 @router.post("/posts")
-def create_post(
-    body: PostCreateBody,
+async def create_post(
+    content: str = Form(..., min_length=1, max_length=20000),
+    category: str = Form(default="All Updates"),
+    tags: str = Form(default=""),
+    image: Optional[UploadFile] = File(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    tags = [str(t).strip() for t in (body.tags or []) if str(t).strip()][:20]
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()][:20]
+
+    image_url: Optional[str] = None
+    if image and image.filename:
+        ext = os.path.splitext(image.filename)[-1].lower()
+        safe_ext = ext if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"} else ".jpg"
+        raw_name = f"{uuid.uuid4().hex}_{image.filename[:64]}{'' if ext else safe_ext}"
+        filename = "".join(c if c.isalnum() or c in "._-" else "_" for c in raw_name)
+        save_path = os.path.join("static", "post_images", filename)
+        os.makedirs("static/post_images", exist_ok=True)
+        data = await image.read()
+        with open(save_path, "wb") as f:
+            f.write(data)
+        image_url = f"static/post_images/{filename}"
+
     post = SocialPost(
         author_id=current_user.id,
-        content=body.content.strip(),
-        tags_json=json.dumps(tags, ensure_ascii=False),
-        category=(body.category or "All Updates")[:64],
+        content=content.strip(),
+        tags_json=json.dumps(tag_list, ensure_ascii=False),
+        category=(category or "All Updates")[:64],
+        image_url=image_url,
     )
     db.add(post)
     db.commit()

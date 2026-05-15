@@ -398,6 +398,11 @@ if Retriever is None:
 api = FastAPI(title="legalai")
 app = api  # alias for uvicorn
 
+import os as _os
+from fastapi.staticfiles import StaticFiles
+_os.makedirs("static/post_images", exist_ok=True)
+api.mount("/static", StaticFiles(directory="static"), name="static")
+
 # ============================================================
 # CORS — allow frontend (e.g. localhost:5173) to call the API
 # ============================================================
