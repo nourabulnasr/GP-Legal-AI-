@@ -69,6 +69,12 @@ class LegatoApi {
     int? llmMaxNewTokens,
     bool save = true,
     String? query,
+    bool translateToAr = false,
+    bool translationOnly = false,
+    String translationTargetLang = 'ar',
+    bool translatePerChunkMt = false,
+    String sourceLanguageMode = 'auto',
+    String? sourceLanguageOverride,
   }) {
     return _api.postMultipartOcrCheck(
       fileBytes: fileBytes,
@@ -80,6 +86,38 @@ class LegatoApi {
       llmMaxNewTokens: llmMaxNewTokens,
       save: save,
       query: query,
+      translateToAr: translateToAr,
+      translationOnly: translationOnly,
+      translationTargetLang: translationTargetLang,
+      translatePerChunkMt: translatePerChunkMt,
+      sourceLanguageMode: sourceLanguageMode,
+      sourceLanguageOverride: sourceLanguageOverride,
+    );
+  }
+
+  /// Translation-only OCR + MT (server picks Google → LFM automatically).
+  Future<Map<String, dynamic>> translateContract(
+    Uint8List fileBytes,
+    String filename, {
+    String translationTargetLang = 'ar',
+    bool save = false,
+    bool translatePerChunkMt = false,
+    String sourceLanguageMode = 'auto',
+    String? sourceLanguageOverride,
+  }) {
+    return analyzeContract(
+      fileBytes,
+      filename,
+      useRag: false,
+      useMl: false,
+      useLlm: false,
+      save: save,
+      translateToAr: true,
+      translationOnly: true,
+      translationTargetLang: translationTargetLang,
+      translatePerChunkMt: translatePerChunkMt,
+      sourceLanguageMode: sourceLanguageMode,
+      sourceLanguageOverride: sourceLanguageOverride,
     );
   }
 

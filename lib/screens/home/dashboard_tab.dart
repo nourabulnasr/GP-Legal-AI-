@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/analyze/analyze_screen.dart';
+import 'package:legato_mobile/screens/translate/translate_contract_screen.dart';
 import 'package:legato_mobile/screens/chat/chat_hub_screen.dart';
 import 'package:legato_mobile/screens/history/history_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
@@ -158,6 +159,15 @@ class _DashboardTabState extends State<DashboardTab> {
                     subtitle: 'Upload PDF / DOCX — OCR + rules + RAG + LFM',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(builder: (_) => const AnalyzeScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _ActionCard(
+                    icon: Icons.translate,
+                    title: 'Translate contract',
+                    subtitle: 'OCR + automatic translation (no engine picker)',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const TranslateContractScreen()),
                     ),
                   ),
                   const SizedBox(height: 8),

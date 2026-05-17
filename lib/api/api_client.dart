@@ -181,6 +181,12 @@ class ApiClient {
     int? llmMaxNewTokens,
     bool save = true,
     String? query,
+    bool translateToAr = false,
+    bool translationOnly = false,
+    String translationTargetLang = 'ar',
+    bool translatePerChunkMt = false,
+    String sourceLanguageMode = 'auto',
+    String? sourceLanguageOverride,
   }) async {
     final request = http.MultipartRequest('POST', uri('/ocr_check_and_search'));
     final t = await _storage.readToken();
@@ -200,6 +206,20 @@ class ApiClient {
     request.fields['save'] = save.toString();
     if (query != null && query.isNotEmpty) {
       request.fields['query'] = query;
+    }
+    if (translateToAr) {
+      request.fields['translate_to_ar'] = 'true';
+      request.fields['translation_target_lang'] = translationTargetLang;
+      if (translationOnly) {
+        request.fields['translation_only'] = 'true';
+      }
+      if (translatePerChunkMt) {
+        request.fields['translate_per_chunk_mt'] = 'true';
+      }
+      request.fields['source_language_mode'] = sourceLanguageMode;
+      if (sourceLanguageOverride != null && sourceLanguageOverride.isNotEmpty) {
+        request.fields['source_language_override'] = sourceLanguageOverride;
+      }
     }
 
     final streamed = await request.send().timeout(AppConfig.longTimeout);

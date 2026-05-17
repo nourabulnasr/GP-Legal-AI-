@@ -2,6 +2,7 @@
 
 import 'package:legato_mobile/screens/chat/chat_assistant_screen.dart';
 import 'package:legato_mobile/screens/features/phase5_screens.dart';
+import 'package:legato_mobile/screens/translate/translate_contract_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 
 /// Entry to all Phase-5 capabilities (wired to `/legato/*` API).
@@ -9,6 +10,12 @@ class FeaturesHubScreen extends StatelessWidget {
   const FeaturesHubScreen({super.key});
 
   static const _items = <_FeatureItem>[
+    _FeatureItem(
+      'Translate contract',
+      'OCR + automatic MT (Google → LFM)',
+      Icons.translate,
+      TranslateContractScreen(),
+    ),
     _FeatureItem('E-sign (in-app record)', 'Record consent + signer name', Icons.draw_outlined, EsignFeatureScreen()),
     _FeatureItem('Compare A vs B', 'Diff files or two saved analyses', Icons.compare_arrows, CompareFeatureScreen()),
     _FeatureItem('AI Assistant', 'Chat with Gemini via /chat/assistant', Icons.chat_outlined, ChatAssistantScreen()),
