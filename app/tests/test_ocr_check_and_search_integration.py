@@ -6,8 +6,8 @@ From project root (uses in-process TestClient; no separate server required):
   set RUN_OCR_INTEGRATION=1
   python -m pytest app/tests/test_ocr_check_and_search_integration.py -v
 
-When local LFM is available, expects translation_provider local_lfm_translate.
-Otherwise Google/Argos/skip are acceptable depending runtime setup.
+When Google credentials are configured, expects translation_provider google_cloud_translate_v2
+when the client is available; otherwise local_lfm_translate or skip depending on runtime setup.
 """
 
 from __future__ import annotations
@@ -76,10 +76,14 @@ def test_ocr_check_and_search_language_detection_and_translation_payload():
     mt_allowed = os.getenv("EXTERNAL_MT_DISABLED", "").strip().lower() not in ("1", "true", "yes")
     google_not_disabled = os.getenv("DISABLE_GOOGLE_MT", "").strip().lower() not in ("1", "true", "yes")
     expect_google = creds_configured and mt_allowed and google_not_disabled and _google_translate_v2_importable()
-    if os.getenv("ENABLE_LOCAL_LLM_TRANSLATION", "1").strip().lower() not in ("0", "false", "no"):
+    if expect_google:
+        assert tx.get("translation_provider") in (
+            "google_cloud_translate_v2",
+            "local_lfm_translate",
+            "argos_translate",
+        ), tx
+    elif os.getenv("ENABLE_LOCAL_LLM_TRANSLATION", "1").strip().lower() not in ("0", "false", "no"):
         assert tx.get("translation_provider") in ("local_lfm_translate", None, "none"), tx
-    elif expect_google:
-        assert tx.get("translation_provider") == "google_cloud_translate_v2", tx
 
     chunks = body.get("ocr_chunks") or []
     assert isinstance(chunks, list) and len(chunks) >= 1

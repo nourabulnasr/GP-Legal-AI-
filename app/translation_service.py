@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Machine translation (Arabic: Google, then local LFM, then Argos; other targets: local LFM only):
+Automatic machine translation (no client-side provider selection):
 
-  For target Arabic (ar):
+  For all supported targets (ar, en, fr, de):
   1) Google Cloud Translation v2 when the client is available (API key or ADC) and not disabled
   2) Local LFM when Google is unavailable or returns no usable translation
-  3) Argos Translate (offline) as last resort for Arabic
+
+  Argos Translate (offline, Arabic target only) runs only when both Google and LFM failed.
 
 Set EXTERNAL_MT_DISABLED=1 to block Google Translation API calls; Argos still works unless DISABLE_ARGOS_MT=1.
 Optional DISABLE_GOOGLE_MT=1 to skip Google (LFM then Argos for ar).
@@ -385,17 +386,24 @@ def _translate_piece_argos(piece: str, src: str) -> Optional[str]:
     return None
 
 
-def _translate_via_google(text: str, src: str, pairs: List[Tuple[str, str]]) -> Tuple[Optional[str], str]:
-    """Returns (translated_full_text or None, status ok|partial)."""
+def _translate_via_google(
+    text: str,
+    src: str,
+    pairs: List[Tuple[str, str]],
+    *,
+    target_lang: str = "ar",
+) -> Tuple[Optional[str], str]:
+    """Returns (translated_full_text or None, status ok|partial|skipped)."""
     client = _get_translate_v2_client()
     if client is None:
         return None, "skipped"
 
+    target = _normalize_target_lang(target_lang)
     chunks_out: List[str] = []
     overall = "ok"
     t = text
     i = 0
-    backend = "google"
+    backend = f"google_{target}"
     while i < len(t):
         piece = t[i : i + _CHUNK_CHARS]
         i += _CHUNK_CHARS
@@ -409,7 +417,7 @@ def _translate_via_google(text: str, src: str, pairs: List[Tuple[str, str]]) -> 
         st_piece = "ok"
         for attempt in range(_MAX_ATTEMPTS):
             try:
-                kwargs: Dict[str, Any] = {"target_language": "ar", "format_": "text"}
+                kwargs: Dict[str, Any] = {"target_language": target, "format_": "text"}
                 if src not in ("und", "unknown", ""):
                     kwargs["source_language"] = src
                 res = client.translate(piece, **kwargs)
@@ -430,7 +438,7 @@ def _translate_via_google(text: str, src: str, pairs: List[Tuple[str, str]]) -> 
             translated_piece = piece
             overall = "partial"
             st_piece = "partial"
-        out_piece = _apply_glossary_ar(translated_piece, pairs)
+        out_piece = _apply_glossary_ar(translated_piece, pairs) if target == "ar" else translated_piece
         _cache_put(backend, src, piece, (out_piece, st_piece))
         chunks_out.append(out_piece)
     return "".join(chunks_out), overall
@@ -536,7 +544,7 @@ def _translate_via_local_lfm(
     return "".join(chunks_out), overall
 
 
-def _google_ar_result_usable(original: str, g_out: Optional[str], g_st: str) -> bool:
+def _google_mt_result_usable(original: str, g_out: Optional[str], g_st: str) -> bool:
     """True when Google returned text we should accept instead of falling back to LFM or Argos."""
     if g_out is None:
         return False
@@ -561,7 +569,8 @@ def translate_plain_to_target(
       status: ok | partial | skipped
       provider: google_cloud_translate_v2 | local_lfm_translate | argos_translate | none
 
-    For Arabic: Google first, then local LFM, then Argos. For other targets (en/fr/de): local LFM only.
+    Automatic order for all supported targets: Google Cloud Translation v2, then local LFM.
+    Argos (Arabic target only) is used only when both Google and LFM fail.
     """
     src = _normalize_lang_code(source_lang, fallback="und")
     target = _normalize_target_lang(target_lang)
@@ -572,16 +581,16 @@ def translate_plain_to_target(
 
     pairs = (load_glossary_pairs_for_source(src) if apply_glossary and target == "ar" else [])
 
+    g_out, g_st = _translate_via_google(text, src, pairs, target_lang=target)
+    if _google_mt_result_usable(text, g_out, g_st):
+        return g_out, g_st, "google_cloud_translate_v2"
+
+    llm_out, llm_st = _translate_via_local_lfm(text, src, target, pairs)
+    if llm_out is not None:
+        if not (llm_st == "partial" and llm_out.strip() == text.strip()):
+            return llm_out, llm_st, "local_lfm_translate"
+
     if target == "ar":
-        g_out, g_st = _translate_via_google(text, src, pairs)
-        if _google_ar_result_usable(text, g_out, g_st):
-            return g_out, g_st, "google_cloud_translate_v2"
-
-        llm_out, llm_st = _translate_via_local_lfm(text, src, target, pairs)
-        if llm_out is not None:
-            if not (llm_st == "partial" and llm_out.strip() == text.strip()):
-                return llm_out, llm_st, "local_lfm_translate"
-
         a_out, a_st = _translate_via_argos(text, src, pairs)
         if a_out is None:
             return text, "skipped", "none"
@@ -589,10 +598,6 @@ def translate_plain_to_target(
             return text, "skipped", "none"
         return a_out, a_st, "argos_translate"
 
-    llm_out, llm_st = _translate_via_local_lfm(text, src, target, pairs)
-    if llm_out is not None:
-        if not (llm_st == "partial" and llm_out.strip() == text.strip()):
-            return llm_out, llm_st, "local_lfm_translate"
     return text, "skipped", "none"
 
 
@@ -651,10 +656,13 @@ def enrich_ocr_chunks_with_arabic(
         return meta
 
     google_ok = _get_translate_v2_client() is not None
-    if not google_ok and argos_mt_disabled() and not local_lfm_mt_enabled():
-        meta["translation_status"] = "skipped"
-        meta["skip_reason"] = "google_translate_client_unavailable_and_argos_disabled"
-        return meta
+    if not google_ok and not local_lfm_mt_enabled():
+        if target == "ar" and not argos_mt_disabled():
+            pass  # Arabic can still use Argos after LFM fails inside translate_plain_to_target
+        else:
+            meta["translation_status"] = "skipped"
+            meta["skip_reason"] = "no_translation_backend_available"
+            return meta
 
     provider_used: Optional[str] = None
     any_partial = False
