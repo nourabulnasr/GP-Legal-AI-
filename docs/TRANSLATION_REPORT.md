@@ -68,24 +68,20 @@ flowchart TD
   IN --> Q1{"Empty text, or\nsrc == target, or\nsrc == und?"}
   Q1 -->|yes| SK["Return: original text,\nstatus skipped, provider none"]
 
-  Q1 --> TAR{"target_lang == ar ?"}
-  TAR -->|no| LFMonly["Try local LFM only"]
-  LFMonly --> LFMok2{"Usable LFM output?"}
-  LFMok2 -->|yes| OUTL2["provider: local_lfm_translate"]
-  LFMok2 -->|no| SK
-
-  TAR -->|yes| GOO["Try Google Cloud\nTranslation v2"]
+  Q1 --> GOO["Try Google Cloud\nTranslation v2 (all targets)"]
   GOO --> Guse{"Usable Google output?\nclient ok and not partial noop"}
-  Guse -->|yes| OUTG["provider: google_cloud_translate_v2\n+ glossary"]
+  Guse -->|yes| OUTG["provider: google_cloud_translate_v2\n+ glossary if ar"]
 
   Guse -->|no| LFM["Try local LFM fallback"]
   LFM --> LFMok{"Usable LFM output?"}
   LFMok -->|yes| OUTL["provider: local_lfm_translate\n+ glossary if ar"]
 
-  LFMok -->|no| ARG["Try Argos to ar"]
+  LFMok -->|no| TAR{"target_lang == ar ?"}
+  TAR -->|yes| ARG["Try Argos to ar (last resort)"]
   ARG --> Aok{"Argos works?"}
   Aok -->|yes| OUTA["provider: argos_translate\n+ glossary"]
   Aok -->|no| SK2["skipped / none"]
+  TAR -->|no| SK2
 ```
 
 ### Gates inside `enrich_ocr_chunks_with_arabic`
@@ -103,8 +99,8 @@ flowchart TD
   G1 -->|no| G2{"NOT per_chunk AND\n(doc src == target OR und) ?"}
   G2 -->|yes| M2["skip_reason:\nsource_already_target_or_undetermined"]
 
-  G2 -->|no| G3{"No Google client AND\nArgos disabled AND\nLFM MT disabled ?"}
-  G3 -->|yes| M3["skip_reason:\ngoogle_translate_client_unavailable_and_argos_disabled"]
+  G2 -->|no| G3{"No Google client AND\nLFM MT disabled AND\n(not ar OR Argos disabled) ?"}
+  G3 -->|yes| M3["skip_reason:\nno_translation_backend_available"]
 
   G3 -->|no| LOOP["For each chunk:\nresolve effective_lang →\ntranslate_plain_to_target"]
 
@@ -130,15 +126,15 @@ flowchart TD
 
 ## 3. Translation backends and order of use
 
-The public entry for a single string is `translate_plain_to_target` in `translation_service.py`. Effective order for **Arabic** (`ar`):
+The public entry for a single string is `translate_plain_to_target` in `translation_service.py`. **Automatic** order for all supported targets (`ar`, `en`, `fr`, `de`):
 
-1. **Google Cloud Translation v2** (`google_cloud_translate_v2`) — when `GOOGLE_TRANSLATION_API_KEY` is set, the app uses the **public REST** endpoint (`?key=…`); when only ADC/service account is configured, it uses `google.cloud.translate_v2.Client()`. `EXTERNAL_MT_DISABLED` and `DISABLE_GOOGLE_MT` must be off. Chunk size 4500. Retries with backoff. Glossary applied after Google for Arabic. If Google is unusable (no client, or partial with unchanged text), the code **falls back** to LFM then Argos.
+1. **Google Cloud Translation v2** (`google_cloud_translate_v2`) — when `GOOGLE_TRANSLATION_API_KEY` is set, the app uses the **public REST** endpoint (`?key=…`); when only ADC/service account is configured, it uses `google.cloud.translate_v2.Client()`. `EXTERNAL_MT_DISABLED` and `DISABLE_GOOGLE_MT` must be off. Chunk size 4500. Retries with backoff. Glossary applied after Google for Arabic. If Google is unusable (no client, or partial with unchanged text), the code **falls back** to LFM.
 
 2. **Local LFM** (`local_lfm_translate`) — when `ENABLE_LOCAL_LLM_TRANSLATION` is not disabled and `app.local_llm` is available. Chunks of `_ARGOS_CHUNK_CHARS` (1200). Glossary applied for Arabic target after LFM.
 
-3. **Argos Translate** (`argos_translate`) — offline **to Arabic only**; same 1200-char chunks; skipped when `DISABLE_ARGOS_MT` is set.
+3. **Argos Translate** (`argos_translate`) — offline **to Arabic only**, used **only when both Google and LFM failed** for an Arabic target; same 1200-char chunks; skipped when `DISABLE_ARGOS_MT` is set.
 
-For targets **`en`, `fr`, `de`**, the code path only uses **local LFM** (Google/Argos paths are Arabic-specific in this service); if LFM is off or unavailable, the function returns the original text with provider `none` and status `skipped`.
+For **`en`, `fr`, `de`**, if both Google and LFM fail, the function returns the original text with provider `none` and status `skipped` (no Argos path).
 
 `translate_plain_to_arabic` is a thin wrapper calling `translate_plain_to_target(..., target_lang="ar")`.
 
@@ -234,9 +230,9 @@ This affects which **source** code is passed into MT and whether **per-chunk** m
 
 1. **Flag name `translate_to_ar`** is legacy; it gates **any** supported `translation_target_lang`, not only Arabic.
 
-2. **Non-Arabic targets** rely on **local LFM only**; no Google/Argos fallback.
+2. **Non-Arabic targets** use **Google then LFM**; Argos is not used.
 
-3. **`enrich_ocr_chunks_with_arabic`** early exits only when no backend remains (Google off, Argos off, LFM MT off).
+3. **`enrich_ocr_chunks_with_arabic`** early exits when no backend remains (Google off, LFM MT off, and for Arabic either Argos off or non-ar target).
 
 4. **Glossary** is Arabic-oriented; for `en`/`fr`/`de` targets, glossary application in `translate_plain_to_target` is tied to `target == "ar"`.
 
@@ -244,7 +240,7 @@ This affects which **source** code is passed into MT and whether **per-chunk** m
 
 ## 13. Summary
 
-Translation in this project is a **server-side, chunk-based** pipeline: for **Arabic**, **Google v2** runs first, then **local LFM**, then **Argos**, plus a **legal glossary** for Arabic post-processing, **caching**, and coupling to **language detection** and **per-chunk** mixed-document handling. The **web app** exposes the main switches; **`docs/API_CONTRACT.md`** documents the response shape for other clients.
+Translation in this project is a **server-side, automatic, chunk-based** pipeline: **Google v2** runs first for all supported targets, then **local LFM**, then **Argos** only as a last resort for Arabic, plus a **legal glossary** for Arabic post-processing, **caching**, and coupling to **language detection** and **per-chunk** mixed-document handling. Clients choose target language only (no provider field); **`docs/API_CONTRACT.md`** documents the response shape.
 
 ---
 

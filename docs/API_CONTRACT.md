@@ -25,6 +25,7 @@ Request (multipart) additions:
 - `source_language_mode`: `auto` or `manual` (default `auto`).
 - `source_language_override`: used only when `source_language_mode=manual` and must be a valid language tag.
 - `translation_target_lang`: one of `ar`, `en`, `fr`, `de` (default `ar`).
+- Translation provider is chosen **server-side** (Google Cloud Translation v2 first, then local LFM; Argos only if both fail for Arabic). Clients must not send a provider field.
 
 Response additions (non-breaking):
 - `source_language_mode`: effective source mode used by backend.
@@ -65,7 +66,7 @@ Example response (trimmed):
   },
   "translation": {
     "translation_status": "ok",
-    "translation_provider": "local_lfm_translate",
+    "translation_provider": "google_cloud_translate_v2",
     "translation_target_lang": "fr",
     "per_chunk": false
   },

@@ -180,6 +180,34 @@ class TestGoogleMtMocked(unittest.TestCase):
         self.assertEqual(meta.get("translation_status"), "ok")
         self.assertTrue((chunks[0].get("translated_ar_text") or "").startswith("[ar]"))
 
+    def test_translate_plain_to_target_fr_uses_google_cloud(self):
+        mock_client = Mock()
+
+        def _translate(piece, **kwargs):
+            self.assertEqual(kwargs.get("target_language"), "fr")
+            self.assertEqual(kwargs.get("source_language"), "en")
+            return {"translatedText": f"[fr]{piece}"}
+
+        mock_client.translate = Mock(side_effect=_translate)
+        with patch.object(translation_service_mod, "_get_translate_v2_client", return_value=mock_client):
+            with patch.dict(os.environ, self._env_google, clear=False):
+                out, st, prov = translation_service_mod.translate_plain_to_target(
+                    "Employment clause.", "en", target_lang="fr", apply_glossary=False
+                )
+        self.assertEqual(prov, "google_cloud_translate_v2")
+        self.assertEqual(st, "ok")
+        self.assertTrue(out.startswith("[fr]"))
+
+    def test_non_arabic_google_unavailable_falls_back_to_local_lfm(self):
+        with patch.object(translation_service_mod, "_get_translate_v2_client", return_value=None):
+            with patch.object(translation_service_mod, "_translate_piece_local_lfm", return_value="[de]Hallo"):
+                with patch.dict(os.environ, self._env_google_lfm_on, clear=False):
+                    out, st, prov = translation_service_mod.translate_plain_to_target(
+                        "Hello.", "en", target_lang="de", apply_glossary=False
+                    )
+        self.assertEqual(prov, "local_lfm_translate")
+        self.assertIn("[de]", out)
+
     def test_arabic_google_unavailable_falls_back_to_local_lfm(self):
         """When Translation v2 client is missing, Arabic MT uses local LFM before Argos."""
         with patch.object(translation_service_mod, "_get_translate_v2_client", return_value=None):
