@@ -79,6 +79,8 @@ class AuthService {
     return UserModel.fromJson(data);
   }
 
+  Future<void> storeToken(String token) => _storage.writeToken(token);
+
   Future<void> logout() => _storage.clearToken();
 
   Future<Map<String, dynamic>> verifyEmail({required String email, required String code}) {

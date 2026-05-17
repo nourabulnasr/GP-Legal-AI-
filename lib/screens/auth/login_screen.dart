@@ -1,7 +1,9 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
+import 'package:legato_mobile/config/runtime_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/auth/forgot_password_screen.dart';
 import 'package:legato_mobile/screens/auth/register_screen.dart';
@@ -26,6 +28,12 @@ class _LoginScreenState extends State<LoginScreen> {
     _email.dispose();
     _password.dispose();
     super.dispose();
+  }
+
+  Future<void> _signInWithGoogle() async {
+    final uri = Uri.parse('${RuntimeConfig.apiBaseUrl}/auth/google');
+    if (!await canLaunchUrl(uri)) return;
+    await launchUrl(uri, mode: LaunchMode.platformDefault);
   }
 
   Future<void> _submit() async {
@@ -130,6 +138,25 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Text('Sign in'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: _busy ? null : _signInWithGoogle,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'G',
+                        style: TextStyle(
+                          color: _busy ? Colors.grey : const Color(0xFF4285F4),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text('Sign in with Google'),
+                    ],
+                  ),
                 ),
                 TextButton(
                   onPressed: _busy

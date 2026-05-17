@@ -22,6 +22,19 @@ class AuthProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
+      // Flutter web: backend redirects back with ?token= after Google OAuth.
+      final uriToken = Uri.base.queryParameters['token'];
+      final uriError = Uri.base.queryParameters['error'];
+      if (uriToken != null && uriToken.isNotEmpty) {
+        await _auth.storeToken(uriToken);
+        _user = await _auth.me();
+        return;
+      }
+      if (uriError != null && uriError.isNotEmpty) {
+        _error = _oauthErrorMessage(uriError);
+        _user = null;
+        return;
+      }
       final has = await _auth.hasToken();
       if (!has) {
         _user = null;
@@ -39,6 +52,22 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> loginWithToken(String token) async {
+    _error = null;
+    await _auth.storeToken(token);
+    _user = await _auth.me();
+    notifyListeners();
+  }
+
+  String _oauthErrorMessage(String code) => switch (code) {
+        'google_denied' => 'Google sign-in was cancelled.',
+        'google_not_configured' => 'Google sign-in is not set up on the server.',
+        'google_token_failed' => 'Google authentication failed. Please try again.',
+        'google_user_failed' => 'Could not retrieve your Google account details.',
+        'google_no_email' => 'Your Google account has no email address.',
+        _ => 'Google sign-in failed. Please try again.',
+      };
 
   Future<void> login(String email, String password) async {
     _error = null;
