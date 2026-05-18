@@ -10,10 +10,12 @@ class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
 
   @override
-  State<AlertsScreen> createState() => _AlertsScreenState();
+  State<AlertsScreen> createState() => AlertsScreenState();
 }
 
-class _AlertsScreenState extends State<AlertsScreen> {
+/// Called by HomeShell whenever the Alerts tab becomes active.
+class AlertsScreenState extends State<AlertsScreen> {
+  void refresh() => _load();
   bool _loading = true;
   String? _err;
   List<dynamic> _timeline = const [];
