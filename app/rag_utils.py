@@ -74,15 +74,14 @@ class Retriever:
     # ---------------------------
     def build_index(self, docs: List[Dict[str, Any]]) -> None:
         self._docs = docs or []
-        if not self._docs:
-            self._mat = None
-            self._norms = None
-            return
+        self._mat = None
+        self._norms = None
+        # Matrix is built lazily on first search to avoid OOM during startup peak
 
-        mat = []
-        for d in self._docs:
-            text = (d.get("page_content") or d.get("text") or "")
-            mat.append(self._text_to_vec(text))
+    def _ensure_matrix(self) -> None:
+        if self._mat is not None or not self._docs:
+            return
+        mat = [self._text_to_vec(d.get("page_content") or d.get("text") or "") for d in self._docs]
         self._mat = np.vstack(mat)
         self._norms = np.linalg.norm(self._mat, axis=1) + 1e-8
 
@@ -116,7 +115,10 @@ class Retriever:
         filters: Optional[Dict[str, Any]] = None,
         min_score: float = 0.0,
     ) -> List[Dict[str, Any]]:
-        if not query or self._mat is None or self._norms is None:
+        if not query or not self._docs:
+            return []
+        self._ensure_matrix()
+        if self._mat is None or self._norms is None:
             return []
 
         qv = self._text_to_vec(query)
