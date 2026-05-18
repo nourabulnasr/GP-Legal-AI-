@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -248,7 +248,7 @@ def public_share(token: str, db: Session = Depends(get_db)):
     sh = db.query(LegatoShare).filter(LegatoShare.token == token).first()
     if not sh:
         raise HTTPException(status_code=404, detail="Not found")
-    if sh.expires_at and datetime.utcnow() > sh.expires_at:
+    if sh.expires_at and datetime.now(timezone.utc).replace(tzinfo=None) > sh.expires_at:
         raise HTTPException(status_code=410, detail="Share link expired")
     row = db.query(Analysis).filter(Analysis.id == sh.analysis_id).first()
     if not row:

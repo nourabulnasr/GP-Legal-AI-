@@ -207,8 +207,20 @@ def risk_payload_from_analysis(analysis_id: int, db: Session, current_user: User
     for h in rule_hits:
         s = str(h.get("severity") or "unknown")
         sev_counts[s] = sev_counts.get(s, 0) + 1
+    error_count = sev_counts.get("error", 0) + sev_counts.get("high", 0)
+    warning_count = sev_counts.get("warning", 0)
+    info_count = sev_counts.get("info", 0)
     return {
         "analysis_id": analysis_id,
+        # Flutter-expected keys
+        "error_count": error_count,
+        "warning_count": warning_count,
+        "info_count": info_count,
+        "total_hits": len(rule_hits),
+        "unified_ml_risk": data.get("full_text_unified_risk"),
+        "rule_hits": rule_hits,
+        "needs_review": bool(row.needs_review),
+        # backward-compat
         "rule_hits_count": len(rule_hits),
         "severity_counts": sev_counts,
         "full_text_unified_risk": data.get("full_text_unified_risk"),

@@ -53,30 +53,6 @@ def list_analyses(
     return [AnalysisResponse(id=r.id, filename=r.filename, created_at=r.created_at) for r in rows]
 
 
-@router.get("/{analysis_id}")
-def get_analysis(
-    analysis_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    row = db.query(Analysis).filter(Analysis.id == analysis_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    is_admin = getattr(current_user, "role", "user") == "admin"
-    if row.user_id != current_user.id and not is_admin:
-        # Requirement: forbid reading others' analyses
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    return AnalysisDetailResponse(
-        id=row.id,
-        user_id=row.user_id,
-        filename=row.filename,
-        created_at=row.created_at,
-        result_json=row.result_json,
-    )
-
-
 @router.get("/admin/all", response_model=list[AnalysisDetailResponse])
 def admin_list_all_analyses(
     db: Session = Depends(get_db),
@@ -144,6 +120,29 @@ def admin_update_user_role(
     db.commit()
     db.refresh(target)
     return {"id": target.id, "email": target.email, "role": target.role}
+
+
+@router.get("/{analysis_id}")
+def get_analysis(
+    analysis_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(Analysis).filter(Analysis.id == analysis_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    is_admin = getattr(current_user, "role", "user") == "admin"
+    if row.user_id != current_user.id and not is_admin:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    return AnalysisDetailResponse(
+        id=row.id,
+        user_id=row.user_id,
+        filename=row.filename,
+        created_at=row.created_at,
+        result_json=row.result_json,
+    )
 
 
 @router.patch("/{analysis_id}/flag")
