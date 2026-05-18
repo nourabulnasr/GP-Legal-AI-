@@ -549,6 +549,10 @@ CHUNKS_DIR = BASE_DIR / "chunks"
 retriever: Optional[Any] = None
 rule_engine: Optional[Any] = None
 
+# Signals RAG bootstrap to wait until LFM finishes loading — prevents concurrent
+# sentence-transformers + torch allocation spike that exhausts the Windows page file.
+_lfm_loaded_event = threading.Event()
+
 try:
     from .rules import RuleEngine
     if RULES_DIR.exists() and LAWS_DIR.exists():
@@ -1139,6 +1143,10 @@ def _heavy_rag_bootstrap(db_ok: bool) -> None:
     Must NOT run on the asyncio event loop or HTTP calls see ERR_EMPTY_RESPONSE.
     """
     global retriever, _startup_report_done
+    # Wait for LFM to finish loading (or timeout after 360s) before allocating
+    # the sentence-transformers embedding model — prevents concurrent RAM spikes
+    # that exhaust the Windows page file (os error 1455).
+    _lfm_loaded_event.wait(timeout=360)
     chroma_count = 0
     chroma_name = None
     device_used = None
@@ -1266,6 +1274,7 @@ def startup():
                 print("[Startup] LFM warmup: loading model in background thread...")
                 # Submit load to the model executor so load + generate share the same worker thread.
                 _model_executor.submit(load_model).result(timeout=600)
+                _lfm_loaded_event.set()  # Unblock RAG bootstrap — LFM allocation settled
                 # Dry-run generate to initialize Lfm2Cache conv_state — prevents meta-tensor
                 # error on the first real API call after fresh load.
                 def _dry_run():
@@ -1285,9 +1294,11 @@ def startup():
                 print("[Startup] LFM warmup: model loaded and ready.")
             except Exception as e:
                 print("[WARN] LFM warmup failed:", repr(e))
+                _lfm_loaded_event.set()  # Unblock RAG even on LFM failure
         threading.Thread(target=_lfm_warmup, daemon=True, name="lfm-warmup").start()
     else:
         print("[INFO] LFM warmup skipped (set WARMUP_LFM_AT_STARTUP=1 to preload on startup).")
+        _lfm_loaded_event.set()  # LFM not loading — RAG can start immediately
 
     try:
         from .law_update_service import start_background_poller
