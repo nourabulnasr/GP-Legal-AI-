@@ -154,18 +154,13 @@ def _get_translate_v2_client():
     if external_mt_disabled() or google_mt_disabled():
         return None
     try:
-        from google.cloud import translate_v2 as translate_v2
-
-        api_key = os.getenv("GOOGLE_TRANSLATION_API_KEY", "").strip()
+        api_key = (os.getenv("GOOGLE_TRANSLATION_API_KEY") or os.getenv("GOOGLE_TRANSLATE_API_KEY") or "").strip()
         if api_key:
-            creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-            if creds_path and not Path(creds_path).expanduser().is_file():
-                _LOGGER.warning(
-                    "GOOGLE_APPLICATION_CREDENTIALS points to a missing file; "
-                    "ignoring it and using GOOGLE_TRANSLATION_API_KEY (REST) for Translation v2."
-                )
+            # REST path — no google-cloud-translate SDK required
             _v2_client = _TranslateV2RestApiKeyClient(api_key)
         else:
+            # ADC path — requires google-cloud-translate SDK
+            from google.cloud import translate_v2 as translate_v2
             _v2_client = translate_v2.Client()
     except Exception as e:
         _LOGGER.warning("Google Cloud Translation v2 unavailable: %s", e)
