@@ -16,7 +16,7 @@ class AlertsScreen extends StatefulWidget {
 /// Called by HomeShell whenever the Alerts tab becomes active.
 class AlertsScreenState extends State<AlertsScreen> {
   void refresh() => _load();
-  bool _loading = true;
+  bool _loading = false;
   String? _err;
   List<dynamic> _timeline = const [];
   List<dynamic> _invites = const [];
