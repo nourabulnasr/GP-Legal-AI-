@@ -65,27 +65,40 @@ class _OcrChunkTranslationListState extends State<OcrChunkTranslationList> {
           final body = _showTranslated && trans.isNotEmpty ? trans : orig;
           final page = c['page'];
           final id = c['id']?.toString();
-          final title = page != null ? 'Page $page' : (id != null ? id : 'Chunk ${i + 1}');
+          final title = page != null ? 'Page $page' : (id ?? 'Chunk ${i + 1}');
 
           return Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: ExpansionTile(
               initiallyExpanded: i == 0,
               title: Text(title, style: Theme.of(context).textTheme.titleSmall),
-              subtitle: Text(
-                body.isEmpty ? '(empty)' : '${body.length} characters',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
-                    ),
+              subtitle: Directionality(
+                textDirection: (_showTranslated && widget.targetLang.toLowerCase() == 'ar')
+                    ? TextDirection.rtl
+                    : TextDirection.ltr,
+                child: Text(
+                  body.isEmpty ? '(empty)' : '${body.length} characters',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                      ),
+                ),
               ),
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: SelectableText(
-                    body.isEmpty ? '—' : body,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
+                  child: Directionality(
+                    textDirection: widget.targetLang.toLowerCase() == 'ar'
+                        ? TextDirection.rtl
+                        : TextDirection.ltr,
+                    child: SelectableText(
+                      body.isEmpty ? '—' : body,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
+                      textAlign: widget.targetLang.toLowerCase() == 'ar'
+                          ? TextAlign.right
+                          : TextAlign.left,
+                    ),
                   ),
                 ),
               ],

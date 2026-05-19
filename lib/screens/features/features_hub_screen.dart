@@ -52,7 +52,11 @@ class FeaturesHubScreen extends StatelessWidget {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
-              side: const BorderSide(color: LegatoLinkedInTheme.border),
+              side: BorderSide(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF30363D)
+                    : LegatoLinkedInTheme.border,
+              ),
             ),
             child: InkWell(
               onTap: () => Navigator.of(context).push(

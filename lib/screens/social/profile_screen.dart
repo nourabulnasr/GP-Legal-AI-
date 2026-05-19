@@ -620,6 +620,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
 
                   const SizedBox(height: 24),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.red),
+                    title: const Text('Log out', style: TextStyle(color: Colors.red)),
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Log out'),
+                          content: const Text('Are you sure you want to log out?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Log out', style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true && context.mounted) {
+                        await context.read<AuthProvider>().logout();
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),

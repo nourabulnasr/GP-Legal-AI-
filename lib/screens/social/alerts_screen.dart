@@ -28,6 +28,7 @@ class AlertsScreenState extends State<AlertsScreen> {
   }
 
   Future<void> _load() async {
+    if (_loading) return;
     setState(() {
       _loading = true;
       _err = null;

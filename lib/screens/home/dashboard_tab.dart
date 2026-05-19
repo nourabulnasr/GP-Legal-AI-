@@ -41,8 +41,11 @@ class _DashboardTabState extends State<DashboardTab> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
-    final email = user?.email ?? 'Guest';
-    final initial = email.isNotEmpty ? email[0].toUpperCase() : '?';
+    final rawEmail = user?.email ?? 'Guest';
+    final displayName = rawEmail.contains('@')
+        ? rawEmail.split('@').first
+        : rawEmail;
+    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
 
     return ColoredBox(
       color: Theme.of(context).scaffoldBackgroundColor,
@@ -89,7 +92,7 @@ class _DashboardTabState extends State<DashboardTab> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                email,
+                                displayName,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 18,
