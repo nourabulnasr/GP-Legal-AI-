@@ -31,7 +31,7 @@ from app.db.session import get_db
 
 router = APIRouter(prefix="/api", tags=["social"])
 
-_IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "http://localhost:8000")
+_IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "http://localhost:8000").rstrip("/")
 
 
 def _parse_profile_row(row: Optional[LegatoProfile]) -> Dict[str, Any]:
@@ -153,7 +153,7 @@ def _serialize_post(
         "comments_count": cc,
         "shares_count": sc,
         "liked": liked,
-        "image_url": f"{_IMAGE_BASE_URL}/{post.image_url}" if post.image_url else None,
+        "image_url": post.image_url if post.image_url else None,
     }
 
 
@@ -235,10 +235,13 @@ async def create_post(
         filename = "".join(c if c.isalnum() or c in "._-" else "_" for c in raw_name)
         save_path = os.path.join("static", "post_images", filename)
         os.makedirs("static/post_images", exist_ok=True)
-        data = await image.read()
+        MAX_IMG_BYTES = 5 * 1024 * 1024  # 5 MB
+        data = await image.read(MAX_IMG_BYTES + 1)
+        if len(data) > MAX_IMG_BYTES:
+            raise HTTPException(status_code=413, detail="Image too large. Maximum size is 5 MB.")
         with open(save_path, "wb") as f:
             f.write(data)
-        image_url = f"static/post_images/{filename}"
+        image_url = f"{_IMAGE_BASE_URL.rstrip('/')}/static/post_images/{filename}"
 
     post = SocialPost(
         author_id=current_user.id,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -55,10 +55,12 @@ def list_analyses(
 
 @router.get("/admin/all", response_model=list[AnalysisDetailResponse])
 def admin_list_all_analyses(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    rows = db.query(Analysis).order_by(Analysis.created_at.desc()).all()
+    rows = db.query(Analysis).order_by(Analysis.created_at.desc()).offset(skip).limit(limit).all()
     return [
         AnalysisDetailResponse(
             id=r.id,
@@ -88,11 +90,13 @@ def admin_list_user_analyses(
 
 @router.get("/admin/users", response_model=list[dict])
 def admin_list_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     """List all users (id, email, role) for admin. Synced with real user credentials."""
-    rows = db.query(User).order_by(User.id.desc()).all()
+    rows = db.query(User).order_by(User.id.desc()).offset(skip).limit(limit).all()
     return [
         {"id": u.id, "email": u.email or "", "role": getattr(u, "role", "user")}
         for u in rows

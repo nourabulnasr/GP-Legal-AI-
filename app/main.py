@@ -418,6 +418,13 @@ if Retriever is None:
 api = FastAPI(title="legalai")
 app = api  # alias for uvicorn
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.limiter import limiter as _core_limiter
+
+app.state.limiter = _core_limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 import os as _os
 from fastapi.staticfiles import StaticFiles
 _os.makedirs("static/post_images", exist_ok=True)
@@ -585,9 +592,9 @@ def root():
     return {"name": "legalai", "status": "ok"}
 
 
-@api.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
-    return HealthResponse()
+@api.get("/health", tags=["system"])
+async def health_check():
+    return {"status": "ok", "service": "legato"}
 
 
 # ============================================================
@@ -1645,7 +1652,10 @@ async def ocr_check_and_search(
                 status_code=422,
                 detail="Invalid translation_target_lang: allowed values are ar, en, fr, de.",
             )
-        data = await file.read()
+        MAX_DOC_BYTES = 20 * 1024 * 1024  # 20 MB
+        data = await file.read(MAX_DOC_BYTES + 1)
+        if len(data) > MAX_DOC_BYTES:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 20 MB.")
 
         # ---------- detect file types ----------
         filename = (file.filename or "").lower()
@@ -1653,6 +1663,13 @@ async def ocr_check_and_search(
 
         is_docx = filename.endswith(".docx") or ("wordprocessingml" in ctype)
         is_pdf = filename.endswith(".pdf") or (ctype == "application/pdf")
+
+        _PDF_MAGIC = b'%PDF'
+        _DOCX_MAGIC = b'PK\x03\x04'
+        if is_pdf and not data[:4] == _PDF_MAGIC:
+            raise HTTPException(status_code=400, detail="File content does not match PDF format.")
+        if is_docx and not data[:4] == _DOCX_MAGIC:
+            raise HTTPException(status_code=400, detail="File content does not match DOCX format.")
 
         ocr_chunks: List[Dict[str, Any]] = []
         ocr_used_flag = False

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import hashlib
 import secrets
 import smtplib
@@ -9,8 +7,9 @@ from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from app.core.limiter import limiter
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -187,7 +186,8 @@ def _send_verification_email(to_email: str, code: str, purpose: str) -> bool:
 
 
 @router.post("/register", response_model=MeResponse)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, payload: RegisterRequest, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
 
     exists = db.query(User).filter(User.email == email).first()
@@ -243,7 +243,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 # ✅ JSON login (زي ما انت بتستخدمه في curl حاليا)
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
 
     u = db.query(User).filter(User.email == email).first()
@@ -315,7 +316,8 @@ def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/resend-verification")
-def resend_verification(payload: ResendVerificationRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def resend_verification(request: Request, payload: ResendVerificationRequest, db: Session = Depends(get_db)):
     """Send a new verification code to an unverified user. Rate-limited per email."""
     global _resend_last_sent
     email = payload.email.lower().strip()
@@ -515,7 +517,8 @@ def me(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/forgot-password")
-def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def forgot_password(request: Request, payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
     """Request a password reset. Sends a verification code by email. Same response to avoid enumeration."""
     email = payload.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()

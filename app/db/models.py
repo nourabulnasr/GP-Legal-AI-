@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import Boolean, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -16,7 +16,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, default="user", nullable=False)
     email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     analyses: Mapped[list["Analysis"]] = relationship("Analysis", back_populates="user")
 
@@ -37,7 +37,7 @@ class Analysis(Base):
     detected_lang: Mapped[str | None] = mapped_column(String, nullable=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     lawyer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user: Mapped["User"] = relationship("User", back_populates="analyses")
 
@@ -49,7 +49,7 @@ class LegatoShare(Base):
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
@@ -60,7 +60,7 @@ class LegatoDealThread(Base):
     analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class LegatoDealMessage(Base):
@@ -70,7 +70,7 @@ class LegatoDealMessage(Base):
     thread_id: Mapped[int] = mapped_column(Integer, ForeignKey("legato_deal_threads.id"), index=True, nullable=False)
     author_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     body: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class LegatoTimelineEvent(Base):
@@ -82,7 +82,7 @@ class LegatoTimelineEvent(Base):
     label: Mapped[str] = mapped_column(String(512), nullable=False)
     event_date: Mapped[str] = mapped_column(String(64), nullable=False)
     source: Mapped[str] = mapped_column(String(64), default="manual", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class LegatoProfile(Base):
@@ -101,7 +101,7 @@ class LegatoSignature(Base):
     signer_name: Mapped[str] = mapped_column(String(256), nullable=False)
     consent_acknowledged: Mapped[bool] = mapped_column(default=False, nullable=False)
     signature_png_base64: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # --- Professional networking (feed, network, profile extensions) ---
@@ -116,7 +116,7 @@ class SocialPost(Base):
     tags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     category: Mapped[str] = mapped_column(String(64), nullable=False, default="All Updates", index=True)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class SocialPostLike(Base):
@@ -126,7 +126,7 @@ class SocialPostLike(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     post_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_posts.id"), index=True, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class SocialPostComment(Base):
@@ -136,7 +136,7 @@ class SocialPostComment(Base):
     post_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_posts.id"), index=True, nullable=False)
     author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class SocialPostShare(Base):
@@ -145,7 +145,7 @@ class SocialPostShare(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     post_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_posts.id"), index=True, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class NetworkInvite(Base):
@@ -156,7 +156,7 @@ class NetworkInvite(Base):
     requester_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     addressee_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class SkillEndorsement(Base):
@@ -167,7 +167,7 @@ class SkillEndorsement(Base):
     endorser_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     recipient_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     skill: Mapped[str] = mapped_column(String(128), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ProfileRecommendation(Base):
@@ -177,7 +177,7 @@ class ProfileRecommendation(Base):
     author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     recipient_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class ProfileUserDocument(Base):
@@ -189,4 +189,4 @@ class ProfileUserDocument(Base):
     file_url: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     file_bytes: Mapped[Optional[bytes]] = mapped_column(nullable=True)  # SQLite BLOB
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
