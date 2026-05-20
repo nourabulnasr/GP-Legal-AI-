@@ -42,6 +42,12 @@ legalai.db
 legalai_backup.db
 
 # =========================
+# User-uploaded files (runtime content, not source)
+# =========================
+static/post_images/*
+!static/post_images/.gitkeep
+
+# =========================
 # Chroma / vector stores
 # =========================
 chroma_legal/
