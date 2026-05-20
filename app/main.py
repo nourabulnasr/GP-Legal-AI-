@@ -1613,6 +1613,28 @@ except Exception:
     _local_llm_module = None  # type: ignore
 
 
+def _detect_outdated_labor_law(text: str) -> bool:
+    """Return True if the text references the superseded Egyptian Labor Law No. 12 of 2003."""
+    t = (text or "").lower()
+    patterns = [
+        r"قانون\s*(العمل\s*)?2003",
+        r"القانون\s*رقم\s*12\s*لسنة\s*2003",
+        r"law\s*no\.?\s*12\s*of\s*2003",
+        r"law\s*12\s*of\s*2003",
+        r"labour\s*law\s*2003",
+        r"labor\s*law\s*2003",
+        r"\b2003\b.{0,60}(labor|labour|عمل)",
+        r"(labor|labour|عمل).{0,60}\b2003\b",
+    ]
+    return any(re.search(p, t) for p in patterns)
+
+
+_OUTDATED_LAW_MESSAGE = (
+    "This contract references Labor Law No. 12 of 2003 which has been replaced by "
+    "Egyptian Labor Law No. 14 of 2025. This contract needs to be reviewed and updated."
+)
+
+
 @api.post("/ocr_check_and_search")
 async def ocr_check_and_search(
     file: UploadFile = File(...),
@@ -1780,6 +1802,7 @@ async def ocr_check_and_search(
             )
 
         full_text_rules = normalize_for_rules(full_text)
+        outdated_law_detected = _detect_outdated_labor_law(full_text)
 
         translation_meta: Dict[str, Any] = {
             "translation_version": "1",
@@ -2282,6 +2305,10 @@ async def ocr_check_and_search(
             "needs_review": any(
                 (h.get("severity") or "").lower() == "error" for h in rule_hits
             ),
+
+            # Outdated law reference detection
+            "outdated_law_detected": outdated_law_detected,
+            "outdated_law_message": _OUTDATED_LAW_MESSAGE if outdated_law_detected else None,
 
             # Non-breaking ML metadata
             "ml_used": ml_used,
