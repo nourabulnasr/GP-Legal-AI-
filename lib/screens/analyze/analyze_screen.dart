@@ -59,6 +59,42 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
             query: _query.text.trim().isEmpty ? null : _query.text.trim(),
           );
       if (!mounted) return;
+      if (data['outdated_law_detected'] == true) {
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Outdated Law Detected'),
+            content: const SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'هذا العقد يستند إلى قانون العمل رقم 12 لسنة 2003 الذي تم استبداله بقانون العمل رقم 14 لسنة 2025. يجب مراجعة هذا العقد وتحديثه.',
+                    textDirection: TextDirection.rtl,
+                    textAlign: TextAlign.right,
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'This contract references Labor Law No. 12 of 2003 which has been replaced by Egyptian Labor Law No. 14 of 2025. This contract needs to be reviewed and updated.',
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFC9A227),
+                  foregroundColor: const Color(0xFF1B1F23),
+                ),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Understood'),
+              ),
+            ],
+          ),
+        );
+      }
+      if (!mounted) return;
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
           builder: (_) => AnalysisDetailScreen(

@@ -15,19 +15,6 @@ class TranslationStatusBanner extends StatelessWidget {
   final String? targetLang;
   final String? sourceLang;
 
-  static String _labelProvider(String? raw) {
-    switch (raw) {
-      case 'google_cloud_translate_v2':
-        return 'Google Cloud Translation';
-      case 'local_lfm_translate':
-        return 'Local LFM';
-      case 'argos_translate':
-        return 'Argos (offline fallback)';
-      default:
-        return raw ?? '—';
-    }
-  }
-
   Color _statusColor(BuildContext context, String? status) {
     switch (status) {
       case 'ok':
@@ -46,7 +33,6 @@ class TranslationStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final tx = translationMeta ?? const <String, dynamic>{};
     final status = tx['translation_status']?.toString();
-    final provider = tx['translation_provider']?.toString();
     final skip = tx['skip_reason']?.toString();
     final effectiveTarget = targetLang ?? tx['translation_target_lang']?.toString() ?? 'ar';
 
@@ -68,17 +54,8 @@ class TranslationStatusBanner extends StatelessWidget {
             _Row('Target language', effectiveTarget.toUpperCase()),
             if (sourceLang != null && sourceLang!.isNotEmpty)
               _Row('Detected source', sourceLang!.toUpperCase()),
-            if (provider != null && provider.isNotEmpty)
-              _Row('Provider (automatic)', _labelProvider(provider)),
             if (skip != null && skip.isNotEmpty)
               _Row('Note', skip.replaceAll('_', ' ')),
-            const SizedBox(height: 8),
-            Text(
-              'Translation engine is chosen on the server (Google first, then local LFM).',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
-                  ),
-            ),
           ],
         ),
       ),
