@@ -21,6 +21,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
   bool _save = true;
   final _query = TextEditingController();
   bool _busy = false;
+  bool _cancelled = false;
   String _statusText = '';
   Timer? _progressTimer;
   String? _err;
@@ -58,6 +59,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
       return;
     }
     final name = f.name;
+    _cancelled = false;
     setState(() {
       _busy = true;
       _err = null;
@@ -75,7 +77,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
             save: _save,
             query: _query.text.trim().isEmpty ? null : _query.text.trim(),
           );
-      if (!mounted) return;
+      if (!mounted || _cancelled) return;
       if (data['outdated_law_detected'] == true) {
         await showDialog<void>(
           context: context,
@@ -122,12 +124,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
         ),
       );
     } on ApiException catch (e) {
-      setState(() => _err = e.message);
+      if (mounted && !_cancelled) setState(() => _err = e.message);
     } catch (e) {
-      setState(() => _err = e.toString());
+      if (mounted && !_cancelled) setState(() => _err = e.toString());
     } finally {
       _progressTimer?.cancel();
       _progressTimer = null;
+      _cancelled = false;
       await WakelockPlus.disable();
       if (mounted) setState(() { _busy = false; _statusText = ''; });
     }
@@ -184,6 +187,20 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
                   : const Icon(Icons.folder_open),
               label: Text(_busy ? _statusText : 'Choose file & analyze'),
             ),
+            if (_busy) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () {
+                  _progressTimer?.cancel();
+                  setState(() {
+                    _cancelled = true;
+                    _busy = false;
+                    _statusText = '';
+                  });
+                },
+                child: const Text('Cancel'),
+              ),
+            ],
           ],
         ),
       ),

@@ -29,6 +29,7 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
   String _targetLang = 'ar';
   bool _save = false;
   bool _busy = false;
+  bool _cancelled = false;
   String? _err;
   Map<String, dynamic>? _result;
 
@@ -47,6 +48,7 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
       setState(() => _err = 'Could not read file data. Please try again.');
       return;
     }
+    _cancelled = false;
     setState(() {
       _busy = true;
       _err = null;
@@ -60,13 +62,14 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
         translationTargetLang: _targetLang,
         save: _save,
       );
-      if (!mounted) return;
+      if (!mounted || _cancelled) return;
       setState(() => _result = data);
     } on ApiException catch (e) {
-      setState(() => _err = e.message);
+      if (mounted && !_cancelled) setState(() => _err = e.message);
     } catch (e) {
-      setState(() => _err = e.toString());
+      if (mounted && !_cancelled) setState(() => _err = e.toString());
     } finally {
+      _cancelled = false;
       await WakelockPlus.disable();
       if (mounted) setState(() => _busy = false);
     }
@@ -162,6 +165,16 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
                   : const Icon(Icons.translate),
               label: Text(_busy ? 'Translating…' : 'Choose file & translate'),
             ),
+            if (_busy) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => setState(() {
+                  _cancelled = true;
+                  _busy = false;
+                }),
+                child: const Text('Cancel'),
+              ),
+            ],
             if (data != null) ...[
               const SizedBox(height: 24),
               TranslationStatusBanner(
