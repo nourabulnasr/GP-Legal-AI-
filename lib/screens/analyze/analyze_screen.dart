@@ -1,4 +1,6 @@
-﻿import 'package:file_picker/file_picker.dart';
+﻿import 'dart:async';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -19,12 +21,25 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
   bool _save = true;
   final _query = TextEditingController();
   bool _busy = false;
+  String _statusText = '';
+  Timer? _progressTimer;
   String? _err;
 
   @override
   void dispose() {
+    _progressTimer?.cancel();
     _query.dispose();
     super.dispose();
+  }
+
+  void _startProgressTimer() {
+    _progressTimer?.cancel();
+    _progressTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && _busy) setState(() => _statusText = 'Extracting text…');
+      _progressTimer = Timer(const Duration(seconds: 13), () {
+        if (mounted && _busy) setState(() => _statusText = 'Running analysis…');
+      });
+    });
   }
 
   Future<void> _pickAndRun() async {
@@ -46,7 +61,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
     setState(() {
       _busy = true;
       _err = null;
+      _statusText = 'Uploading document…';
     });
+    _startProgressTimer();
     await WakelockPlus.enable();
     try {
       final data = await app.legato.analyzeContract(
@@ -109,8 +126,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
     } catch (e) {
       setState(() => _err = e.toString());
     } finally {
+      _progressTimer?.cancel();
+      _progressTimer = null;
       await WakelockPlus.disable();
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() { _busy = false; _statusText = ''; });
     }
   }
 
@@ -163,7 +182,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1B1F23)),
                     )
                   : const Icon(Icons.folder_open),
-              label: Text(_busy ? 'Working…' : 'Choose file & analyze'),
+              label: Text(_busy ? _statusText : 'Choose file & analyze'),
             ),
           ],
         ),
