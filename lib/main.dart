@@ -100,15 +100,30 @@ class _AppLifecycleState extends State<_AppLifecycle> with WidgetsBindingObserve
       if (initialUri != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _handleUri(initialUri));
       }
-    } catch (_) {}
-    _linkSub = appLinks.uriLinkStream.listen(_handleUri, onError: (_) {});
+    } catch (e) {
+      debugPrint('[DeepLink] getInitialLink error: $e');
+    }
+    _linkSub = appLinks.uriLinkStream.listen(_handleUri, onError: (e) {
+      debugPrint('[DeepLink] stream error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sign-in link error. Please try again.')),
+        );
+      }
+    });
   }
 
   void _handleUri(Uri uri) {
     if (!mounted) return;
     final token = uri.queryParameters['token'];
+    final error = uri.queryParameters['error'];
     if (token != null && token.isNotEmpty) {
       context.read<AuthProvider>().loginWithToken(token);
+    } else if (error != null && error.isNotEmpty) {
+      debugPrint('[DeepLink] OAuth error param: $error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign-in failed. Please try again.')),
+      );
     }
   }
 
