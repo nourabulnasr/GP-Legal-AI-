@@ -218,7 +218,7 @@ def list_posts(
 
 @router.post("/posts")
 async def create_post(
-    content: str = Form(..., min_length=1, max_length=20000),
+    content: str = Form(default="", max_length=20000),
     category: str = Form(default="All Updates"),
     tags: str = Form(default=""),
     image: Optional[UploadFile] = File(default=None),

@@ -113,7 +113,7 @@ def load_model():
     _model = AutoModelForCausalLM.from_pretrained(
         path_str,
         local_files_only=True,
-        torch_dtype=torch.float32,
+        torch_dtype=torch.bfloat16,
         trust_remote_code=True,
     )
     _model.eval()
