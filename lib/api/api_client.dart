@@ -95,6 +95,7 @@ class ApiClient {
     final r = await _http.get(u, headers: await _headers()).timeout(AppConfig.defaultTimeout);
     await _on401(r);
     if (r.statusCode >= 200 && r.statusCode < 300) {
+      if (r.body.isEmpty) return [];
       return List<dynamic>.from(jsonDecode(r.body) as List);
     }
     throw ApiException(_extractDetail(r.body), statusCode: r.statusCode);
@@ -319,6 +320,7 @@ class ApiClient {
         .timeout(AppConfig.chatTimeout);
     await _on401(r);
     if (r.statusCode >= 200 && r.statusCode < 300) {
+      if (r.body.isEmpty) return {};
       return Map<String, dynamic>.from(jsonDecode(r.body) as Map);
     }
     throw ApiException(_extractDetail(r.body), statusCode: r.statusCode);
