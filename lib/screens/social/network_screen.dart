@@ -44,19 +44,17 @@ class _NetworkScreenState extends State<NetworkScreen> {
     });
     try {
       final api = context.read<AppServices>().legato;
-      final st = await api.getNetworkStats();
-      final sug = await api.getNetworkSuggestions();
-      final pend = await api.getPendingInvites();
-      List<dynamic> conn = [];
-      try {
-        final connRes = await api.getNetworkConnections();
-        conn = (connRes['items'] as List<dynamic>?) ??
-            (connRes['connections'] as List<dynamic>?) ??
-            <dynamic>[];
-      } on ApiException catch (e) {
-        if (e.statusCode != 404) rethrow; // 404 = endpoint not yet deployed, silently ignore
-      } catch (_) {}
+      final results = await Future.wait<dynamic>([
+        api.getNetworkStats(),
+        api.getNetworkSuggestions(),
+        api.getPendingInvites(),
+        _loadConnections(api),
+      ]);
       if (!mounted) return;
+      final st = results[0] as Map<String, dynamic>;
+      final sug = results[1] as Map<String, dynamic>;
+      final pend = results[2] as Map<String, dynamic>;
+      final conn = results[3] as List<dynamic>;
       setState(() {
         _stats = st;
         // Handle both 'items' and 'suggestions' response keys.
@@ -83,6 +81,20 @@ class _NetworkScreenState extends State<NetworkScreen> {
           _loading = false;
         });
       }
+    }
+  }
+
+  Future<List<dynamic>> _loadConnections(dynamic api) async {
+    try {
+      final connRes = await api.getNetworkConnections();
+      return (connRes['items'] as List<dynamic>?) ??
+          (connRes['connections'] as List<dynamic>?) ??
+          <dynamic>[];
+    } on ApiException catch (e) {
+      if (e.statusCode != 404) rethrow; // 404 = endpoint not yet deployed, silently ignore
+      return <dynamic>[];
+    } catch (_) {
+      return <dynamic>[];
     }
   }
 
