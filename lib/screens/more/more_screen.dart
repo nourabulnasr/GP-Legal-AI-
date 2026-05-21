@@ -70,6 +70,7 @@ class MoreScreen extends StatelessWidget {
                 ),
               ),
             ],
+            if (user?.isAdmin ?? false)
             Card(
               child: ListTile(
                 leading: Icon(Icons.open_in_browser_outlined, color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95)),

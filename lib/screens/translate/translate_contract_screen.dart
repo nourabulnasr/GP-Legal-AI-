@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -69,6 +70,24 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
       await WakelockPlus.disable();
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Extracts translated text from chunks using the same key logic as OcrChunkTranslationList.
+  String _collectTranslated(List<dynamic> chunks, String targetLang) {
+    final lines = <String>[];
+    for (final chunk in chunks) {
+      if (chunk is! Map) continue;
+      final c = Map<String, dynamic>.from(chunk);
+      String t = '';
+      if (targetLang.toLowerCase() == 'ar') {
+        t = c['translated_ar_text']?.toString().trim() ?? '';
+      }
+      if (t.isEmpty) {
+        t = (c['translated_text'] ?? c['translated_ar_text'] ?? '').toString().trim();
+      }
+      if (t.isNotEmpty) lines.add(t);
+    }
+    return lines.join('\n\n');
   }
 
   String? _effectiveSource(Map<String, dynamic>? data) {
@@ -149,6 +168,24 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
                 translationMeta: tx,
                 targetLang: target,
                 sourceLang: _effectiveSource(data),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () {
+                  final text = _collectTranslated(chunks, target);
+                  if (text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('No translated text to copy.')),
+                    );
+                    return;
+                  }
+                  Clipboard.setData(ClipboardData(text: text));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Translated text copied to clipboard')),
+                  );
+                },
+                icon: const Icon(Icons.copy_outlined, size: 18),
+                label: const Text('Copy translated text'),
               ),
               const SizedBox(height: 16),
               Text(

@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -78,14 +82,39 @@ class _AppLifecycle extends StatefulWidget {
 }
 
 class _AppLifecycleState extends State<_AppLifecycle> with WidgetsBindingObserver {
+  StreamSubscription<Uri>? _linkSub;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (!kIsWeb && Platform.isAndroid) {
+      _initDeepLinks();
+    }
+  }
+
+  Future<void> _initDeepLinks() async {
+    final appLinks = AppLinks();
+    try {
+      final initialUri = await appLinks.getInitialLink();
+      if (initialUri != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _handleUri(initialUri));
+      }
+    } catch (_) {}
+    _linkSub = appLinks.uriLinkStream.listen(_handleUri, onError: (_) {});
+  }
+
+  void _handleUri(Uri uri) {
+    if (!mounted) return;
+    final token = uri.queryParameters['token'];
+    if (token != null && token.isNotEmpty) {
+      context.read<AuthProvider>().loginWithToken(token);
+    }
   }
 
   @override
   void dispose() {
+    _linkSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

@@ -284,6 +284,31 @@ class ApiClient {
     throw ApiException(_extractDetail(response.body), statusCode: response.statusCode);
   }
 
+  Future<Map<String, dynamic>> postMultipartBytes(
+    String path, {
+    required Uint8List bytes,
+    required String filename,
+    required String fieldName,
+    Map<String, String>? fields,
+    Duration? timeout,
+  }) async {
+    final request = http.MultipartRequest('POST', uri(path));
+    final t = await _storage.readToken();
+    if (t != null && t.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $t';
+    }
+    (fields ?? const {}).forEach((k, v) => request.fields[k] = v);
+    request.files.add(http.MultipartFile.fromBytes(fieldName, bytes, filename: filename));
+    final streamed = await request.send().timeout(timeout ?? AppConfig.defaultTimeout);
+    final response = await http.Response.fromStream(streamed);
+    await _on401(response);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (response.body.isEmpty) return {};
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw ApiException(_extractDetail(response.body), statusCode: response.statusCode);
+  }
+
   Future<Map<String, dynamic>> postJsonLong(String path, Map<String, dynamic> body) async {
     final r = await _http
         .post(

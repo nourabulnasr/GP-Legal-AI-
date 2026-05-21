@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -267,29 +268,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Theme.of(context).colorScheme.surface, width: 4),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.18),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
+                              GestureDetector(
+                                onTap: _uploadAvatar,
+                                child: Stack(
+                                  children: [
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Theme.of(context).colorScheme.surface, width: 4),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.18),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ],
+                                      ),
+                                      child: CircleAvatar(
+                                        radius: 46,
+                                        backgroundColor: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.14),
+                                        backgroundImage: (d['avatar_url']?.toString().isNotEmpty == true)
+                                            ? NetworkImage(d['avatar_url'].toString())
+                                            : null,
+                                        child: (d['avatar_url']?.toString().isNotEmpty != true)
+                                            ? Text(
+                                                initial,
+                                                style: const TextStyle(
+                                                  fontSize: 34,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Color(0xFF8B7318),
+                                                ),
+                                              )
+                                            : null,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      bottom: 4,
+                                      right: 4,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFFC9A227),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(Icons.camera_alt, size: 14, color: Color(0xFF1B1F23)),
+                                      ),
                                     ),
                                   ],
-                                ),
-                                child: CircleAvatar(
-                                  radius: 46,
-                                  backgroundColor: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.14),
-                                  child: Text(
-                                    initial,
-                                    style: const TextStyle(
-                                      fontSize: 34,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF8B7318),
-                                    ),
-                                  ),
                                 ),
                               ),
                               const Spacer(),
@@ -435,6 +460,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // ── Experience ────────────────────────────────────────
                   _Section(
                     title: 'Experience',
+                    action: TextButton(
+                      onPressed: () async {
+                        await _addExperience(context);
+                        await _load();
+                      },
+                      child: const Text('+ Add'),
+                    ),
                     child: experience.isEmpty
                         ? Text('No experience added yet.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)))
                         : Column(
@@ -655,6 +687,82 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _uploadAvatar() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+    try {
+      await context.read<AppServices>().legato.uploadProfileAvatar(file.bytes!, file.name);
+      if (!mounted) return;
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile picture updated')),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _addExperience(BuildContext context) async {
+    final title = TextEditingController();
+    final company = TextEditingController();
+    final startDate = TextEditingController();
+    final endDate = TextEditingController();
+    final description = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add experience'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: title, decoration: const InputDecoration(labelText: 'Job title')),
+              TextField(controller: company, decoration: const InputDecoration(labelText: 'Company')),
+              TextField(controller: startDate, decoration: const InputDecoration(labelText: 'Start date (e.g. 2022)')),
+              TextField(controller: endDate, decoration: const InputDecoration(labelText: 'End date (leave blank = Present)')),
+              TextField(controller: description, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              try {
+                await context.read<AppServices>().legato.addProfileExperience(
+                      title: title.text.trim(),
+                      company: company.text.trim(),
+                      startDate: startDate.text.trim(),
+                      endDate: endDate.text.trim().isEmpty ? null : endDate.text.trim(),
+                      description: description.text.trim(),
+                    );
+                if (ctx.mounted) Navigator.pop(ctx);
+              } on ApiException catch (e) {
+                if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.message)));
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    title.dispose();
+    company.dispose();
+    startDate.dispose();
+    endDate.dispose();
+    description.dispose();
   }
 
   Future<void> _addEducation(BuildContext context) async {

@@ -16,9 +16,14 @@ class MemberProfileScreen extends StatefulWidget {
 }
 
 class _MemberProfileScreenState extends State<MemberProfileScreen> {
+  // Persists sent invite IDs for the entire app session so the button
+  // doesn't reset to "Connect" when the user re-opens this screen.
+  static final _sentIds = <int>{};
+
   bool _loading = true;
   String? _err;
   Map<String, dynamic>? _data;
+  bool get _inviteSent => _sentIds.contains(widget.userId);
 
   @override
   void initState() {
@@ -58,9 +63,16 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     try {
       await context.read<AppServices>().legato.sendNetworkInvite(widget.userId);
       if (!mounted) return;
+      _sentIds.add(widget.userId);
+      setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invitation sent')));
     } on ApiException catch (e) {
       if (!mounted) return;
+      final msg = e.message.toLowerCase();
+      if (msg.contains('already') || msg.contains('pending') || msg.contains('connected')) {
+        _sentIds.add(widget.userId);
+        setState(() {});
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
@@ -89,14 +101,20 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                     _HeaderCard(data: _data!),
                     const SizedBox(height: 12),
                     if (me != null && me != widget.userId)
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: LegatoLinkedInTheme.navActiveGold,
-                          foregroundColor: const Color(0xFF1B1F23),
-                        ),
-                        onPressed: _connect,
-                        child: const Text('Connect'),
-                      ),
+                      _inviteSent || (_data?['connection_status']?.toString() == 'connected') || (_data?['connection_status']?.toString() == 'pending')
+                          ? OutlinedButton.icon(
+                              onPressed: null,
+                              icon: const Icon(Icons.check, size: 16),
+                              label: Text(_data?['connection_status']?.toString() == 'connected' ? 'Connected' : 'Pending'),
+                            )
+                          : FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: LegatoLinkedInTheme.navActiveGold,
+                                foregroundColor: const Color(0xFF1B1F23),
+                              ),
+                              onPressed: _connect,
+                              child: const Text('Connect'),
+                            ),
                   ],
                 ],
               ),

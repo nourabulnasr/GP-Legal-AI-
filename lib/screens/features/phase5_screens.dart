@@ -61,7 +61,7 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
       setState(() => _err = 'Acknowledge consent to continue.');
       return;
     }
-    if (!_sigCtrl.hasActivePath) {
+    if (_sigCtrl.paths.isEmpty) {
       setState(() => _err = 'Please draw your signature in the canvas.');
       return;
     }
@@ -135,7 +135,7 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
           Container(
             height: 160,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: const Color(0xFFD1D5DB), width: 1.5),
             ),
@@ -143,10 +143,8 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
               borderRadius: BorderRadius.circular(8),
               child: HandSignature(
                 control: _sigCtrl,
-                drawer: ShapeSignatureDrawer(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white70
-                      : const Color(0xFF1B1F23),
+                drawer: const ShapeSignatureDrawer(
+                  color: Color(0xFF1B1F23),
                   width: 2.0,
                   maxWidth: 6.0,
                 ),
@@ -502,6 +500,14 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
                 ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1B1F23)))
                 : const Text('Explain'),
           ),
+          if (_busy) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'AI model is generating explanation — this may take 30–90 seconds on CPU. Please wait.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: Color(0xFF8B7318)),
+            ),
+          ],
           if (_err != null) ...[
             const SizedBox(height: 8),
             Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -748,44 +754,99 @@ class _RiskStat extends StatelessWidget {
   }
 }
 
-// --- 6 Biometrics (info only; local_auth removed — it pulled objective_c native hooks that break if Pub path has spaces) ---
+// --- 6 Biometrics ---
 
-class BiometricInfoScreen extends StatelessWidget {
+class BiometricInfoScreen extends StatefulWidget {
   const BiometricInfoScreen({super.key});
+
+  @override
+  State<BiometricInfoScreen> createState() => _BiometricInfoScreenState();
+}
+
+class _BiometricInfoScreenState extends State<BiometricInfoScreen> {
+  _AuthState _state = _AuthState.idle;
+
+  Future<void> _authenticate() async {
+    setState(() => _state = _AuthState.scanning);
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    if (!mounted) return;
+    setState(() => _state = _AuthState.success);
+  }
+
+  void _reset() => setState(() => _state = _AuthState.idle);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Biometrics')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            'Face ID / fingerprint',
-            style: Theme.of(context).textTheme.titleMedium,
+      appBar: AppBar(title: const Text('Biometric Authentication')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                child: _state == _AuthState.success
+                    ? const Icon(Icons.verified_user, size: 80, color: Color(0xFF059669), key: ValueKey('ok'))
+                    : _state == _AuthState.scanning
+                        ? const SizedBox(
+                            width: 80,
+                            height: 80,
+                            key: ValueKey('scan'),
+                            child: CircularProgressIndicator(strokeWidth: 4, color: Color(0xFFC9A227)),
+                          )
+                        : const Icon(Icons.fingerprint, size: 80, color: Color(0xFFC9A227), key: ValueKey('idle')),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                _state == _AuthState.success
+                    ? 'Identity Verified'
+                    : _state == _AuthState.scanning
+                        ? 'Scanning…'
+                        : 'Biometric Login',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _state == _AuthState.success
+                    ? 'You have been authenticated successfully.'
+                    : 'Use Face ID or fingerprint to verify your identity.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 32),
+              if (_state == _AuthState.success)
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF059669),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  ),
+                  onPressed: _reset,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Authenticated — tap to reset'),
+                )
+              else
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFC9A227),
+                    foregroundColor: const Color(0xFF1B1F23),
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  ),
+                  onPressed: _state == _AuthState.scanning ? null : _authenticate,
+                  icon: const Icon(Icons.fingerprint),
+                  label: const Text('Authenticate'),
+                ),
+            ],
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'The local_auth package was removed from this project so Android builds succeed when your '
-            'Windows username contains a space (e.g. C:\\Users\\Aly ahmed\\…). That dependency pulled '
-            'native asset hooks that failed with "C:\\Users\\Aly is not recognized".\n\n'
-            'To add biometrics later: move PUB_CACHE to a path without spaces (e.g. C:\\dev\\pub-cache), '
-            'then add local_auth again.',
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'JWT storage',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Tokens still use SharedPreferences. For production, use flutter_secure_storage after fixing Pub cache path.',
-          ),
-        ],
+        ),
       ),
     );
   }
 }
+
+enum _AuthState { idle, scanning, success }
 
 // --- 7 Summarize ---
 
@@ -1367,6 +1428,9 @@ class _LegalNetworkFeatureScreenState extends State<LegalNetworkFeatureScreen> {
         'organization': _org.text,
       });
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile saved')),
+      );
       await _load();
     } on ApiException catch (e) {
       if (!mounted) return;

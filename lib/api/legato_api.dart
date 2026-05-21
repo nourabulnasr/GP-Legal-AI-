@@ -423,6 +423,34 @@ class LegatoApi {
     });
   }
 
+  Future<Map<String, dynamic>> addProfileExperience({
+    required String title,
+    String company = '',
+    String startDate = '',
+    String? endDate,
+    String description = '',
+  }) {
+    return _api.postJson('/api/profile/me/experience', {
+      'title': title,
+      'company': company,
+      'startDate': startDate,
+      if (endDate != null && endDate.isNotEmpty) 'endDate': endDate,
+      'description': description,
+    });
+  }
+
+  Future<Map<String, dynamic>> uploadProfileAvatar(Uint8List bytes, String filename) {
+    return _api.postMultipartBytes(
+      '/api/profile/me/avatar',
+      bytes: bytes,
+      filename: filename,
+      fieldName: 'avatar',
+    );
+  }
+
+  Future<Map<String, dynamic>> deletePost(int postId) =>
+      _api.deleteJson('/api/posts/$postId');
+
   Future<Map<String, dynamic>> getNetworkStats() => _api.getJson('/api/network/stats');
 
   Future<Map<String, dynamic>> getNetworkSuggestions() =>

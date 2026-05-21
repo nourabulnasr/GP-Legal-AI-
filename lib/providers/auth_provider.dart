@@ -55,8 +55,14 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> loginWithToken(String token) async {
     _error = null;
-    await _auth.storeToken(token);
-    _user = await _auth.me();
+    try {
+      await _auth.storeToken(token);
+      _user = await _auth.me();
+    } on ApiException catch (e) {
+      _error = e.message;
+    } catch (e) {
+      _error = e.toString();
+    }
     notifyListeners();
   }
 

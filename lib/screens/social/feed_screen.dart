@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/config/app_config.dart';
+import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/chat/chat_hub_screen.dart';
 import 'package:legato_mobile/screens/social/member_profile_screen.dart';
 import 'package:legato_mobile/screens/social/social_constants.dart';
@@ -329,7 +330,7 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
 
   Future<void> _submit() async {
     final body = _textCtrl.text.trim();
-    if (body.isEmpty) return;
+    if (body.isEmpty && _imageBytes == null) return;
     setState(() => _posting = true);
     try {
       await widget.app.legato.createPost(
@@ -661,6 +662,32 @@ class _PostCardState extends State<_PostCard> {
     );
   }
 
+  Future<void> _deletePost() async {
+    final id = widget.post['id'] as int?;
+    if (id == null) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete post'),
+        content: const Text('Delete this post permanently?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await context.read<AppServices>().legato.deletePost(id);
+      widget.onChanged();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = widget.post;
@@ -669,6 +696,9 @@ class _PostCardState extends State<_PostCard> {
     final cc = (p['comments_count'] as num?)?.toInt() ?? 0;
     final sc = (p['shares_count'] as num?)?.toInt() ?? 0;
     final liked = p['liked'] == true;
+    final meId = context.watch<AuthProvider>().user?.id;
+    final authorId = (p['author_id'] as num?)?.toInt() ?? (p['user_id'] as num?)?.toInt();
+    final isOwn = meId != null && authorId != null && meId == authorId;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -707,6 +737,16 @@ class _PostCardState extends State<_PostCard> {
                       ],
                     ),
                   ),
+                  if (isOwn)
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_horiz, size: 20),
+                      onSelected: (v) {
+                        if (v == 'delete') _deletePost();
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(value: 'delete', child: Text('Delete post', style: TextStyle(color: Colors.red))),
+                      ],
+                    ),
                 ],
               ),
             ),
