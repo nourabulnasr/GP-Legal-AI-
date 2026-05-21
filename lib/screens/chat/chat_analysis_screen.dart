@@ -94,7 +94,7 @@ class _ChatAnalysisScreenState extends State<ChatAnalysisScreen> {
     });
 
     final prior = _thread
-        .where((m) => m['role'] != 'user' || m['content'] != userMsg)
+        .sublist(0, _thread.length - 1)
         .map((m) => <String, dynamic>{'role': m['role']!, 'content': m['content']!})
         .toList();
 
