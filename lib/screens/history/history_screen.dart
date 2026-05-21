@@ -32,6 +32,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
     try {
       final list = await context.read<AppServices>().legato.listAnalyses();
+      if (!mounted) return;
       setState(() => _items = list);
     } on ApiException catch (e) {
       final msg = e.statusCode == 401
