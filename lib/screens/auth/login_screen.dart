@@ -33,7 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _signInWithGoogle() async {
     final uri = Uri.parse('${RuntimeConfig.apiBaseUrl}/auth/google');
     if (!await canLaunchUrl(uri)) return;
-    await launchUrl(uri, mode: LaunchMode.platformDefault);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _submit() async {
