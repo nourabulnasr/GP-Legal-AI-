@@ -1,9 +1,9 @@
 class AppConfig {
-  /// Android emulator → host machine (FastAPI on PC). Physical device: use your LAN IP.
-  /// Backend must listen on `0.0.0.0` (not only 127.0.0.1) so the emulator can reach it.
+  /// Production API on Hostinger VPS. Override at build: --dart-define=API_BASE_URL=...
+  /// Local dev: http://10.0.2.2:8000 (emulator) or http://<LAN_IP>:8000 (physical device).
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:8000',
+    defaultValue: 'http://76.13.4.148',
   );
 
   /// Optional override for web admin / Swagger (e.g. separate Next.js host). If empty, uses [backendDocsUri].

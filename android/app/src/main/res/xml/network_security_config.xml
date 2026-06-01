@@ -1,19 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Cleartext HTTP is allowed only for the dev/demo server IPs listed below.
-  All other traffic (including production HTTPS) uses the secure base-config.
-
-  BEFORE DEMO: update the IP below to match your FastAPI server's LAN address.
-  Example: if your machine is 192.168.1.105, change the domain entry to 192.168.1.105.
-  The Android emulator always uses 10.0.2.2 to reach the host machine.
+  Cleartext HTTP is allowed only for listed dev/production hosts (API is HTTP until HTTPS is added).
 -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
+        <!-- Hostinger VPS — Legato production API -->
+        <domain includeSubdomains="false">76.13.4.148</domain>
         <!-- Android emulator → host machine -->
         <domain includeSubdomains="false">10.0.2.2</domain>
-        <!-- Dev machine LAN IP — Legato demo server -->
+        <!-- Dev machine LAN IP -->
         <domain includeSubdomains="false">192.168.1.10</domain>
-        <!-- Oracle Cloud / demo server — update to your Oracle IP if using HTTP -->
         <domain includeSubdomains="false">localhost</domain>
     </domain-config>
     <base-config cleartextTrafficPermitted="false" />
