@@ -1,0 +1,33 @@
+# Standalone production backend (no merge with root compose — avoids duplicate port binds)
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: legalai-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - legalai_db:/data
+      - legalai_chroma:/data/chroma_legal
+      - ${LOCAL_LLM_HOST_PATH:-./models/LFM2.5-1.2B-Instruct}:/models/lfm:ro
+    env_file:
+      - ../../.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=sqlite:////data/legalai.db
+      - LOCAL_LLM_PATH=/models/lfm
+      - CHROMA_LEGAL_DIR=/data/chroma_legal
+      - ENABLE_STARTUP_RAG=1
+      - DOCUMENT_CHAT_GEMINI_FALLBACK=0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+volumes:
+  legalai_db:
+  legalai_chroma:

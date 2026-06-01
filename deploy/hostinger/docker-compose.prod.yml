@@ -1,0 +1,13 @@
+# Production overrides — use with root docker-compose.yml:
+#   docker compose -f docker-compose.yml -f deploy/hostinger/docker-compose.prod.yml up -d --build backend
+
+services:
+  backend:
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      start_period: 300s
+      interval: 30s
+      timeout: 10s
+      retries: 5
