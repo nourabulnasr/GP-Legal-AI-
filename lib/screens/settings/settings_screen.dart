@@ -77,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               controller: _urlCtrl,
               decoration: const InputDecoration(
                 labelText: 'API Base URL',
-                hintText: 'http://76.13.4.148',
+                hintText: 'https://srv1723974.hstgr.cloud',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.url,

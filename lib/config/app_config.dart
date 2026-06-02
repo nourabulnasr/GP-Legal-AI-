@@ -1,9 +1,9 @@
 class AppConfig {
-  /// Production API on Hostinger VPS. Override at build: --dart-define=API_BASE_URL=...
+  /// Production API on Hostinger VPS (HTTPS). Override at build: --dart-define=API_BASE_URL=...
   /// Local dev: http://10.0.2.2:8000 (emulator) or http://<LAN_IP>:8000 (physical device).
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://76.13.4.148',
+    defaultValue: 'https://srv1723974.hstgr.cloud',
   );
 
   /// Optional override for web admin / Swagger (e.g. separate Next.js host). If empty, uses [backendDocsUri].
