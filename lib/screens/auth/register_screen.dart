@@ -2,6 +2,7 @@
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
+import 'package:legato_mobile/config/runtime_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/auth/verify_email_screen.dart';
 
@@ -44,7 +45,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } on ApiException catch (e) {
       setState(() => _err = e.message);
     } catch (e) {
-      setState(() => _err = e.toString());
+      final msg = e.toString();
+      if (msg.contains('Failed to fetch') && msg.contains('76.13.4.148')) {
+        setState(() => _err =
+            'Cannot reach the API over HTTP from this app. Clear site data (web) or reinstall the app, then use https://srv1723974.hstgr.cloud');
+      } else if (msg.contains('Failed to fetch')) {
+        setState(() => _err =
+            'Network error reaching the API (${RuntimeConfig.apiBaseUrl}). Check your connection or Settings → API URL.');
+      } else {
+        setState(() => _err = msg);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
