@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/document_chat_bubble.dart';
 
 class ChatDocumentScreen extends StatefulWidget {
   const ChatDocumentScreen({super.key});
@@ -19,7 +20,7 @@ class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
   final _scroll = ScrollController();
   bool _busy = false;
   String? _err;
-  final List<Map<String, String>> _thread = [];
+  final List<DocumentChatMessage> _thread = [];
 
   @override
   void dispose() {
@@ -48,14 +49,7 @@ class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
       _busy = true;
       _err = null;
     });
-    final prior = _thread
-        .map(
-          (m) => <String, dynamic>{
-            'role': m['role']!,
-            'content': m['content']!,
-          },
-        )
-        .toList();
+    final prior = documentChatHistory(_thread);
     try {
       final res = await context.read<AppServices>().legato.chatWithDocument(
             analysisId: aid,
@@ -64,10 +58,17 @@ class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
             history: prior.isEmpty ? null : prior,
           );
       final reply = res['content']?.toString() ?? '';
+      final usedFallback = usedFallbackFromResponse(res);
       if (!mounted) return;
       setState(() {
-        _thread.add({'role': 'user', 'content': message});
-        _thread.add({'role': 'assistant', 'content': reply});
+        _thread.add(DocumentChatMessage(role: 'user', content: message));
+        _thread.add(
+          DocumentChatMessage(
+            role: 'assistant',
+            content: reply,
+            usedFallback: usedFallback,
+          ),
+        );
         _msg.clear();
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -120,24 +121,7 @@ class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
                       'Multi-turn chat: each reply stays in context for follow-up questions.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
-                  ..._thread.map((m) {
-                    final isUser = m['role'] == 'user';
-                    return Align(
-                      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        padding: const EdgeInsets.all(12),
-                        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.88),
-                        decoration: BoxDecoration(
-                          color: isUser
-                              ? LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.22)
-                              : Theme.of(context).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: SelectableText(m['content'] ?? ''),
-                      ),
-                    );
-                  }),
+                  ..._thread.map((m) => DocumentChatBubble(message: m)),
                   if (_err != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),

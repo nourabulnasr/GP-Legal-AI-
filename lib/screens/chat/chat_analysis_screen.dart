@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/document_chat_bubble.dart';
 
 /// POST /chat/document (LFM) — pre-selects an analysis_id from saved analyses.
 class ChatAnalysisScreen extends StatefulWidget {
@@ -26,7 +27,7 @@ class _ChatAnalysisScreenState extends State<ChatAnalysisScreen> {
   String? _err;
 
   /// Conversation thread for multi-turn context.
-  final List<Map<String, String>> _thread = [];
+  final List<DocumentChatMessage> _thread = [];
 
   @override
   void initState() {
@@ -90,13 +91,10 @@ class _ChatAnalysisScreenState extends State<ChatAnalysisScreen> {
     setState(() {
       _busy = true;
       _err = null;
-      _thread.add({'role': 'user', 'content': userMsg});
+      _thread.add(DocumentChatMessage(role: 'user', content: userMsg));
     });
 
-    final prior = _thread
-        .sublist(0, _thread.length - 1)
-        .map((m) => <String, dynamic>{'role': m['role']!, 'content': m['content']!})
-        .toList();
+    final prior = documentChatHistory(_thread.sublist(0, _thread.length - 1));
 
     try {
       final res = await context.read<AppServices>().legato.chatWithDocument(
@@ -105,8 +103,17 @@ class _ChatAnalysisScreenState extends State<ChatAnalysisScreen> {
             history: prior.isEmpty ? null : prior,
           );
       final reply = res['content']?.toString() ?? '';
+      final usedFallback = usedFallbackFromResponse(res);
       if (!mounted) return;
-      setState(() => _thread.add({'role': 'assistant', 'content': reply}));
+      setState(
+        () => _thread.add(
+          DocumentChatMessage(
+            role: 'assistant',
+            content: reply,
+            usedFallback: usedFallback,
+          ),
+        ),
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
       });
@@ -168,24 +175,7 @@ class _ChatAnalysisScreenState extends State<ChatAnalysisScreen> {
                       'Ask anything about the selected contract analysis. Runs on local LFM.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                     ),
-                  ..._thread.map((m) {
-                    final isUser = m['role'] == 'user';
-                    return Align(
-                      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        padding: const EdgeInsets.all(12),
-                        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.88),
-                        decoration: BoxDecoration(
-                          color: isUser
-                              ? LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.22)
-                              : Theme.of(context).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: SelectableText(m['content'] ?? ''),
-                      ),
-                    );
-                  }),
+                  ..._thread.map((m) => DocumentChatBubble(message: m)),
                   if (_err != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
