@@ -9,12 +9,16 @@ class AppConfig {
   /// Optional override for web admin / Swagger (e.g. separate Next.js host). If empty, uses [backendDocsUri].
   static const String webAdminBaseUrl = String.fromEnvironment('WEB_ADMIN_URL', defaultValue: '');
 
-  /// Base URL used when constructing public share links.
+  /// Base URL used when constructing public share links (web app, not API).
   /// Override at build time: --dart-define=SHARE_BASE_URL=https://yourdomain.com
-  /// Falls back to [apiBaseUrl] so emulator builds still produce a clickable link on the same machine.
   static const String _shareBaseRaw = String.fromEnvironment('SHARE_BASE_URL', defaultValue: '');
-  static String get shareBaseUrl =>
-      _shareBaseRaw.isNotEmpty ? _shareBaseRaw.replaceAll(RegExp(r'/$'), '') : apiBaseUrl.replaceAll(RegExp(r'/$'), '');
+  static const String _defaultShareBaseUrl = 'https://legatoappgp2026.web.app';
+  static String get shareBaseUrl {
+    if (_shareBaseRaw.isNotEmpty) {
+      return _shareBaseRaw.replaceAll(RegExp(r'/$'), '');
+    }
+    return _defaultShareBaseUrl;
+  }
 
   /// OpenAPI docs on the same host as the API (`/docs`); includes admin-law routes in the schema.
   static Uri backendDocsUri() {

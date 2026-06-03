@@ -1,4 +1,5 @@
 ﻿import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -27,6 +28,34 @@ String _relativeTime(String iso) {
     return '${dt.day}/${dt.month}/${dt.year}';
   } catch (_) {
     return iso;
+  }
+}
+
+Future<bool> _launchExternalUri(Uri uri) async {
+  try {
+    final mode = kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication;
+    return await launchUrl(uri, mode: mode);
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<void> _shareViaWhatsApp(BuildContext context, String message) async {
+  final webUri = Uri.https('wa.me', '', {'text': message});
+  if (await _launchExternalUri(webUri)) return;
+
+  if (!kIsWeb) {
+    final appUri = Uri(scheme: 'whatsapp', host: 'send', queryParameters: {'text': message});
+    if (await _launchExternalUri(appUri)) return;
+  }
+
+  await Clipboard.setData(ClipboardData(text: message));
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not open WhatsApp. Message copied to clipboard — paste it in WhatsApp.'),
+      ),
+    );
   }
 }
 
@@ -564,8 +593,8 @@ class _PostCardState extends State<_PostCard> {
     final id = widget.post['id'] as int?;
     if (id == null) return;
 
-    final link = '${AppConfig.shareBaseUrl}/posts/$id';
-    final waText = Uri.encodeComponent('Check out this post on Legato: $link');
+    final link = '${AppConfig.shareBaseUrl}/?post=$id';
+    final shareMessage = 'Check out this post on Legato: $link';
 
     await showModalBottomSheet<void>(
       context: context,
@@ -609,9 +638,11 @@ class _PostCardState extends State<_PostCard> {
               title: const Text('Open in browser'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final uri = Uri.parse(link);
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                final opened = await _launchExternalUri(Uri.parse(link));
+                if (!opened && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not open link in browser')),
+                  );
                 }
                 await _recordShare(id);
               },
@@ -621,10 +652,7 @@ class _PostCardState extends State<_PostCard> {
               title: const Text('WhatsApp'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final uri = Uri.parse('https://wa.me/?text=$waText');
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
+                await _shareViaWhatsApp(context, shareMessage);
                 await _recordShare(id);
               },
             ),
