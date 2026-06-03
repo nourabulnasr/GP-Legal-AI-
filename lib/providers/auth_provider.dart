@@ -22,11 +22,18 @@ class AuthProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      // Flutter web: backend redirects back with ?token= after Google OAuth.
+      // Flutter web: ?token= from backend redirect, or ?code= from Firebase OAuth redirect.
       final uriToken = Uri.base.queryParameters['token'];
       final uriError = Uri.base.queryParameters['error'];
+      final uriCode = Uri.base.queryParameters['code'];
       if (uriToken != null && uriToken.isNotEmpty) {
         await _auth.storeToken(uriToken);
+        _user = await _auth.me();
+        return;
+      }
+      if (uriCode != null && uriCode.isNotEmpty) {
+        final redirectUri = Uri.base.origin;
+        await _auth.exchangeGoogleCode(uriCode, redirectUri: redirectUri);
         _user = await _auth.me();
         return;
       }
@@ -74,6 +81,19 @@ class AuthProvider extends ChangeNotifier {
         'google_no_email' => 'Your Google account has no email address.',
         _ => 'Google sign-in failed. Please try again.',
       };
+
+  Future<void> loginWithGoogleIdToken(String idToken) async {
+    _error = null;
+    try {
+      await _auth.loginWithGoogleIdToken(idToken);
+      _user = await _auth.me();
+    } on ApiException catch (e) {
+      _error = e.message;
+    } catch (e) {
+      _error = e.toString();
+    }
+    notifyListeners();
+  }
 
   Future<void> login(String email, String password) async {
     _error = null;

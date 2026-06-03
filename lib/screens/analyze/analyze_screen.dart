@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +9,7 @@ import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/screens/history/analysis_detail_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 class AnalyzeScreen extends StatefulWidget {
   const AnalyzeScreen({super.key});
@@ -142,16 +143,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen> {
       backgroundColor: LegatoLinkedInTheme.navActiveGold,
       foregroundColor: const Color(0xFF1B1F23),
     );
-    return Scaffold(
+    return LegatoPageScaffold(
+      title: 'Analyze contract',
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Text(
-              'Analyze contract',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
             Text(
               'Upload a PDF, DOCX, or image to check your contract',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),

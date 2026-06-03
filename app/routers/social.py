@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
@@ -28,10 +28,41 @@ from app.db.models import (
     ProfileUserDocument,
 )
 from app.db.session import get_db
+from app.db.init_db import (
+    _ext_from_mime,
+    _guess_image_mime,
+    _normalize_uploaded_image,
+    _write_avatar_image_file,
+    _write_post_image_file,
+)
 
 router = APIRouter(prefix="/api", tags=["social"])
 
-_IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "http://localhost:8000").rstrip("/")
+_ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".jfif", ".heic", ".heif"}
+
+
+def _public_base_url(request: Optional[Request] = None) -> str:
+    """Public URL prefix for /static/post_images (must match client API base)."""
+    for key in ("IMAGE_BASE_URL", "PUBLIC_API_URL", "API_PUBLIC_URL"):
+        val = (os.getenv(key) or "").strip().rstrip("/")
+        if val:
+            return val
+    if request is not None:
+        return str(request.base_url).rstrip("/")
+    return "http://localhost:8000"
+
+
+def _normalize_image_url(url: Optional[str], base: str) -> Optional[str]:
+    if not url:
+        return None
+    base = base.rstrip("/")
+    if url.startswith("/"):
+        return f"{base}{url}"
+    if "localhost" in url or "127.0.0.1" in url:
+        marker = "/static/"
+        if marker in url:
+            return f"{base}{url[url.index(marker):]}"
+    return url
 
 
 def _parse_profile_row(row: Optional[LegatoProfile]) -> Dict[str, Any]:
@@ -59,6 +90,23 @@ def _title_company(prof: Dict[str, Any]) -> str:
     if t and c:
         return f"{t} · {c}"
     return t or c or "Legal professional"
+
+
+def _avatar_url_for_user(
+    user_id: int,
+    prof: Dict[str, Any],
+    base: str,
+    *,
+    profile_row: Optional[LegatoProfile] = None,
+) -> str:
+    """Resolve a public avatar URL from DB bytes or profile JSON."""
+    if profile_row is not None and getattr(profile_row, "avatar_bytes", None):
+        ext = _ext_from_mime(getattr(profile_row, "avatar_mime_type", None))
+        return f"{base.rstrip('/')}/static/profile_avatars/user_{user_id}{ext}"
+    return _normalize_image_url(
+        prof.get("avatarUrl") or prof.get("avatar_url") or "",
+        base,
+    ) or ""
 
 
 def _batch_post_stats(
@@ -107,10 +155,12 @@ def _serialize_post(
     *,
     authors_map: Optional[Dict[int, User]] = None,
     profiles_map: Optional[Dict[int, Dict[str, Any]]] = None,
+    profile_rows_map: Optional[Dict[int, LegatoProfile]] = None,
     likes_counts: Optional[Dict[int, int]] = None,
     comments_counts: Optional[Dict[int, int]] = None,
     shares_counts: Optional[Dict[int, int]] = None,
     viewer_liked: Optional[set] = None,
+    image_base: Optional[str] = None,
 ) -> Dict[str, Any]:
     # Use pre-fetched data when available (batch path), else fall back to single queries.
     if authors_map is not None:
@@ -120,8 +170,11 @@ def _serialize_post(
     if not author:
         raise HTTPException(status_code=500, detail="Post author missing")
 
+    prow: Optional[LegatoProfile] = None
     if profiles_map is not None:
         prof = profiles_map.get(post.author_id, {})
+        if profile_rows_map is not None:
+            prow = profile_rows_map.get(post.author_id)
     else:
         prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == post.author_id).first()
         prof = _parse_profile_row(prow)
@@ -145,6 +198,12 @@ def _serialize_post(
         "author_id": post.author_id,
         "author_name": _display_name(author, prof),
         "author_subtitle": _title_company(prof),
+        "author_avatar_url": _avatar_url_for_user(
+            post.author_id,
+            prof,
+            image_base or _public_base_url(),
+            profile_row=prow,
+        ),
         "content": post.content,
         "tags": tags,
         "category": post.category,
@@ -153,7 +212,7 @@ def _serialize_post(
         "comments_count": cc,
         "shares_count": sc,
         "liked": liked,
-        "image_url": post.image_url if post.image_url else None,
+        "image_url": _normalize_image_url(post.image_url, image_base or _public_base_url()),
     }
 
 
@@ -168,6 +227,7 @@ class PostCreateBody(BaseModel):
 
 @router.get("/posts")
 def list_posts(
+    request: Request,
     category: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
@@ -189,13 +249,13 @@ def list_posts(
     post_ids = [p.id for p in rows]
     author_ids = list({p.author_id for p in rows})
     authors_map = {u.id: u for u in db.query(User).filter(User.id.in_(author_ids)).all()}
-    profiles_map = {
-        pr.user_id: _parse_profile_row(pr)
-        for pr in db.query(LegatoProfile).filter(LegatoProfile.user_id.in_(author_ids)).all()
-    }
+    profile_rows = db.query(LegatoProfile).filter(LegatoProfile.user_id.in_(author_ids)).all()
+    profiles_map = {pr.user_id: _parse_profile_row(pr) for pr in profile_rows}
+    profile_rows_map = {pr.user_id: pr for pr in profile_rows}
     likes_counts, comments_counts, shares_counts, viewer_liked = _batch_post_stats(
         db, post_ids, current_user.id
     )
+    image_base = _public_base_url(request)
 
     return {
         "items": [
@@ -203,10 +263,12 @@ def list_posts(
                 p, db, current_user.id,
                 authors_map=authors_map,
                 profiles_map=profiles_map,
+                profile_rows_map=profile_rows_map,
                 likes_counts=likes_counts,
                 comments_counts=comments_counts,
                 shares_counts=shares_counts,
                 viewer_liked=viewer_liked,
+                image_base=image_base,
             )
             for p in rows
         ],
@@ -218,6 +280,7 @@ def list_posts(
 
 @router.post("/posts")
 async def create_post(
+    request: Request,
     content: str = Form(default="", max_length=20000),
     category: str = Form(default="All Updates"),
     tags: str = Form(default=""),
@@ -226,34 +289,107 @@ async def create_post(
     current_user: User = Depends(get_current_user),
 ):
     tag_list = [t.strip() for t in tags.split(",") if t.strip()][:20]
+    text = content.strip()
 
     image_url: Optional[str] = None
-    if image and image.filename:
-        ext = os.path.splitext(image.filename)[-1].lower()
-        safe_ext = ext if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"} else ".jpg"
-        raw_name = f"{uuid.uuid4().hex}_{image.filename[:64]}{'' if ext else safe_ext}"
-        filename = "".join(c if c.isalnum() or c in "._-" else "_" for c in raw_name)
-        save_path = os.path.join("static", "post_images", filename)
-        os.makedirs("static/post_images", exist_ok=True)
+    image_bytes_val: Optional[bytes] = None
+    image_mime: Optional[str] = None
+    image_ext = ".jpg"
+    if image is not None:
         MAX_IMG_BYTES = 5 * 1024 * 1024  # 5 MB
         data = await image.read(MAX_IMG_BYTES + 1)
         if len(data) > MAX_IMG_BYTES:
             raise HTTPException(status_code=413, detail="Image too large. Maximum size is 5 MB.")
-        with open(save_path, "wb") as f:
-            f.write(data)
-        image_url = f"{_IMAGE_BASE_URL.rstrip('/')}/static/post_images/{filename}"
+        if data:
+            orig_name = (image.filename or "photo.jpg").strip() or "photo.jpg"
+            ext = os.path.splitext(orig_name)[-1].lower()
+            if ext not in _ALLOWED_IMAGE_EXT:
+                ext = ".jpg"
+            try:
+                data, ext, image_mime = _normalize_uploaded_image(data, ext, image.content_type)
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unsupported image format. Please use JPG, PNG, or WebP.",
+                )
+            image_ext = ext
+            image_bytes_val = data
+
+    if not text and not image_bytes_val:
+        raise HTTPException(status_code=400, detail="Post must include text or an image.")
 
     post = SocialPost(
         author_id=current_user.id,
-        content=content.strip(),
+        content=text,
         tags_json=json.dumps(tag_list, ensure_ascii=False),
         category=(category or "All Updates")[:64],
-        image_url=image_url,
+        image_url=None,
+        image_bytes=image_bytes_val,
+        image_mime_type=image_mime,
     )
     db.add(post)
     db.commit()
     db.refresh(post)
-    return _serialize_post(post, db, current_user.id)
+
+    if image_bytes_val:
+        base = _public_base_url(request)
+        _write_post_image_file(post.id, image_bytes_val, image_ext)
+        post.image_url = f"{base.rstrip('/')}/static/post_images/post_{post.id}{image_ext}"
+        db.add(post)
+        db.commit()
+        db.refresh(post)
+
+    return _serialize_post(post, db, current_user.id, image_base=_public_base_url(request))
+
+
+def _static_path_from_public_url(url: Optional[str], marker: str = "/static/") -> Optional[str]:
+    """Map a public image URL to a local path under ./static/ (best effort)."""
+    if not url or marker not in url:
+        return None
+    rel = url[url.index(marker) + 1 :]  # static/post_images/abc.jpg
+    return os.path.join(*rel.split("/"))
+
+
+def _delete_local_static_file(url: Optional[str]) -> None:
+    path = _static_path_from_public_url(url)
+    if not path:
+        return
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
+@router.delete("/posts/{post_id}")
+def delete_post(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = db.query(SocialPost).filter(SocialPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    is_admin = getattr(current_user, "role", "user") == "admin"
+    if post.author_id != current_user.id and not is_admin:
+        raise HTTPException(status_code=403, detail="Not allowed to delete this post")
+
+    _delete_local_static_file(post.image_url)
+    if getattr(post, "image_bytes", None):
+        ext = _ext_from_mime(getattr(post, "image_mime_type", None))
+        legacy = os.path.join("static", "post_images", f"post_{post.id}{ext}")
+        try:
+            if os.path.isfile(legacy):
+                os.remove(legacy)
+        except OSError:
+            pass
+
+    db.query(SocialPostLike).filter(SocialPostLike.post_id == post_id).delete()
+    db.query(SocialPostComment).filter(SocialPostComment.post_id == post_id).delete()
+    db.query(SocialPostShare).filter(SocialPostShare.post_id == post_id).delete()
+    db.delete(post)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/posts/{post_id}/like")
@@ -322,16 +458,19 @@ def list_comments(
         .all()
     )
     out: List[Dict[str, Any]] = []
+    base = _public_base_url()
     for c in rows:
         u = db.query(User).filter(User.id == c.author_id).first()
         if not u:
             continue
-        pr = _parse_profile_row(db.query(LegatoProfile).filter(LegatoProfile.user_id == c.author_id).first())
+        prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == c.author_id).first()
+        pr = _parse_profile_row(prow)
         out.append(
             {
                 "id": c.id,
                 "author_id": c.author_id,
                 "author_name": _display_name(u, pr),
+                "author_avatar_url": _avatar_url_for_user(c.author_id, pr, base, profile_row=prow),
                 "content": c.content,
                 "created_at": c.created_at.isoformat() + "Z",
             }
@@ -398,7 +537,14 @@ def get_profile(
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
-    prof = _parse_profile_row(db.query(LegatoProfile).filter(LegatoProfile.user_id == user_id).first())
+    prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == user_id).first()
+    prof = _parse_profile_row(prow)
+    base = _public_base_url()
+    if prow is not None and getattr(prow, "avatar_bytes", None):
+        ext = _ext_from_mime(getattr(prow, "avatar_mime_type", None))
+        avatar_url = f"{base.rstrip('/')}/static/profile_avatars/user_{user_id}{ext}"
+    else:
+        avatar_url = _avatar_url_for_user(user_id, prof, base, profile_row=prow)
     endorsements = (
         db.query(SkillEndorsement).filter(SkillEndorsement.recipient_id == user_id).count()
     )
@@ -421,8 +567,11 @@ def get_profile(
         "company": prof.get("company") or "",
         "location": prof.get("location") or "",
         "bio": prof.get("bio") or "",
-        "avatar_url": prof.get("avatarUrl") or prof.get("avatar_url") or "",
-        "cover_url": prof.get("coverUrl") or prof.get("cover_url") or "",
+        "avatar_url": avatar_url,
+        "cover_url": _normalize_image_url(
+            prof.get("coverUrl") or prof.get("cover_url") or "",
+            _public_base_url(),
+        ) or "",
         "skills": prof.get("skills") if isinstance(prof.get("skills"), list) else [],
         "experience": prof.get("experience") if isinstance(prof.get("experience"), list) else [],
         "education": prof.get("education") if isinstance(prof.get("education"), list) else [],
@@ -533,6 +682,67 @@ def put_profile_me(
     db.add(row)
     db.commit()
     return {"ok": True, "profile": cur}
+
+
+@router.post("/profile/me/avatar")
+async def upload_profile_avatar(
+    request: Request,
+    avatar: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload profile photo; bytes stored in DB and synced to /static/profile_avatars/."""
+    MAX_IMG_BYTES = 5 * 1024 * 1024
+    data = await avatar.read(MAX_IMG_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty image file.")
+    if len(data) > MAX_IMG_BYTES:
+        raise HTTPException(status_code=413, detail="Image too large. Maximum size is 5 MB.")
+
+    orig_name = (avatar.filename or "avatar.jpg").strip() or "avatar.jpg"
+    ext = os.path.splitext(orig_name)[-1].lower()
+    if ext not in _ALLOWED_IMAGE_EXT:
+        ext = ".jpg"
+    try:
+        data, ext, mime = _normalize_uploaded_image(data, ext, avatar.content_type)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported image format. Please use JPG, PNG, or WebP.",
+        )
+
+    row = db.query(LegatoProfile).filter(LegatoProfile.user_id == current_user.id).first()
+    if not row:
+        row = LegatoProfile(user_id=current_user.id, payload_json="{}")
+        db.add(row)
+        db.flush()
+
+    try:
+        cur = json.loads(row.payload_json or "{}")
+    except Exception:
+        cur = {}
+    for key in ("avatar_url", "avatarUrl"):
+        old = cur.get(key)
+        if isinstance(old, str) and old.strip():
+            _delete_local_static_file(old.strip())
+
+    _write_avatar_image_file(current_user.id, data, ext)
+    base = _public_base_url(request)
+    avatar_url = f"{base.rstrip('/')}/static/profile_avatars/user_{current_user.id}{ext}"
+
+    row.avatar_bytes = data
+    row.avatar_mime_type = mime
+    cur["avatar_url"] = avatar_url
+    cur["avatarUrl"] = avatar_url
+    row.payload_json = json.dumps(cur, ensure_ascii=False)
+    db.add(row)
+    db.commit()
+
+    return {
+        "ok": True,
+        "avatar_url": avatar_url,
+        "profile": cur,
+    }
 
 
 # ---------- Endorsements / documents / recommendations ----------
@@ -716,14 +926,17 @@ def list_recommendations(
         .all()
     )
     out = []
+    base = _public_base_url()
     for r in rows:
         au = db.query(User).filter(User.id == r.author_id).first()
-        pr = _parse_profile_row(db.query(LegatoProfile).filter(LegatoProfile.user_id == r.author_id).first())
+        prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == r.author_id).first()
+        pr = _parse_profile_row(prow)
         out.append(
             {
                 "id": r.id,
                 "author_id": r.author_id,
                 "author_name": _display_name(au, pr) if au else "?",
+                "author_avatar_url": _avatar_url_for_user(r.author_id, pr, base, profile_row=prow) if au else "",
                 "content": r.content,
                 "created_at": r.created_at.isoformat() + "Z",
             }
@@ -755,6 +968,42 @@ def add_recommendation(
 
 
 # ---------- Network ----------
+
+
+def _peer_ids_from_invites(
+    invites: List[tuple[int, int, str]],
+    user_id: int,
+) -> set[int]:
+    """Peers linked by accepted or pending invites (either direction)."""
+    excluded: set[int] = set()
+    for requester_id, addressee_id, status in invites:
+        if status not in ("accepted", "pending"):
+            continue
+        if requester_id == user_id:
+            excluded.add(addressee_id)
+        elif addressee_id == user_id:
+            excluded.add(requester_id)
+    return excluded
+
+
+def _network_excluded_peer_ids(db: Session, user_id: int) -> set[int]:
+    """User IDs to omit from suggestions: connected or invite pending either way."""
+    rows = (
+        db.query(
+            NetworkInvite.requester_id,
+            NetworkInvite.addressee_id,
+            NetworkInvite.status,
+        )
+        .filter(
+            or_(NetworkInvite.requester_id == user_id, NetworkInvite.addressee_id == user_id),
+            NetworkInvite.status.in_(("accepted", "pending")),
+        )
+        .all()
+    )
+    return _peer_ids_from_invites(
+        [(r.requester_id, r.addressee_id, r.status) for r in rows],
+        user_id,
+    )
 
 
 class InviteBody(BaseModel):
@@ -814,6 +1063,7 @@ def network_search(
         .all()
     )
     out: List[Dict[str, Any]] = []
+    base = _public_base_url()
     for pr in prof_rows:
         if len(out) >= limit:
             break
@@ -840,6 +1090,7 @@ def network_search(
                 "name": _display_name(u, prof),
                 "subtitle": _title_company(prof),
                 "location": prof.get("location") or "",
+                "avatar_url": _avatar_url_for_user(uid, prof, base, profile_row=pr),
             }
         )
 
@@ -866,6 +1117,7 @@ def network_search(
                         "name": email.split("@")[0],
                         "subtitle": "Legal professional",
                         "location": "",
+                        "avatar_url": "",
                     }
                 )
     return {"items": out}
@@ -877,13 +1129,13 @@ def network_suggestions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    rows = (
-        db.query(LegatoProfile)
-        .filter(LegatoProfile.user_id != current_user.id)
-        .limit(limit * 3)
-        .all()
-    )
+    excluded = _network_excluded_peer_ids(db, current_user.id)
+    excluded.add(current_user.id)
+
+    q = db.query(LegatoProfile).filter(LegatoProfile.user_id.notin_(excluded))
+    rows = q.limit(limit * 5).all()
     out: List[Dict[str, Any]] = []
+    base = _public_base_url()
     for r in rows:
         if len(out) >= limit:
             break
@@ -898,6 +1150,7 @@ def network_suggestions(
                 "name": _display_name(u, prof),
                 "subtitle": _title_company(prof),
                 "location": prof.get("location") or "",
+                "avatar_url": _avatar_url_for_user(uid, prof, base, profile_row=r),
             }
         )
     return {"items": out}
@@ -963,14 +1216,17 @@ def list_pending_invites(
         .all()
     )
     out = []
+    base = _public_base_url()
     for inv in rows:
         u = db.query(User).filter(User.id == inv.requester_id).first()
-        pr = _parse_profile_row(db.query(LegatoProfile).filter(LegatoProfile.user_id == inv.requester_id).first())
+        prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == inv.requester_id).first()
+        pr = _parse_profile_row(prow)
         out.append(
             {
                 "id": inv.id,
                 "requester_id": inv.requester_id,
                 "requester_name": _display_name(u, pr) if u else "?",
+                "requester_avatar_url": _avatar_url_for_user(inv.requester_id, pr, base, profile_row=prow) if u else "",
                 "created_at": inv.created_at.isoformat() + "Z",
             }
         )
@@ -996,14 +1252,14 @@ def list_connections(
         .all()
     )
     out: List[Dict[str, Any]] = []
+    base = _public_base_url()
     for inv in rows:
         peer_id = inv.addressee_id if inv.requester_id == uid else inv.requester_id
         u = db.query(User).filter(User.id == peer_id).first()
         if not u:
             continue
-        pr = _parse_profile_row(
-            db.query(LegatoProfile).filter(LegatoProfile.user_id == peer_id).first()
-        )
+        prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == peer_id).first()
+        pr = _parse_profile_row(prow)
         out.append(
             {
                 "invite_id": inv.id,
@@ -1011,6 +1267,7 @@ def list_connections(
                 "name": _display_name(u, pr),
                 "subtitle": _title_company(pr),
                 "location": pr.get("location") or "",
+                "avatar_url": _avatar_url_for_user(peer_id, pr, base, profile_row=prow),
                 "connected_at": (
                     inv.updated_at.isoformat() + "Z"
                     if getattr(inv, "updated_at", None)

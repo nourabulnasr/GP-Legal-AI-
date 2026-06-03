@@ -90,6 +90,8 @@ class LegatoProfile(Base):
 
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON object as string
+    avatar_mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    avatar_bytes: Mapped[Optional[bytes]] = mapped_column(nullable=True)
 
 
 class LegatoSignature(Base):
@@ -116,6 +118,8 @@ class SocialPost(Base):
     tags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     category: Mapped[str] = mapped_column(String(64), nullable=False, default="All Updates", index=True)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    image_mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    image_bytes: Mapped[Optional[bytes]] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 

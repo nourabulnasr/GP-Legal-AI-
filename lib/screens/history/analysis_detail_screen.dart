@@ -1,10 +1,11 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/screens/chat/chat_analysis_screen.dart';
 import 'package:legato_mobile/screens/features/phase5_screens.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 class AnalysisDetailScreen extends StatelessWidget {
   const AnalysisDetailScreen({
@@ -31,7 +32,7 @@ class AnalysisDetailScreen extends StatelessWidget {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(
+        appBar: LegatoAppBar(
           title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
             if (analysisId != null)
@@ -70,7 +71,7 @@ class AnalysisDetailScreen extends StatelessWidget {
   }
 }
 
-// ── Violations tab ────────────────────────────────────────────────────────────
+// -- Violations tab ------------------------------------------------------------
 
 class _ViolationsTab extends StatelessWidget {
   const _ViolationsTab({
@@ -105,7 +106,7 @@ class _ViolationsTab extends StatelessWidget {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Lawyer review recommended — one or more high-severity violations detected.',
+                    'Lawyer review recommended � one or more high-severity violations detected.',
                     style: TextStyle(color: Color(0xFF92400E), fontSize: 13, fontWeight: FontWeight.w500),
                   ),
                 ),
@@ -117,8 +118,20 @@ class _ViolationsTab extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 12),
             child: Row(
               children: [
-                const Text('ML risk score: ', style: TextStyle(fontWeight: FontWeight.w500)),
-                Text(unifiedRisk.toString(), style: TextStyle(color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
+                Text(
+                  'ML risk score: ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                Text(
+                  unifiedRisk.toString(),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: LegatoLinkedInTheme.navActiveGold,
+                  ),
+                ),
               ],
             ),
           ),
@@ -186,9 +199,12 @@ class _ViolationCard extends StatelessWidget {
       case 'low':
         return const Color(0xFFEFF6FF);
       default:
-        return Colors.grey.shade50;
+        return const Color(0xFFF9FAFB);
     }
   }
+
+  /// Text on light severity-tinted cards � always dark for readability in dark mode.
+  static const _onCardText = Color(0xFF1F2937);
 
   String _label(String? sev) {
     if (sev == null) return 'Rule hit';
@@ -225,7 +241,7 @@ class _ViolationCard extends StatelessWidget {
     final color = _severityColor(context, sev);
     final bg = _severityBg(sev);
     final desc = _description();
-    final explanation = hit['explanation']?.toString() ?? '';
+    final ruleId = hit['rule_id']?.toString();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -267,24 +283,9 @@ class _ViolationCard extends StatelessWidget {
             ),
             if (desc.isNotEmpty) ...[
               const SizedBox(height: 6),
-              Text(desc, style: const TextStyle(fontSize: 13, height: 1.4)),
-            ],
-            if (explanation.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                              Text('LFM explanation', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
-                    const SizedBox(height: 4),
-                    Text(explanation, style: const TextStyle(fontSize: 13, height: 1.4)),
-                  ],
-                ),
+              Text(
+                desc,
+                style: const TextStyle(fontSize: 13, height: 1.5, color: _onCardText),
               ),
             ],
             const SizedBox(height: 8),
@@ -304,6 +305,7 @@ class _ViolationCard extends StatelessWidget {
                       builder: (_) => ExplainClauseFeatureScreen(
                         initialClauseText: text,
                         initialAnalysisId: analysisId,
+                        initialRuleId: ruleId,
                       ),
                     ),
                   );
@@ -319,7 +321,7 @@ class _ViolationCard extends StatelessWidget {
   }
 }
 
-// ── Summary tab ───────────────────────────────────────────────────────────────
+// -- Summary tab ---------------------------------------------------------------
 
 class _SummaryTab extends StatelessWidget {
   const _SummaryTab({required this.labor, required this.payload});
@@ -355,7 +357,7 @@ class _SummaryTab extends StatelessWidget {
   }
 }
 
-// ── RAG hits tab ──────────────────────────────────────────────────────────────
+// -- RAG hits tab --------------------------------------------------------------
 
 class _RagTab extends StatelessWidget {
   const _RagTab({required this.ragList});

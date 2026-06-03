@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import secrets
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -20,6 +22,53 @@ from app.utils_text import detect_language, llm_locale_from_detection, norm_ar
 # Small LRU for identical explain requests (demo path perf; no DB snapshot in key).
 _EXPLAIN_CACHE: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 _EXPLAIN_CACHE_MAX = 32
+
+
+def _normalize_for_match(text: str) -> str:
+    return " ".join((text or "").split()).lower()
+
+
+def _pick_rule_hit(
+    rule_hits: List[Dict[str, Any]],
+    *,
+    rule_id: Optional[str],
+    clause_text: str,
+) -> Optional[Dict[str, Any]]:
+    """Resolve the best rule hit for explain-clause (avoid always picking the first error)."""
+    hits = list(rule_hits or [])
+    rid = (rule_id or "").strip()
+    if rid:
+        for h in hits:
+            if (h.get("rule_id") or h.get("id")) == rid:
+                return h
+
+    needle = _normalize_for_match(clause_text)
+    if needle:
+        for h in hits:
+            matched = _normalize_for_match(h.get("matched_text") or "")
+            if matched and (needle in matched or matched in needle):
+                return h
+        best: Optional[Dict[str, Any]] = None
+        best_score = 0
+        needle_words = {w for w in needle.split() if len(w) > 2}
+        if needle_words:
+            for h in hits:
+                matched = _normalize_for_match(h.get("matched_text") or "")
+                if not matched:
+                    continue
+                score = sum(1 for w in needle_words if w in matched)
+                if score > best_score:
+                    best_score = score
+                    best = h
+            if best is not None and best_score >= 2:
+                return best
+
+    if hits:
+        return next(
+            (h for h in hits if (h.get("severity") in ("error", "high"))),
+            hits[0],
+        )
+    return None
 
 
 def _hits_to_law_articles(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -127,14 +176,7 @@ def run_explain_clause(
 
         rule_hits = data.get("rule_hits") or []
         contract_tags = list(data.get("contract_tags") or [])
-        hit: Optional[Dict[str, Any]] = None
-        if rule_id_eff:
-            hit = next((h for h in rule_hits if (h.get("rule_id") or h.get("id")) == rule_id_eff), None)
-        if not hit and rule_hits:
-            hit = next(
-                (h for h in rule_hits if (h.get("severity") in ("error", "high"))),
-                rule_hits[0],
-            )
+        hit = _pick_rule_hit(rule_hits, rule_id=rule_id_eff or None, clause_text=text)
         if hit:
             rule_id_eff = str(hit.get("rule_id") or hit.get("id") or "CLAUSE")
             description = (hit.get("description") or description)[:2000]
@@ -261,27 +303,110 @@ def summarize_clauses_llm(
     return out
 
 
+def contract_text_from_result(data: Dict[str, Any], *, max_chars: int = 12000) -> str:
+    """Best-effort contract body from a saved analysis result_json."""
+    full_text = str(data.get("full_text") or "").strip()
+    chunks = data.get("ocr_chunks") or []
+
+    def _chunk_text(chunk: Any) -> str:
+        if not isinstance(chunk, dict):
+            return ""
+        return str(
+            chunk.get("translated_ar_text")
+            or chunk.get("translated_text")
+            or chunk.get("normalized_text")
+            or chunk.get("text")
+            or ""
+        ).strip()
+
+    from_chunks = "\n\n".join(t for c in chunks if (t := _chunk_text(c)))
+    body = from_chunks if len(from_chunks) >= len(full_text) else full_text
+    if not body and from_chunks:
+        body = from_chunks
+    return body[:max_chars] if body else ""
+
+
+def _comparison_is_usable(text: str) -> bool:
+    t = (text or "").strip()
+    if len(t) < 40:
+        return False
+    if t.startswith("[LLM") or t.startswith("[Gemini"):
+        return False
+    alpha = sum(1 for c in t if c.isalpha())
+    return alpha >= 20
+
+
+def _compare_with_gemini(text_a: str, text_b: str, language: str) -> str:
+    from app.routers.chat import _get_gemini_client, _gemini_generate
+
+    client = _get_gemini_client()
+    if not client:
+        return ""
+    ta = (text_a or "")[:6000]
+    tb = (text_b or "")[:6000]
+    if language == "ar":
+        prompt = (
+            "قارن بين عقدي العمل التاليين. اذكر أوجه التشابه والاختلاف الرئيسية في نقاط مرقمة "
+            "(الراتب، ساعات العمل، الإجازات، فترة التجربة، إنهاء العقد، إلخ). "
+            "لا تخترع بنوداً غير موجودة في النص.\n\n"
+            f"العقد أ:\n{ta}\n\nالعقد ب:\n{tb}"
+        )
+    else:
+        prompt = (
+            "Compare the following two employment contracts. List key similarities and differences "
+            "in bullet points (salary, hours, leave, probation, termination, etc.). "
+            "Do not invent clauses not present in the text.\n\n"
+            f"Contract A:\n{ta}\n\nContract B:\n{tb}"
+        )
+    try:
+        return _gemini_generate(client, prompt).strip()
+    except Exception:
+        return ""
+
+
 def compare_contracts_llm(text_a: str, text_b: str, language: str) -> str:
     from app import local_llm as llm
-
-    if not getattr(llm, "is_available", lambda: False)():
-        raise RuntimeError("Local LFM not available")
-    gen = getattr(llm, "generate", None)
-    if not gen:
-        raise RuntimeError("local_llm.generate missing")
 
     lang = (
         language
         if language in ("ar", "en")
         else llm_locale_from_detection(detect_language((text_a or "") + "\n\n" + (text_b or ""))[:8000])
     )
-    ta = (text_a or "")[:8000]
-    tb = (text_b or "")[:8000]
-    if lang == "ar":
-        prompt = f"قارن بين النصين التاليين من عقود العمل. اذكر أوجه التشابه والاختلاف الرئيسية في نقاط مختصرة:\n\nالنص أ:\n{ta}\n\nالنص ب:\n{tb}\n\nالمقارنة:"
-    else:
-        prompt = f"Compare the following two employment contract excerpts. List key similarities and differences briefly:\n\nText A:\n{ta}\n\nText B:\n{tb}\n\nComparison:"
-    return gen(prompt, max_new_tokens=512, do_sample=False).strip()
+    max_each = int(os.getenv("COMPARE_MAX_CHARS_EACH", "1800"))
+    ta = (text_a or "")[:max_each]
+    tb = (text_b or "")[:max_each]
+
+    comparison = ""
+    if getattr(llm, "is_available", lambda: False)():
+        gen = getattr(llm, "generate", None)
+        if gen:
+            if lang == "ar":
+                prompt = (
+                    "قارن بين النصين التاليين من عقود العمل. "
+                    "اذكر أوجه التشابه والاختلاف الرئيسية في نقاط مختصرة:\n\n"
+                    f"النص أ:\n{ta}\n\nالنص ب:\n{tb}\n\nالمقارنة:"
+                )
+            else:
+                prompt = (
+                    "Compare the following two employment contract excerpts. "
+                    "List key similarities and differences briefly:\n\n"
+                    f"Text A:\n{ta}\n\nText B:\n{tb}\n\nComparison:"
+                )
+            comparison = gen(prompt, max_new_tokens=512, do_sample=False).strip()
+            comparison = re.sub(r"^\.\.\.\s*\)\.?\s*$", "", comparison).strip()
+
+    if _comparison_is_usable(comparison):
+        return comparison
+
+    gemini = _compare_with_gemini(text_a, text_b, lang)
+    if _comparison_is_usable(gemini):
+        return gemini
+
+    if comparison:
+        return comparison
+    if gemini:
+        return gemini
+    raise RuntimeError("Could not generate a contract comparison. Try again later.")
 
 
 def new_share_token() -> str:

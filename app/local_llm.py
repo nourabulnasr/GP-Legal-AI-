@@ -16,6 +16,21 @@ _BASE = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = _BASE / "LFM2.5-1.2B-Instruct"
 MODEL_UNDER_MODELS = _BASE / "models" / "LFM2.5-1.2B-Instruct"
 MAX_PROMPT_CHARS = 6000
+# Leave room for generation; HF truncation=True keeps the *start* and drops the question/suffix.
+DEFAULT_MAX_INPUT_TOKENS = int(os.getenv("LFM_MAX_INPUT_TOKENS", "1800"))
+
+_PROMPT_SUFFIX_MARKERS = (
+    "الشرح:",
+    "الجواب:",
+    "المقارنة:",
+    "الملخص:",
+    "سؤال المستخدم:",
+    "Assistant:",
+    "User:",
+    "Comparison:",
+    "Summary:",
+    "explanation and suggested correction",
+)
 
 _tokenizer = None
 _model = None
@@ -94,6 +109,44 @@ def _verify_local_hf_snapshot(model_dir: Path) -> None:
             )
 
 
+def fit_prompt_to_token_budget(
+    prompt: str,
+    tokenizer: Any,
+    max_tokens: int = DEFAULT_MAX_INPUT_TOKENS,
+) -> str:
+    """
+    Shrink prompt so encode length <= max_tokens without dropping the user question / answer sentinel.
+    Default HF truncation keeps the beginning and removes the end — that breaks document chat.
+    """
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return prompt
+    max_tokens = max(256, int(max_tokens))
+    full_ids = tokenizer.encode(prompt, add_special_tokens=False)
+    if len(full_ids) <= max_tokens:
+        return prompt
+
+    suffix_start = len(prompt)
+    for marker in _PROMPT_SUFFIX_MARKERS:
+        idx = prompt.rfind(marker)
+        if idx >= 0:
+            suffix_start = min(suffix_start, idx)
+    suffix = prompt[suffix_start:]
+    prefix = prompt[:suffix_start]
+    suffix_ids = tokenizer.encode(suffix, add_special_tokens=False)
+    reserve = len(suffix_ids) + 16
+    prefix_budget = max(128, max_tokens - reserve)
+    prefix_ids = tokenizer.encode(prefix, add_special_tokens=False)
+    if len(prefix_ids) > prefix_budget:
+        prefix_ids = prefix_ids[-prefix_budget:]
+    prefix_text = tokenizer.decode(prefix_ids, skip_special_tokens=True).strip()
+    if prefix_text and suffix:
+        return f"{prefix_text}\n\n[... اقتطاع من نص العقد ...]\n\n{suffix}"
+    if suffix:
+        return suffix
+    return tokenizer.decode(full_ids[-max_tokens:], skip_special_tokens=True)
+
+
 def load_model():
     """Load tokenizer and model from local path. Idempotent."""
     global _tokenizer, _model, _loaded_path
@@ -143,7 +196,14 @@ def generate(
         except Exception as e:
             return f"[LLM load error: {e!r}]"
 
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
+        max_input = int(os.getenv("LFM_MAX_INPUT_TOKENS", str(DEFAULT_MAX_INPUT_TOKENS)))
+        fitted_prompt = fit_prompt_to_token_budget(prompt, tokenizer, max_tokens=max_input)
+        inputs = tokenizer(
+            fitted_prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_input,
+        )
         gen_kwargs = {
             "max_new_tokens": max_new_tokens,
             "do_sample": do_sample,
@@ -175,13 +235,18 @@ def generate(
         text = _model_executor.submit(_run_in_model_thread).result(timeout=600)
     except Exception as e:
         return f"[LLM generate error: {e!r}]"
-    # Fallback: strip prompt if tokenizer left overlap
-    prompt_clean = prompt.strip()
+    # Fallback: strip prompt if tokenizer left overlap (use original prompt arg from caller)
+    prompt_clean = (prompt or "").strip()
     if prompt_clean and prompt_clean in text:
         text = text.split(prompt_clean)[-1].strip()
     # Fallback: strip by last instruction line so we don't show prompt
     for sentinel in (
         "الجواب:",
+        "الشرح:",
+        "المقارنة:",
+        "الملخص:",
+        "Comparison:",
+        "Summary:",
         "الشرح والتصحيح المقترح (بناءً على النصوص أعلاه فقط):",
         "explanation and suggested correction (based only on the texts above):",
         "الشرح والتصحيح",

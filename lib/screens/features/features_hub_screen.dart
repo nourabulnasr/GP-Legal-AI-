@@ -1,9 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/screens/chat/chat_assistant_screen.dart';
 import 'package:legato_mobile/screens/features/phase5_screens.dart';
 import 'package:legato_mobile/screens/translate/translate_contract_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 /// Entry to all Phase-5 capabilities (wired to `/legato/*` API).
 class FeaturesHubScreen extends StatelessWidget {
@@ -12,7 +13,7 @@ class FeaturesHubScreen extends StatelessWidget {
   static const _items = <_FeatureItem>[
     _FeatureItem(
       'Translate contract',
-      'OCR + automatic MT (Google → LFM)',
+      'OCR + automatic MT (Google ? LFM)',
       Icons.translate,
       TranslateContractScreen(),
     ),
@@ -27,13 +28,13 @@ class FeaturesHubScreen extends StatelessWidget {
     _FeatureItem('Contract timeline', 'Milestones (admin)', Icons.timeline_outlined, TimelineAdminFeatureScreen()),
     _FeatureItem('Deal messaging', 'Threads per analysis', Icons.forum_outlined, DealMessagingFeatureScreen()),
     _FeatureItem('Legal network', 'Profiles and directory', Icons.groups_outlined, LegalNetworkFeatureScreen()),
-    _FeatureItem('Biometrics', 'Face ID info · JWT storage notes', Icons.fingerprint_outlined, BiometricInfoScreen()),
+    _FeatureItem('Biometrics', 'Face ID info � JWT storage notes', Icons.fingerprint_outlined, BiometricInfoScreen()),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegatoAppBar(
         title: const Text('Tools'),
       ),
       body: GridView.builder(

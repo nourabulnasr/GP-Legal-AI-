@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -87,7 +89,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Reset password')),
+      appBar: LegatoAppBar(title: const Text('Reset password')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),

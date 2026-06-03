@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
+
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -53,7 +55,7 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Assistant')),
+      appBar: LegatoAppBar(title: const Text('Assistant')),
       body: Column(
         children: [
           Expanded(

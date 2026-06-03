@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/app_services.dart';
@@ -8,6 +8,7 @@ import 'package:legato_mobile/screens/translate/translate_contract_screen.dart';
 import 'package:legato_mobile/screens/chat/chat_hub_screen.dart';
 import 'package:legato_mobile/screens/history/history_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/user_avatar.dart';
 
 class DashboardTab extends StatefulWidget {
   const DashboardTab({super.key});
@@ -20,6 +21,30 @@ class _DashboardTabState extends State<DashboardTab> {
   bool _loading = false;
   String? _health;
   String? _err;
+  String? _avatarUrl;
+  String _displayName = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfile());
+  }
+
+  Future<void> _loadProfile() async {
+    final auth = context.read<AuthProvider>();
+    final uid = auth.user?.id;
+    final email = auth.user?.email ?? '';
+    if (uid == null) return;
+    try {
+      final d = await context.read<AppServices>().legato.getSocialProfileResilient(uid, email);
+      if (!mounted) return;
+      setState(() {
+        _avatarUrl = d['avatar_url']?.toString();
+        _displayName = d['display_name']?.toString() ??
+            (email.contains('@') ? email.split('@').first : email);
+      });
+    } catch (_) {}
+  }
 
   Future<void> _ping() async {
     setState(() {
@@ -42,10 +67,9 @@ class _DashboardTabState extends State<DashboardTab> {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
     final rawEmail = user?.email ?? 'Guest';
-    final displayName = rawEmail.contains('@')
-        ? rawEmail.split('@').first
-        : rawEmail;
-    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
+    final displayName = _displayName.isNotEmpty
+        ? _displayName
+        : (rawEmail.contains('@') ? rawEmail.split('@').first : rawEmail);
 
     return ColoredBox(
       color: Theme.of(context).scaffoldBackgroundColor,
@@ -69,17 +93,11 @@ class _DashboardTabState extends State<DashboardTab> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        CircleAvatar(
+                        UserAvatar(
                           radius: 36,
+                          imageUrl: _avatarUrl,
+                          name: displayName,
                           backgroundColor: Colors.white,
-                          child: Text(
-                            initial,
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF1B1F23),
-                            ),
-                          ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(

@@ -1,10 +1,12 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
+import 'package:legato_mobile/widgets/user_avatar.dart';
 
 class MemberProfileScreen extends StatefulWidget {
   const MemberProfileScreen({super.key, required this.userId});
@@ -86,7 +88,7 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     final me = auth.user?.id;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: LegatoAppBar(title: const Text('Profile')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -139,15 +141,10 @@ class _HeaderCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                CircleAvatar(
+                UserAvatar(
                   radius: 26,
-                  backgroundColor: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.14),
-                  child: Text(
-                    (data['display_name']?.toString().isNotEmpty == true)
-                        ? data['display_name'].toString()[0].toUpperCase()
-                        : '?',
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF8B7318)),
-                  ),
+                  imageUrl: data['avatar_url']?.toString(),
+                  name: data['display_name']?.toString() ?? 'Member',
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -160,7 +157,7 @@ class _HeaderCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${data['title'] ?? ''}${(data['title']?.toString().isNotEmpty == true) && (data['company']?.toString().isNotEmpty == true) ? ' · ' : ''}${data['company'] ?? ''}',
+                        '${data['title'] ?? ''}${(data['title']?.toString().isNotEmpty == true) && (data['company']?.toString().isNotEmpty == true) ? ' � ' : ''}${data['company'] ?? ''}',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                       ),
                       if ((data['location']?.toString().isNotEmpty ?? false))

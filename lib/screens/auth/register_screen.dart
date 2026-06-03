@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
+
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -51,7 +53,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             'Cannot reach the API over HTTP from this app. Clear site data (web) or reinstall the app, then use https://srv1723974.hstgr.cloud');
       } else if (msg.contains('Failed to fetch')) {
         setState(() => _err =
-            'Network error reaching the API (${RuntimeConfig.apiBaseUrl}). Check your connection or Settings → API URL.');
+            'Network error reaching the API (${RuntimeConfig.apiBaseUrl}). Check your connection or Settings ? API URL.');
       } else {
         setState(() => _err = msg);
       }
@@ -63,7 +65,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Register')),
+      appBar: LegatoAppBar(title: const Text('Register')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),

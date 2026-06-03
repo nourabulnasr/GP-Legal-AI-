@@ -8,6 +8,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from fastapi.security import OAuth2PasswordRequestForm
 from app.core.limiter import limiter
 from sqlalchemy.orm import Session
@@ -388,11 +389,84 @@ def _frontend_url() -> str:
     return os.getenv("FRONTEND_URL", "http://localhost:5173").strip()
 
 
+def _google_client_id() -> str:
+    return os.getenv("GOOGLE_CLIENT_ID", "").strip()
+
+
+@router.get("/google/config")
+def google_oauth_config_public():
+    """Public OAuth client id for Flutter web (no secret)."""
+    cid = _google_client_id()
+    web_origin = _frontend_url().rstrip("/")
+    return {
+        "client_id": cid,
+        "enabled": bool(cid),
+        "web_origin": web_origin,
+        "web_redirect_uri": web_origin,
+    }
+
+
+class GoogleIdTokenBody(BaseModel):
+    id_token: str = Field(..., min_length=20)
+
+
+@router.post("/google/id-token", response_model=TokenResponse)
+def google_id_token_login(body: GoogleIdTokenBody, db: Session = Depends(get_db)):
+    """Verify Google ID token from Flutter web (legatoappgp2026.web.app origin)."""
+    client_id = _google_client_id()
+    if not client_id:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured on the server")
+
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+
+        idinfo = google_id_token.verify_oauth2_token(
+            body.id_token.strip(),
+            google_requests.Request(),
+            client_id,
+            clock_skew_in_seconds=30,
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired Google sign-in token")
+
+    email = (idinfo.get("email") or "").lower().strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account has no email")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(
+            email=email,
+            password_hash="",
+            role="user",
+            email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    token = create_access_token(sub=str(user.id), role=getattr(user, "role", "user"))
+    return TokenResponse(access_token=token, token_type="bearer")
+
+
+def _google_redirect_uri() -> str:
+    """OAuth callback on the public API host (Google rejects raw IP redirect URIs)."""
+    explicit = os.getenv("GOOGLE_REDIRECT_URI", "").strip()
+    if explicit:
+        return explicit
+    for key in ("IMAGE_BASE_URL", "PUBLIC_API_URL", "API_PUBLIC_URL"):
+        base = (os.getenv(key) or "").strip().rstrip("/")
+        if base:
+            return f"{base}/auth/google/callback"
+    return "http://127.0.0.1:8000/auth/google/callback"
+
+
 def _google_oauth_config():
     return (
         os.getenv("GOOGLE_CLIENT_ID", "").strip(),
         os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
-        os.getenv("GOOGLE_REDIRECT_URI", "http://127.0.0.1:8000/auth/google/callback").strip(),
+        _google_redirect_uri(),
     )
 
 
@@ -403,7 +477,7 @@ def google_oauth_redirect():
     client_id, _, redirect_uri = _google_oauth_config()
     if not client_id:
         return RedirectResponse(
-            url=f"{_frontend_url()}/login?error=google_not_configured",
+            url=f"{_frontend_url().rstrip('/')}/?error=google_not_configured",
             status_code=302,
         )
     qs = urlencode(
@@ -420,27 +494,19 @@ def google_oauth_redirect():
     return RedirectResponse(url=auth_url, status_code=302)
 
 
-@router.get("/google/callback")
-async def google_oauth_callback(code: str = "", error: str = "", db: Session = Depends(get_db)):
-    """Google OAuth callback - exchange code for token, create/get user, redirect to frontend with JWT."""
-    from fastapi.responses import RedirectResponse
+class GoogleCodeBody(BaseModel):
+    code: str = Field(..., min_length=5)
+    redirect_uri: str = Field(..., min_length=8)
 
-    frontend_url = _frontend_url()
-    client_id, client_secret, redirect_uri = _google_oauth_config()
 
-    if error or not code:
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_denied",
-            status_code=302,
-        )
-
+async def _google_oauth_login_from_code(code: str, redirect_uri: str, db: Session) -> str:
+    """Exchange Google auth code for app JWT. Raises HTTPException on failure."""
+    client_id, client_secret, _ = _google_oauth_config()
     if not client_id or not client_secret:
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_not_configured",
-            status_code=302,
-        )
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured on the server")
 
     import httpx
+
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
             "https://oauth2.googleapis.com/token",
@@ -455,18 +521,12 @@ async def google_oauth_callback(code: str = "", error: str = "", db: Session = D
         )
 
     if token_resp.status_code != 200:
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_token_failed",
-            status_code=302,
-        )
+        raise HTTPException(status_code=401, detail="Google authentication failed")
 
     tokens = token_resp.json()
     access_token = tokens.get("access_token")
     if not access_token:
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_token_failed",
-            status_code=302,
-        )
+        raise HTTPException(status_code=401, detail="Google authentication failed")
 
     async with httpx.AsyncClient() as client:
         user_resp = await client.get(
@@ -475,24 +535,18 @@ async def google_oauth_callback(code: str = "", error: str = "", db: Session = D
         )
 
     if user_resp.status_code != 200:
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_user_failed",
-            status_code=302,
-        )
+        raise HTTPException(status_code=401, detail="Could not retrieve Google account details")
 
     user_info = user_resp.json()
     email = (user_info.get("email") or "").lower().strip()
     if not email:
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_no_email",
-            status_code=302,
-        )
+        raise HTTPException(status_code=400, detail="Google account has no email")
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
         user = User(
             email=email,
-            password_hash="",  # No password for OAuth-only users
+            password_hash="",
             role="user",
             email_verified=True,
         )
@@ -500,9 +554,47 @@ async def google_oauth_callback(code: str = "", error: str = "", db: Session = D
         db.commit()
         db.refresh(user)
 
-    token = create_access_token(sub=str(user.id), role=getattr(user, "role", "user"))
+    return create_access_token(sub=str(user.id), role=getattr(user, "role", "user"))
+
+
+@router.post("/google/code", response_model=TokenResponse)
+async def google_oauth_code_exchange(body: GoogleCodeBody, db: Session = Depends(get_db)):
+    """Exchange Google OAuth code from Flutter web (redirect URI = Firebase hosting)."""
+    token = await _google_oauth_login_from_code(body.code.strip(), body.redirect_uri.strip(), db)
+    return TokenResponse(access_token=token, token_type="bearer")
+
+
+@router.get("/google/callback")
+async def google_oauth_callback(code: str = "", error: str = "", db: Session = Depends(get_db)):
+    """Google OAuth callback - exchange code for token, create/get user, redirect to frontend with JWT."""
+    from fastapi.responses import RedirectResponse
+
+    frontend_url = _frontend_url()
+    _, _, redirect_uri = _google_oauth_config()
+
+    if error or not code:
+        return RedirectResponse(
+            url=f"{frontend_url.rstrip('/')}/?error=google_denied",
+            status_code=302,
+        )
+
+    try:
+        token = await _google_oauth_login_from_code(code, redirect_uri, db)
+    except HTTPException as exc:
+        err = "google_token_failed"
+        if exc.status_code == 503:
+            err = "google_not_configured"
+        elif "email" in (exc.detail or "").lower():
+            err = "google_no_email"
+        elif "retrieve" in (exc.detail or "").lower():
+            err = "google_user_failed"
+        return RedirectResponse(
+            url=f"{frontend_url.rstrip('/')}/?error={err}",
+            status_code=302,
+        )
+
     return RedirectResponse(
-        url=f"{frontend_url}/auth/google/callback?token={token}",
+        url=f"{frontend_url.rstrip('/')}/?token={token}",
         status_code=302,
     )
 

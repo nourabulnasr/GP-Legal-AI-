@@ -12,6 +12,8 @@ services:
     volumes:
       # Persist SQLite DB without overriding application code
       - legalai_db:/data
+      # Uploaded post/profile images (survive container restarts)
+      - ./static:/app/static
       # Persist Chroma legal RAG (legal_rag_bridge + rag_chromadb when CHROMA_LEGAL_DIR is set)
       - legalai_chroma:/data/chroma_legal
       # Mount local LFM model files from host into container (read-only)

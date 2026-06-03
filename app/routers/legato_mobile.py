@@ -125,13 +125,17 @@ def compare_contracts(
             data = json.loads(row.result_json) if isinstance(row.result_json, str) else row.result_json
         except Exception:
             data = {}
-        parts = data.get("ocr_chunks") or []
-        return "\n\n".join(str(p.get("normalized_text") or p.get("text") or "") for p in parts)[:12000]
+        if not isinstance(data, dict):
+            data = {}
+        return legato_service.contract_text_from_result(data, max_chars=12000)
 
     ta = (body.text_a or "").strip() or _load_text(body.analysis_id_a)
     tb = (body.text_b or "").strip() or _load_text(body.analysis_id_b)
     if not ta or not tb:
-        raise HTTPException(status_code=400, detail="Provide text_a/text_b or both analysis ids")
+        raise HTTPException(
+            status_code=400,
+            detail="Both contracts need text. Re-run Analyze on each file if the saved analysis has no extractable text.",
+        )
     lang = (body.language or "").strip().lower()
     if not lang:
         lang = llm_locale_from_detection(detect_language((ta or "") + "\n\n" + (tb or ""))[:8000])
@@ -447,6 +451,22 @@ def timeline_me(
         }
         for r in rows
     ]
+
+
+@router.delete("/timeline/events/{event_id}")
+def timeline_delete(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ev = db.query(LegatoTimelineEvent).filter(LegatoTimelineEvent.id == event_id).first()
+    if not ev:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    if ev.user_id != current_user.id and getattr(current_user, "role", "user") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    db.delete(ev)
+    db.commit()
+    return {"ok": True, "id": event_id}
 
 
 # ---------- profile ----------

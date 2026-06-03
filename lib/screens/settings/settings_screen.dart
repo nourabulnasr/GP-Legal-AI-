@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/config/runtime_config.dart';
@@ -61,7 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final isAdmin = context.watch<AuthProvider>().user?.isAdmin ?? false;
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: LegatoAppBar(title: const Text('Settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

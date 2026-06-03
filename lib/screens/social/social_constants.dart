@@ -1,4 +1,4 @@
-﻿/// Feed filter tabs + composer tag suggestions (legal topics).
+/// Feed filter tabs + composer tag suggestions (legal topics).
 const kFeedCategoryFilters = <String>[
   'All Updates',
   'Contract Law',

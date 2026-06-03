@@ -1,26 +1,22 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/screens/chat/chat_assistant_screen.dart';
 import 'package:legato_mobile/screens/chat/chat_analysis_screen.dart';
 import 'package:legato_mobile/screens/chat/chat_document_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 class ChatHubScreen extends StatelessWidget {
   const ChatHubScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: SafeArea(
+    return LegatoPageScaffold(
+      title: 'Messaging',
+      body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           children: [
-            Text(
-              'Messaging',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
             Text(
               'Assistant uses the cloud API. Document and analysis chat use your local LFM.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),

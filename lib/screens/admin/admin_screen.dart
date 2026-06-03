@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
+
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -57,7 +59,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       await context.read<AppServices>().legato.adminUpdateUserRole(userId, role);
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Role → $role')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Role ? $role')));
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -69,7 +71,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: LegatoAppBar(
         title: const Text('Admin'),
         bottom: TabBar(
           controller: _tabs,
@@ -112,7 +114,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         final role = m['role']?.toString() ?? 'user';
                         return ListTile(
                           title: Text(email),
-                          subtitle: Text('id: $id · $role'),
+                          subtitle: Text('id: $id � $role'),
                           trailing: role == 'admin'
                               ? TextButton(
                                   onPressed: () => _setRole(id, 'user'),
@@ -136,7 +138,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         final uid = m['user_id']?.toString() ?? '';
                         return ListTile(
                           title: Text(fn),
-                          subtitle: Text('analysis $id · user $uid'),
+                          subtitle: Text('analysis $id � user $uid'),
                         );
                       },
                     ),

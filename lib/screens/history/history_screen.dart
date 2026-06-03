@@ -1,6 +1,8 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -50,13 +52,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('History')),
+        appBar: LegatoAppBar(title: const Text('History')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_err != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('History')),
+        appBar: LegatoAppBar(title: const Text('History')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -74,12 +76,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
     if (_items.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('History')),
+        appBar: LegatoAppBar(title: const Text('History')),
         body: const Center(child: Text('No saved analyses yet.')),
       );
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('History')),
+      appBar: LegatoAppBar(title: const Text('History')),
       body: RefreshIndicator(
       onRefresh: _load,
       child: ListView.separated(

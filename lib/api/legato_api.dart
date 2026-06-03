@@ -312,6 +312,10 @@ class LegatoApi {
 
   Future<List<dynamic>> timelineMe() => _api.getJsonList('/legato/timeline/me');
 
+  Future<void> deleteTimelineEvent(int eventId) async {
+    await _api.deleteJson('/legato/timeline/events/$eventId');
+  }
+
   Future<Map<String, dynamic>> getLegalProfile() => _api.getJson('/legato/profile/me');
 
   Future<Map<String, dynamic>> putLegalProfile(Map<String, dynamic> fields) =>

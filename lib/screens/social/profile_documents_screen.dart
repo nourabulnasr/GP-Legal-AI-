@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -6,6 +6,7 @@ import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 class ProfileDocumentsScreen extends StatefulWidget {
   const ProfileDocumentsScreen({super.key});
@@ -164,7 +165,7 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Documents')),
+      appBar: LegatoAppBar(title: const Text('My Documents')),
       floatingActionButton: FloatingActionButton(
         backgroundColor: LegatoLinkedInTheme.navActiveGold,
         foregroundColor: const Color(0xFF1B1F23),
@@ -211,7 +212,7 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: Text(
-                        'No saved analyses yet. Use Contracts → Analyze contract.',
+                        'No saved analyses yet. Use Contracts ? Analyze contract.',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                       ),
                     )

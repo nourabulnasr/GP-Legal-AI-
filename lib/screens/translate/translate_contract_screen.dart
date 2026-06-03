@@ -1,4 +1,5 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,8 @@ import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/screens/translate/ocr_chunk_translation_list.dart';
 import 'package:legato_mobile/screens/translate/translation_status_banner.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
+import 'package:legato_mobile/utils/pdf_download.dart';
 
 const _targetLanguages = <String, String>{
   'ar': 'Arabic',
@@ -102,6 +105,33 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
     return null;
   }
 
+  Future<void> _downloadTranslated(List<dynamic> chunks, String targetLang) async {
+    final text = _collectTranslated(chunks, targetLang);
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No translated text to download.')),
+      );
+      return;
+    }
+    final lang = targetLang.toLowerCase();
+    final filename = 'translated_contract_$lang.pdf';
+    final rtl = lang == 'ar';
+    try {
+      await downloadPdfFile(filename, text, rtl: rtl);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(kIsWeb ? 'PDF download started' : 'Saved as $filename'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF download failed: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final goldBtn = FilledButton.styleFrom(
@@ -114,7 +144,7 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
     final target = data?['translation_target_lang']?.toString() ?? _targetLang;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Translate contract')),
+      appBar: LegatoAppBar(title: const Text('Translate contract')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
@@ -183,22 +213,36 @@ class _TranslateContractScreenState extends State<TranslateContractScreen> {
                 sourceLang: _effectiveSource(data),
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () {
-                  final text = _collectTranslated(chunks, target);
-                  if (text.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('No translated text to copy.')),
-                    );
-                    return;
-                  }
-                  Clipboard.setData(ClipboardData(text: text));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Translated text copied to clipboard')),
-                  );
-                },
-                icon: const Icon(Icons.copy_outlined, size: 18),
-                label: const Text('Copy translated text'),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        final text = _collectTranslated(chunks, target);
+                        if (text.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('No translated text to copy.')),
+                          );
+                          return;
+                        }
+                        Clipboard.setData(ClipboardData(text: text));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Translated text copied to clipboard')),
+                        );
+                      },
+                      icon: const Icon(Icons.copy_outlined, size: 18),
+                      label: const Text('Copy'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _downloadTranslated(chunks, target),
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: const Text('Download PDF'),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               Text(

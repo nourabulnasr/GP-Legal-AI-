@@ -12,6 +12,8 @@ import 'package:legato_mobile/screens/chat/chat_hub_screen.dart';
 import 'package:legato_mobile/screens/social/member_profile_screen.dart';
 import 'package:legato_mobile/screens/social/social_constants.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/utils/platform_file_bytes.dart';
+import 'package:legato_mobile/widgets/user_avatar.dart';
 
 String _relativeTime(String iso) {
   try {
@@ -43,11 +45,31 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _loading = false;
   bool _hasMore = true;
   String? _err;
+  String? _myAvatarUrl;
+  String _myDisplayName = '';
+
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
     _load(reset: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadMyAvatar());
+  }
+
+  Future<void> _loadMyAvatar() async {
+    final auth = context.read<AuthProvider>();
+    final uid = auth.user?.id;
+    final email = auth.user?.email ?? '';
+    if (uid == null) return;
+    try {
+      final d = await context.read<AppServices>().legato.getSocialProfileResilient(uid, email);
+      if (!mounted) return;
+      setState(() {
+        _myAvatarUrl = d['avatar_url']?.toString();
+        _myDisplayName = d['display_name']?.toString() ??
+            (email.contains('@') ? email.split('@').first : email);
+      });
+    } catch (_) {}
   }
 
   @override
@@ -125,6 +147,7 @@ class _FeedScreenState extends State<FeedScreen> {
         onPosted: () => _load(reset: true),
       ),
     );
+    if (mounted) _loadMyAvatar();
   }
 
   @override
@@ -211,7 +234,11 @@ class _FeedScreenState extends State<FeedScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                     child: Row(
                       children: [
-                        const CircleAvatar(radius: 18, child: Icon(Icons.person, size: 18)),
+                        UserAvatar(
+                          radius: 18,
+                          imageUrl: _myAvatarUrl,
+                          name: _myDisplayName,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -314,11 +341,19 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
     );
     if (result == null || result.files.isEmpty) return;
     final file = result.files.first;
-    if (file.bytes == null) return;
+    final bytes = await readPlatformFileBytes(file);
+    if (bytes == null || bytes.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read the selected photo. Try another image.')),
+        );
+      }
+      return;
+    }
     if (mounted) {
       setState(() {
-        _imageBytes = file.bytes;
-        _imageFilename = file.name;
+        _imageBytes = bytes;
+        _imageFilename = pickedImageFilename(file);
       });
     }
   }
@@ -420,13 +455,21 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
                             customBorder: const CircleBorder(),
                             onTap: _removeImage,
                             child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(Icons.close, size: 18, color: Colors.white),
+                              padding: EdgeInsets.all(6),
+                              child: Icon(Icons.close, size: 20, color: Colors.white),
                             ),
                           ),
                         ),
                       ),
                     ],
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _posting ? null : _removeImage,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: const Text('Remove photo'),
+                    ),
                   ),
                 ],
                 const SizedBox(height: 12),
@@ -714,7 +757,11 @@ class _PostCardState extends State<_PostCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const CircleAvatar(radius: 22, child: Icon(Icons.person)),
+                  UserAvatar(
+                    radius: 22,
+                    imageUrl: p['author_avatar_url']?.toString(),
+                    name: p['author_name']?.toString() ?? 'Member',
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -823,6 +870,11 @@ class _PostCardState extends State<_PostCard> {
               ..._comments.map(
                 (c) => ListTile(
                   dense: true,
+                  leading: UserAvatar(
+                    radius: 16,
+                    imageUrl: c['author_avatar_url']?.toString(),
+                    name: c['author_name']?.toString() ?? '',
+                  ),
                   title: Text(c['author_name']?.toString() ?? ''),
                   subtitle: Text(c['content']?.toString() ?? ''),
                 ),

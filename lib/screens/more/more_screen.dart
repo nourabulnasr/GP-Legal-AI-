@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -9,6 +9,7 @@ import 'package:legato_mobile/screens/features/features_hub_screen.dart';
 import 'package:legato_mobile/screens/roadmap/roadmap_screen.dart';
 import 'package:legato_mobile/screens/settings/settings_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -17,17 +18,12 @@ class MoreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
 
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: SafeArea(
+    return LegatoPageScaffold(
+      title: 'More',
+      body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           children: [
-            Text(
-              'More',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
             Text(
               'Tools and preferences',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
@@ -119,9 +115,9 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4, bottom: 8, top: 8),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w700,
               color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
-              fontWeight: FontWeight.w600,
             ),
       ),
     );

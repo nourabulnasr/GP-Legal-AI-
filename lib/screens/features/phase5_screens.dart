@@ -1,4 +1,4 @@
-﻿import 'dart:convert' show JsonEncoder, base64Encode, jsonDecode, utf8;
+import 'dart:convert' show JsonEncoder, base64Encode, jsonDecode, utf8;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +11,7 @@ import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/config/app_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/analysis_id_picker.dart';
 
 // --- 1 E-sign ---
@@ -84,7 +85,7 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
       final created = r['created_at'];
       setState(() {
         _ok = rid != null
-            ? 'Signature record #$rid saved.${created != null ? ' · $created' : ''}'
+            ? 'Signature record #$rid saved.${created != null ? ' � $created' : ''}'
             : 'Saved.';
       });
     } on ApiException catch (e) {
@@ -101,7 +102,7 @@ class _EsignFeatureScreenState extends State<EsignFeatureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('E-sign (in-app record)')),
+      appBar: LegatoAppBar(title: const Text('E-sign (in-app record)')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -266,7 +267,7 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Compare contracts')),
+      appBar: LegatoAppBar(title: const Text('Compare contracts')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -325,7 +326,7 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
   }
 }
 
-// --- 3 Voice (text transcript; no speech_to_text — avoids native hooks when Pub cache path has spaces) ---
+// --- 3 Voice (text transcript; no speech_to_text � avoids native hooks when Pub cache path has spaces) ---
 
 class VoiceAssistantFeatureScreen extends StatefulWidget {
   const VoiceAssistantFeatureScreen({super.key});
@@ -369,7 +370,7 @@ class _VoiceAssistantFeatureScreenState extends State<VoiceAssistantFeatureScree
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Assistant (transcript)')),
+      appBar: LegatoAppBar(title: const Text('Assistant (transcript)')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -382,7 +383,7 @@ class _VoiceAssistantFeatureScreenState extends State<VoiceAssistantFeatureScree
             controller: _text,
             decoration: const InputDecoration(
               labelText: 'Message',
-              hintText: 'Your question…',
+              hintText: 'Your question�',
             ),
             maxLines: 3,
           ),
@@ -403,10 +404,12 @@ class ExplainClauseFeatureScreen extends StatefulWidget {
     super.key,
     this.initialClauseText,
     this.initialAnalysisId,
+    this.initialRuleId,
   });
 
   final String? initialClauseText;
   final int? initialAnalysisId;
+  final String? initialRuleId;
 
   @override
   State<ExplainClauseFeatureScreen> createState() => _ExplainClauseFeatureScreenState();
@@ -415,6 +418,7 @@ class ExplainClauseFeatureScreen extends StatefulWidget {
 class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen> {
   final _clause = TextEditingController();
   int? _selectedId;
+  String? _selectedRuleId;
   String _language = 'auto'; // auto | ar | en
   bool _busy = false;
   String? _out;
@@ -424,8 +428,8 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
   void initState() {
     super.initState();
     if (widget.initialClauseText != null) _clause.text = widget.initialClauseText!;
-    // initialAnalysisId pre-selection is handled via AnalysisIdPicker's value, not a text field
     _selectedId = widget.initialAnalysisId;
+    _selectedRuleId = widget.initialRuleId;
   }
 
   @override
@@ -444,6 +448,7 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
       final r = await context.read<AppServices>().legato.explainClause(
             clauseText: _clause.text,
             analysisId: _selectedId,
+            ruleId: _selectedRuleId,
             language: _language == 'auto' ? null : _language,
           );
       if (!mounted) return;
@@ -462,7 +467,7 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Explain clause')),
+      appBar: LegatoAppBar(title: const Text('Explain clause')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -503,7 +508,7 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
           if (_busy) ...[
             const SizedBox(height: 12),
             const Text(
-              'AI model is generating explanation — this may take 30–90 seconds on CPU. Please wait.',
+              'AI model is generating explanation � this may take 30�90 seconds on CPU. Please wait.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Color(0xFF8B7318)),
             ),
@@ -524,7 +529,7 @@ class _ExplainClauseFeatureScreenState extends State<ExplainClauseFeatureScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              'Informational only — not legal advice.',
+              'Informational only � not legal advice.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
             ),
           ],
@@ -571,7 +576,7 @@ class _RiskFeatureScreenState extends State<RiskFeatureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Risk summary')),
+      appBar: LegatoAppBar(title: const Text('Risk summary')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -778,7 +783,7 @@ class _BiometricInfoScreenState extends State<BiometricInfoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Biometric Authentication')),
+      appBar: LegatoAppBar(title: const Text('Biometric Authentication')),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -803,7 +808,7 @@ class _BiometricInfoScreenState extends State<BiometricInfoScreen> {
                 _state == _AuthState.success
                     ? 'Identity Verified'
                     : _state == _AuthState.scanning
-                        ? 'Scanning…'
+                        ? 'Scanning�'
                         : 'Biometric Login',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
@@ -825,7 +830,7 @@ class _BiometricInfoScreenState extends State<BiometricInfoScreen> {
                   ),
                   onPressed: _reset,
                   icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Authenticated — tap to reset'),
+                  label: const Text('Authenticated � tap to reset'),
                 )
               else
                 FilledButton.icon(
@@ -900,7 +905,7 @@ class _SummarizeFeatureScreenState extends State<SummarizeFeatureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Summarize clauses')),
+      appBar: LegatoAppBar(title: const Text('Summarize clauses')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1000,7 +1005,7 @@ class _NegotiationFeatureScreenState extends State<NegotiationFeatureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Negotiation assistant')),
+      appBar: LegatoAppBar(title: const Text('Negotiation assistant')),
       body: Column(
         children: [
           Expanded(
@@ -1086,7 +1091,7 @@ class _ShareFeatureScreenState extends State<ShareFeatureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Share analysis')),
+      appBar: LegatoAppBar(title: const Text('Share analysis')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1178,7 +1183,7 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Timeline (admin)')),
+      appBar: LegatoAppBar(title: const Text('Timeline (admin)')),
       body: _busy
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -1214,7 +1219,7 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
                     if (r is Map)
                       ListTile(
                         title: Text('${r['label']}'),
-                        subtitle: Text('${r['event_date']} · analysis ${r['analysis_id']}'),
+                        subtitle: Text('${r['event_date']} � analysis ${r['analysis_id']}'),
                       ),
               ],
             ),
@@ -1308,7 +1313,7 @@ class _DealMessagingFeatureScreenState extends State<DealMessagingFeatureScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Deal messaging')),
+      appBar: LegatoAppBar(title: const Text('Deal messaging')),
       body: Column(
         children: [
           Padding(
@@ -1466,11 +1471,11 @@ class _LegalNetworkFeatureScreenState extends State<LegalNetworkFeatureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Legal network (MVP)')),
+      appBar: LegatoAppBar(title: const Text('Legal network (MVP)')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('MVP: editable profile + directory list. Full “LinkedIn” is a separate product wave.'),
+          const Text('MVP: editable profile + directory list. Full �LinkedIn� is a separate product wave.'),
           TextField(controller: _name, decoration: const InputDecoration(labelText: 'Display name')),
           TextField(controller: _headline, decoration: const InputDecoration(labelText: 'Headline')),
           TextField(controller: _org, decoration: const InputDecoration(labelText: 'Organization')),

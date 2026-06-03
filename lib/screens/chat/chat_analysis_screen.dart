@@ -1,12 +1,13 @@
-ï»¿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/document_chat_bubble.dart';
 
-/// POST /chat/document (LFM) â€” pre-selects an analysis_id from saved analyses.
+/// POST /chat/document (LFM) — pre-selects an analysis_id from saved analyses.
 class ChatAnalysisScreen extends StatefulWidget {
   const ChatAnalysisScreen({super.key, this.initialAnalysisId});
 
@@ -137,7 +138,7 @@ class _ChatAnalysisScreenState extends State<ChatAnalysisScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Document chat â€” LFM')),
+      appBar: LegatoAppBar(title: const Text('Document chat — LFM')),
       body: SafeArea(
         child: Column(
           children: [
@@ -193,7 +194,7 @@ class _ChatAnalysisScreenState extends State<ChatAnalysisScreen> {
                     child: TextField(
                       controller: _msg,
                       decoration: const InputDecoration(
-                        labelText: 'Ask about the contractâ€¦',
+                        labelText: 'Ask about the contract…',
                         border: OutlineInputBorder(),
                       ),
                       minLines: 1,

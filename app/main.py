@@ -9,12 +9,13 @@ _env_path = Path(__file__).resolve().parent.parent / ".env"
 _cwd_env = Path(os.getcwd()) / ".env"
 try:
     from dotenv import load_dotenv
+    # Do not override variables already set by Docker/systemd (e.g. GEMINI_API_KEY on VPS).
     if _env_path.exists():
-        load_dotenv(_env_path, override=True)
+        load_dotenv(_env_path, override=False)
     if _cwd_env.exists() and str(_cwd_env) != str(_env_path):
         load_dotenv(_cwd_env, override=False)
-    if not _env_path.exists() and _cwd_env.exists():
-        load_dotenv(_cwd_env)
+    elif not _env_path.exists() and _cwd_env.exists():
+        load_dotenv(_cwd_env, override=False)
 except Exception:
     pass
 # Reduce noisy transformer LOAD REPORT / UNEXPECTED keys at startup (expected for AraBERT/MiniLM)
@@ -2227,6 +2228,22 @@ async def ocr_check_and_search(
                     except Exception as e:
                         block["llm_explanation"] = f"[LLM error: {e!r}]"
                         block["llm_severity_alignment"] = "unknown"
+                    finally:
+                        import gc
+                        gc.collect()
+
+                # Attach per-violation LFM text to rule_hits for clients that read rule_hits only.
+                _expl_by_rule: Dict[str, str] = {}
+                for _b in rag_by_violation or []:
+                    _rid = (_b.get("rule_id") or "").strip()
+                    _tx = (_b.get("llm_explanation") or "").strip()
+                    if _rid and _tx:
+                        _expl_by_rule[_rid] = _tx
+                for _h in rule_hits or []:
+                    _rid = (_h.get("rule_id") or "").strip()
+                    if _rid and _rid in _expl_by_rule:
+                        _h["llm_explanation"] = _expl_by_rule[_rid]
+                        _h["explanation"] = _expl_by_rule[_rid]
 
             # Dynamic law_scope_used
             law_scope_used: List[str] = []

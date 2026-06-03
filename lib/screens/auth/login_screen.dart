@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -7,7 +8,9 @@ import 'package:legato_mobile/config/runtime_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/auth/forgot_password_screen.dart';
 import 'package:legato_mobile/screens/auth/register_screen.dart';
+import 'package:legato_mobile/services/auth_service.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,10 +33,55 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// Web: OAuth redirect on Firebase domain (Google accepts web.app URLs).
+  /// Mobile/desktop: backend redirect flow.
   Future<void> _signInWithGoogle() async {
+    if (kIsWeb) {
+      await _signInWithGoogleWeb();
+      return;
+    }
     final uri = Uri.parse('${RuntimeConfig.apiBaseUrl}/auth/google');
     if (!await canLaunchUrl(uri)) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _signInWithGoogleWeb() async {
+    setState(() {
+      _busy = true;
+      _err = null;
+    });
+    try {
+      final cfg = await AuthService().googleSignInConfig();
+      final clientId = cfg['client_id']?.toString().trim() ?? '';
+      if (clientId.isEmpty || cfg['enabled'] != true) {
+        setState(() => _err = 'Google sign-in is not configured on the server.');
+        return;
+      }
+
+      final redirectUri = (cfg['web_redirect_uri'] ?? cfg['web_origin'] ?? Uri.base.origin)
+          .toString()
+          .trim()
+          .replaceAll(RegExp(r'/+$'), '');
+
+      final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
+        'client_id': clientId,
+        'redirect_uri': redirectUri,
+        'response_type': 'code',
+        'scope': 'openid email profile',
+        'access_type': 'online',
+        'prompt': 'select_account',
+      });
+
+      if (!await launchUrl(authUrl, webOnlyWindowName: '_self')) {
+        setState(() => _err = 'Could not open Google sign-in.');
+      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _err = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _err = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -60,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final sessionMsg = context.watch<AuthProvider>().error;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sign in')),
+      appBar: LegatoAppBar(title: const Text('Sign in')),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -77,110 +125,110 @@ class _LoginScreenState extends State<LoginScreen> {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                        Text(
-                          'Legato',
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                color: LegatoLinkedInTheme.navActiveGold,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Legal intelligence for your contracts.',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
-                              ),
-                        ),
-                if (sessionMsg != null && sessionMsg.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Material(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(sessionMsg),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Enter email' : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _password,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.length < 6) ? 'Min 6 characters' : null,
-                ),
-                if (_err != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _busy ? null : _submit,
-                  child: _busy
-                      ? const SizedBox(
-                          height: 22,
-                          width: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Sign in'),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed: _busy ? null : _signInWithGoogle,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'G',
-                        style: TextStyle(
-                          color: _busy ? Colors.grey : const Color(0xFF4285F4),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text('Sign in with Google'),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const RegisterScreen(),
+                            Text(
+                              'Legato',
+                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                    color: LegatoLinkedInTheme.navActiveGold,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                             ),
-                          ),
-                  child: const Text('Create account'),
-                ),
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () async {
-                          context.read<AuthProvider>().clearError();
-                          await Navigator.of(context).push<bool>(
-                            MaterialPageRoute<bool>(
-                              builder: (_) => const ForgotPasswordScreen(),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Legal intelligence for your contracts.',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                                  ),
                             ),
-                          );
-                        },
-                  child: const Text('Forgot password?'),
-                ),
+                            if (sessionMsg != null && sessionMsg.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              Material(
+                                color: Theme.of(context).colorScheme.errorContainer,
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(sessionMsg),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 24),
+                            TextFormField(
+                              controller: _email,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: const InputDecoration(
+                                labelText: 'Email',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (v) =>
+                                  (v == null || v.trim().isEmpty) ? 'Enter email' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _password,
+                              obscureText: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Password',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (v) =>
+                                  (v == null || v.length < 6) ? 'Min 6 characters' : null,
+                            ),
+                            if (_err != null) ...[
+                              const SizedBox(height: 12),
+                              Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                            ],
+                            const SizedBox(height: 20),
+                            FilledButton(
+                              onPressed: _busy ? null : _submit,
+                              child: _busy
+                                  ? const SizedBox(
+                                      height: 22,
+                                      width: 22,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Text('Sign in'),
+                            ),
+                            const SizedBox(height: 8),
+                            OutlinedButton(
+                              onPressed: _busy ? null : _signInWithGoogle,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'G',
+                                    style: TextStyle(
+                                      color: _busy ? Colors.grey : const Color(0xFF4285F4),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Text('Sign in with Google'),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => const RegisterScreen(),
+                                        ),
+                                      ),
+                              child: const Text('Create account'),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () async {
+                                      context.read<AuthProvider>().clearError();
+                                      await Navigator.of(context).push<bool>(
+                                        MaterialPageRoute<bool>(
+                                          builder: (_) => const ForgotPasswordScreen(),
+                                        ),
+                                      );
+                                    },
+                              child: const Text('Forgot password?'),
+                            ),
                           ],
                         );
                       },

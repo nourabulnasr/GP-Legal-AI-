@@ -1,10 +1,12 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
+import 'package:legato_mobile/widgets/user_avatar.dart';
 
 class ProfileRecommendationsScreen extends StatefulWidget {
   const ProfileRecommendationsScreen({super.key});
@@ -49,7 +51,7 @@ class _ProfileRecommendationsScreenState extends State<ProfileRecommendationsScr
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Recommendations')),
+      appBar: LegatoAppBar(title: const Text('Recommendations')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -74,12 +76,28 @@ class _ProfileRecommendationsScreenState extends State<ProfileRecommendationsScr
                       return Card(
                         child: Padding(
                           padding: const EdgeInsets.all(12),
-                          child: Column(
+                          child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(m['author_name']?.toString() ?? '', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 6),
-                              Text(m['content']?.toString() ?? ''),
+                              UserAvatar(
+                                radius: 18,
+                                imageUrl: m['author_avatar_url']?.toString(),
+                                name: m['author_name']?.toString() ?? '',
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      m['author_name']?.toString() ?? '',
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(m['content']?.toString() ?? ''),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),

@@ -3,9 +3,16 @@
 
 services:
   backend:
+    volumes:
+      - /opt/gp-legal-ai/static:/app/static
     restart: unless-stopped
-    ports:
+    # Replace base "8000:8000" (duplicate bindings break host port publish).
+    ports: !override
       - "127.0.0.1:8000:8000"
+    # Host systemd-resolved stub (127.0.0.53) is unreachable inside the container.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     healthcheck:
       start_period: 300s
       interval: 30s

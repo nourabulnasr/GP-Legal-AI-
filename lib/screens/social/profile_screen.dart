@@ -12,6 +12,7 @@ import 'package:legato_mobile/screens/social/profile_documents_screen.dart';
 import 'package:legato_mobile/screens/social/profile_recommendations_screen.dart';
 import 'package:legato_mobile/screens/social/profile_skills_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/utils/platform_file_bytes.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -24,6 +25,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = true;
   String? _err;
   Map<String, dynamic>? _data;
+  int _avatarVersion = 0;
 
   @override
   void initState() {
@@ -67,6 +69,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
     }
+  }
+
+  String? _avatarDisplayUrl(Map<String, dynamic> d) {
+    final raw = d['avatar_url']?.toString().trim();
+    if (raw == null || raw.isEmpty) return null;
+    final sep = raw.contains('?') ? '&' : '?';
+    return '$raw${sep}v=$_avatarVersion';
   }
 
   Future<void> _editProfile() async {
@@ -191,63 +200,115 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: RefreshIndicator(
         onRefresh: _load,
         child: CustomScrollView(
+          clipBehavior: Clip.none,
           slivers: [
-            // ── Cover + AppBar ────────────────────────────────────────────
-            SliverAppBar(
-              pinned: true,
-              expandedHeight: 160,
-              backgroundColor: const Color(0xFF1B1F23),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined, color: Colors.white70),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const MoreScreen()),
+            SliverToBoxAdapter(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ProfileCoverBanner(
+                        onSettings: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const MoreScreen()),
+                        ),
+                      ),
+                      Container(
+                        color: Theme.of(context).colorScheme.surface,
+                        padding: const EdgeInsets.fromLTRB(16, 52, 16, 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayName,
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.3,
+                                  ),
+                            ),
+                            if (d['title']?.toString().isNotEmpty == true ||
+                                d['company']?.toString().isNotEmpty == true) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                '${d['title'] ?? ''}${(d['title']?.toString().isNotEmpty == true) && (d['company']?.toString().isNotEmpty == true) ? ' · ' : ''}${d['company'] ?? ''}',
+                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                                    ),
+                              ),
+                            ],
+                            if (d['location']?.toString().isNotEmpty == true) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(Icons.place_outlined, size: 15, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
+                                  const SizedBox(width: 3),
+                                  Expanded(
+                                    child: Text(
+                                      d['location'].toString(),
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(child: _StatPill(value: '${stats['connections'] ?? 0}', label: 'Connections')),
+                                const SizedBox(width: 8),
+                                Expanded(child: _StatPill(value: '${stats['endorsements'] ?? 0}', label: 'Endorsements')),
+                                const SizedBox(width: 8),
+                                Expanded(child: _StatPill(value: '${stats['profile_views'] ?? 0}', label: 'Views')),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: LegatoLinkedInTheme.navActiveGold,
+                                      foregroundColor: const Color(0xFF1B1F23),
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                    ),
+                                    onPressed: _editProfile,
+                                    icon: const Icon(Icons.edit_outlined, size: 16),
+                                    label: const Text('Edit Profile'),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      side: const BorderSide(color: Color(0xFF8B7318)),
+                                    ),
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
+                                    ),
+                                    child: const Text('All tools'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-              flexibleSpace: FlexibleSpaceBar(
-                background: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF0A1628), Color(0xFF1B2A3E), Color(0xFF8B7318)],
-                          stops: [0.0, 0.6, 1.0],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
+                  Positioned(
+                    left: 16,
+                    top: _ProfileCoverBanner.height - _ProfileAvatarTile.size / 2,
+                    child: _ProfileAvatarTile(
+                      avatarUrl: _avatarDisplayUrl(d),
+                      initial: initial,
+                      onTap: _uploadAvatar,
                     ),
-                    // Subtle geometric texture
-                    Positioned(
-                      right: -30,
-                      top: -30,
-                      child: Container(
-                        width: 180,
-                        height: 180,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.07),
-                        ),
-                      ),
-                    ),
-                    const Positioned(
-                      left: -40,
-                      bottom: -20,
-                      child: SizedBox(
-                        width: 130,
-                        height: 130,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0x07C9A227),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
 
@@ -255,164 +316,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // ── Hero card ─────────────────────────────────────────
-                  Container(
-                    color: Theme.of(context).colorScheme.surface,
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Avatar overlapping cover
-                        Transform.translate(
-                          offset: const Offset(0, -44),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              GestureDetector(
-                                onTap: _uploadAvatar,
-                                child: Stack(
-                                  children: [
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: Theme.of(context).colorScheme.surface, width: 4),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.18),
-                                            blurRadius: 12,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: CircleAvatar(
-                                        radius: 46,
-                                        backgroundColor: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.14),
-                                        backgroundImage: (d['avatar_url']?.toString().isNotEmpty == true)
-                                            ? NetworkImage(d['avatar_url'].toString())
-                                            : null,
-                                        child: (d['avatar_url']?.toString().isNotEmpty != true)
-                                            ? Text(
-                                                initial,
-                                                style: const TextStyle(
-                                                  fontSize: 34,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Color(0xFF8B7318),
-                                                ),
-                                              )
-                                            : null,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: 4,
-                                      right: 4,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFFC9A227),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(Icons.camera_alt, size: 14, color: Color(0xFF1B1F23)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Spacer(),
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: IconButton.filledTonal(
-                                  icon: const Icon(Icons.edit_outlined, size: 20),
-                                  onPressed: _editProfile,
-                                  tooltip: 'Edit profile',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Name + headline
-                        Transform.translate(
-                          offset: const Offset(0, -28),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                displayName,
-                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.3,
-                                    ),
-                              ),
-                              if (d['title']?.toString().isNotEmpty == true || d['company']?.toString().isNotEmpty == true) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${d['title'] ?? ''}${(d['title']?.toString().isNotEmpty == true) && (d['company']?.toString().isNotEmpty == true) ? ' · ' : ''}${d['company'] ?? ''}',
-                                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                        color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
-                                      ),
-                                ),
-                              ],
-                              if (d['location']?.toString().isNotEmpty == true) ...[
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Icon(Icons.place_outlined, size: 15, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      d['location'].toString(),
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                              const SizedBox(height: 16),
-                              // Stats row
-                              Row(
-                                children: [
-                                  _StatPill(value: '${stats['connections'] ?? 0}', label: 'Connections'),
-                                  const SizedBox(width: 8),
-                                  _StatPill(value: '${stats['endorsements'] ?? 0}', label: 'Endorsements'),
-                                  const SizedBox(width: 8),
-                                  _StatPill(value: '${stats['profile_views'] ?? 0}', label: 'Views'),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              // Action buttons
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: FilledButton.icon(
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: LegatoLinkedInTheme.navActiveGold,
-                                        foregroundColor: const Color(0xFF1B1F23),
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                      ),
-                                      onPressed: _editProfile,
-                                      icon: const Icon(Icons.edit_outlined, size: 16),
-                                      label: const Text('Edit Profile'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: OutlinedButton(
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                        side: const BorderSide(color: Color(0xFF8B7318)),
-                                      ),
-                                      onPressed: () => Navigator.of(context).push(
-                                        MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
-                                      ),
-                                      child: const Text('All tools'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
                   const SizedBox(height: 8),
 
                   // ── About ─────────────────────────────────────────────
@@ -697,9 +600,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (result == null || result.files.isEmpty) return;
     final file = result.files.first;
-    if (file.bytes == null) return;
+    final bytes = await readPlatformFileBytes(file);
+    if (bytes == null || bytes.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read the selected photo. Try another image.')),
+        );
+      }
+      return;
+    }
+    final legato = context.read<AppServices>().legato;
     try {
-      await context.read<AppServices>().legato.uploadProfileAvatar(file.bytes!, file.name);
+      final resp = await legato.uploadProfileAvatar(bytes, pickedImageFilename(file));
+      final url = resp['avatar_url']?.toString().trim();
+      if (mounted && url != null && url.isNotEmpty) {
+        setState(() {
+          _avatarVersion = DateTime.now().millisecondsSinceEpoch;
+          _data = Map<String, dynamic>.from(_data ?? {})..['avatar_url'] = url;
+        });
+      }
       if (!mounted) return;
       await _load();
       if (mounted) {
@@ -809,6 +728,172 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
 // ── Shared widgets ─────────────────────────────────────────────────────────
 
+class _ProfileCoverBanner extends StatelessWidget {
+  const _ProfileCoverBanner({required this.onSettings});
+
+  static const double height = 132;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF0A1628), Color(0xFF1B2A3E), Color(0xFF8B7318)],
+                stops: [0.0, 0.6, 1.0],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
+          Positioned(
+            right: -30,
+            top: -30,
+            child: Container(
+              width: 180,
+              height: 180,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.07),
+              ),
+            ),
+          ),
+          const Positioned(
+            left: -40,
+            bottom: -20,
+            child: SizedBox(
+              width: 130,
+              height: 130,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0x07C9A227),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: IconButton(
+              icon: const Icon(Icons.settings_outlined, color: Colors.white70),
+              onPressed: onSettings,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileAvatarTile extends StatelessWidget {
+  const _ProfileAvatarTile({
+    required this.avatarUrl,
+    required this.initial,
+    required this.onTap,
+  });
+
+  static const double size = 96;
+
+  final String? avatarUrl;
+  final String initial;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = Theme.of(context).colorScheme.surface;
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: surface, width: 4),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: _avatarBody(context),
+            ),
+          ),
+          Positioned(
+            bottom: 2,
+            right: 2,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Color(0xFFC9A227),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.camera_alt, size: 14, color: Color(0xFF1B1F23)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _avatarBody(BuildContext context) {
+    final url = avatarUrl;
+    if (url == null || url.isEmpty) {
+      return ColoredBox(
+        color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.14),
+        child: Center(
+          child: Text(
+            initial,
+            style: const TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF8B7318),
+            ),
+          ),
+        ),
+      );
+    }
+    return Image.network(
+      url,
+      key: ValueKey(url),
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => ColoredBox(
+        color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.14),
+        child: Center(
+          child: Text(
+            initial,
+            style: const TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF8B7318),
+            ),
+          ),
+        ),
+      ),
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return ColoredBox(
+          color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.14),
+          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        );
+      },
+    );
+  }
+}
+
 class _StatPill extends StatelessWidget {
   const _StatPill({required this.value, required this.label});
 
@@ -818,20 +903,26 @@ class _StatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.3)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             value,
             style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Color(0xFF8B7318)),
           ),
+          const SizedBox(height: 2),
           Text(
             label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 10, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ),
         ],

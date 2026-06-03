@@ -63,6 +63,39 @@ class AuthService {
         s.contains('timed out');
   }
 
+  Future<Map<String, dynamic>> loginWithGoogleIdToken(String idToken) async {
+    final data = await _postJsonWithRetry(
+      '/auth/google/id-token',
+      {'id_token': idToken},
+      timeout: AppConfig.authTimeout,
+    );
+    final token = data['access_token'] as String?;
+    if (token == null || token.isEmpty) {
+      throw ApiException('No access token returned');
+    }
+    await _storage.writeToken(token);
+    return data;
+  }
+
+  Future<Map<String, dynamic>> exchangeGoogleCode(String code, {required String redirectUri}) async {
+    final data = await _postJsonWithRetry(
+      '/auth/google/code',
+      {
+        'code': code,
+        'redirect_uri': redirectUri,
+      },
+      timeout: AppConfig.authTimeout,
+    );
+    final token = data['access_token'] as String?;
+    if (token == null || token.isEmpty) {
+      throw ApiException('No access token returned');
+    }
+    await _storage.writeToken(token);
+    return data;
+  }
+
+  Future<Map<String, dynamic>> googleSignInConfig() => _api.getJson('/auth/google/config');
+
   Future<Map<String, dynamic>> register(String email, String password) {
     return _postJsonWithRetry(
       '/auth/register',

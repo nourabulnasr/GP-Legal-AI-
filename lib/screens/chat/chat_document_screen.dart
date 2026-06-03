@@ -1,9 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/document_chat_bubble.dart';
 
 class ChatDocumentScreen extends StatefulWidget {
@@ -88,7 +89,7 @@ class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Document chat (LFM)')),
+      appBar: LegatoAppBar(title: const Text('Document chat (LFM)')),
       body: SafeArea(
         child: Column(
           children: [

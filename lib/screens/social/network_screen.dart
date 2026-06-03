@@ -5,6 +5,7 @@ import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/screens/social/member_profile_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/user_avatar.dart';
 
 class NetworkScreen extends StatefulWidget {
   const NetworkScreen({super.key});
@@ -82,6 +83,32 @@ class _NetworkScreenState extends State<NetworkScreen> {
         });
       }
     }
+  }
+
+  Set<int> get _excludedSuggestionUserIds {
+    final ids = <int>{};
+    for (final raw in _connections) {
+      final uid =
+          (Map<String, dynamic>.from(raw as Map)['user_id'] as num?)?.toInt();
+      if (uid != null && uid > 0) ids.add(uid);
+    }
+    for (final raw in _pending) {
+      final rid = (Map<String, dynamic>.from(raw as Map)['requester_id'] as num?)
+          ?.toInt();
+      if (rid != null && rid > 0) ids.add(rid);
+    }
+    ids.addAll(_sentInvites);
+    return ids;
+  }
+
+  List<dynamic> get _filteredSuggestions {
+    final excluded = _excludedSuggestionUserIds;
+    return _suggestions.where((raw) {
+      final uid =
+          (Map<String, dynamic>.from(raw as Map)['user_id'] as num?)?.toInt() ??
+              0;
+      return uid > 0 && !excluded.contains(uid);
+    }).toList();
   }
 
   Future<List<dynamic>> _loadConnections(dynamic api) async {
@@ -191,7 +218,11 @@ class _NetworkScreenState extends State<NetworkScreen> {
                         final sent = _sentInvites.contains(uid);
                         return Card(
                           child: ListTile(
-                            leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                            leading: UserAvatar(
+                              radius: 20,
+                              imageUrl: m['avatar_url']?.toString(),
+                              name: m['name']?.toString() ?? 'Member',
+                            ),
                             title: Text(m['name']?.toString() ?? 'Member'),
                             subtitle: Text(
                               '${m['subtitle'] ?? ''}\n${m['location'] ?? ''}'.trim(),
@@ -249,13 +280,17 @@ class _NetworkScreenState extends State<NetworkScreen> {
                         TextButton(onPressed: _load, child: const Text('Refresh')),
                       ],
                     ),
-                    ..._suggestions.map((raw) {
+                    ..._filteredSuggestions.map((raw) {
                       final m = Map<String, dynamic>.from(raw as Map);
                       final uid = (m['user_id'] as num?)?.toInt() ?? 0;
                       final sent = _sentInvites.contains(uid);
                       return Card(
                         child: ListTile(
-                          leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                          leading: UserAvatar(
+                            radius: 20,
+                            imageUrl: m['avatar_url']?.toString(),
+                            name: m['name']?.toString() ?? 'Member',
+                          ),
                           title: Text(m['name']?.toString() ?? 'Member'),
                           subtitle: Text(
                             '${m['subtitle'] ?? ''}\n${m['location'] ?? ''}'.trim(),
@@ -322,7 +357,11 @@ class _NetworkScreenState extends State<NetworkScreen> {
                     final m = Map<String, dynamic>.from(raw as Map);
                     final uid = (m['user_id'] as num?)?.toInt() ?? 0;
                     return ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                      leading: UserAvatar(
+                        radius: 20,
+                        imageUrl: m['avatar_url']?.toString(),
+                        name: m['name']?.toString() ?? m['display_name']?.toString() ?? 'Member',
+                      ),
                       title: Text(m['name']?.toString() ?? m['display_name']?.toString() ?? 'Member'),
                       subtitle: Text(m['subtitle']?.toString() ?? m['title']?.toString() ?? ''),
                       onTap: uid > 0
@@ -371,13 +410,17 @@ class _NetworkScreenState extends State<NetworkScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
               const SizedBox(height: 8),
-              for (final raw in _suggestions)
+              for (final raw in _filteredSuggestions)
                 Builder(builder: (ctx2) {
                   final m = Map<String, dynamic>.from(raw as Map);
                   final uid = (m['user_id'] as num?)?.toInt() ?? 0;
                   final sent = _sentInvites.contains(uid);
                   return ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                    leading: UserAvatar(
+                      radius: 20,
+                      imageUrl: m['avatar_url']?.toString(),
+                      name: m['name']?.toString() ?? 'Member',
+                    ),
                     title: Text(m['name']?.toString() ?? 'Member'),
                     subtitle: Text(m['subtitle']?.toString() ?? ''),
                     trailing: sent
@@ -441,6 +484,11 @@ class _PendingTile extends StatelessWidget {
     final m = Map<String, dynamic>.from(raw as Map);
     final id = (m['id'] as num?)?.toInt();
     return ListTile(
+      leading: UserAvatar(
+        radius: 20,
+        imageUrl: m['requester_avatar_url']?.toString(),
+        name: m['requester_name']?.toString() ?? '',
+      ),
       title: Text(m['requester_name']?.toString() ?? ''),
       trailing: TextButton(
         onPressed: id != null ? () => onAccept(id) : null,

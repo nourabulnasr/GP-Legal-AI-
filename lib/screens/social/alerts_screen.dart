@@ -1,9 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 /// Alerts: contract milestones (timeline) + network invites.
 class AlertsScreen extends StatefulWidget {
@@ -80,10 +81,46 @@ class AlertsScreenState extends State<AlertsScreen> {
     }
   }
 
+  Future<void> _deleteMilestone(int id, String label) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete milestone?'),
+        content: Text('Remove "$label" from your timeline?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await context.read<AppServices>().legato.deleteTimelineEvent(id);
+      if (!mounted) return;
+      setState(() {
+        _timeline = _timeline.where((raw) {
+          if (raw is! Map) return true;
+          return (raw['id'] as num?)?.toInt() != id;
+        }).toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Milestone deleted')));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Alerts')),
+      appBar: LegatoAppBar(title: const Text('Alerts')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -132,11 +169,20 @@ class AlertsScreenState extends State<AlertsScreen> {
                   else
                     ..._timeline.map((raw) {
                       final m = Map<String, dynamic>.from(raw as Map);
+                      final id = (m['id'] as num?)?.toInt();
+                      final label = m['label']?.toString() ?? 'Milestone';
                       return Card(
                         child: ListTile(
                           leading: const Icon(Icons.event_note_outlined, color: LegatoLinkedInTheme.navActiveGold),
-                          title: Text(m['label']?.toString() ?? 'Milestone'),
-                          subtitle: Text('${m['event_date'] ?? ''} · analysis ${m['analysis_id'] ?? ''}'),
+                          title: Text(label),
+                          subtitle: Text('${m['event_date'] ?? ''} | analysis ${m['analysis_id'] ?? ''}'),
+                          trailing: id == null
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Delete milestone',
+                                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                                  onPressed: () => _deleteMilestone(id, label),
+                                ),
                         ),
                       );
                     }),

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/screens/analyze/analyze_screen.dart';
 import 'package:legato_mobile/screens/features/features_hub_screen.dart';

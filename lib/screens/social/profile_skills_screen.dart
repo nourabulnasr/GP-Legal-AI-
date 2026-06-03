@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
@@ -6,6 +6,7 @@ import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/social/social_constants.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 class ProfileSkillsScreen extends StatefulWidget {
   const ProfileSkillsScreen({super.key});
@@ -76,7 +77,7 @@ class _ProfileSkillsScreenState extends State<ProfileSkillsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Skills & Endorsements')),
+      appBar: LegatoAppBar(title: const Text('Skills & Endorsements')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(

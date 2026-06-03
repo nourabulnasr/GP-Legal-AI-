@@ -1,6 +1,11 @@
 """
 Chat router: Gemini-powered chatbot scoped to analysis_id.
 Context: contract OCR text + analysis results.
+
+Environment (set in project `.env` locally or `/opt/gp-legal-ai/.env` on VPS):
+  GEMINI_API_KEY — required for /chat/assistant and /chat/message (get key at aistudio.google.com/apikey)
+  GOOGLE_API_KEY — optional alias if GEMINI_API_KEY is unset
+  GEMINI_MODEL     — optional, default gemini-2.0-flash
 """
 from __future__ import annotations
 
@@ -19,10 +24,18 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 _gemini_client = None
 # Use a model supported by the current Gemini API (gemini-1.5-flash deprecated in v1beta)
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+
+def _gemini_api_key() -> str:
+    """Resolve Gemini API key from env (GEMINI_API_KEY preferred, GOOGLE_API_KEY as alias)."""
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        val = (os.getenv(name) or "").strip()
+        if val:
+            return val
+    return ""
 
 
 def _get_gemini_client():
@@ -30,7 +43,7 @@ def _get_gemini_client():
     global _gemini_client
     if _gemini_client is not None:
         return _gemini_client
-    key = (os.getenv("GEMINI_API_KEY") or "").strip() or (GEMINI_API_KEY or "").strip()
+    key = _gemini_api_key()
     if not key:
         return None
     try:
@@ -121,32 +134,72 @@ class DocumentChatResponse(BaseModel):
     used_fallback: bool = False
 
 
-def _build_context(result: Dict[str, Any]) -> str:
-    """Build readable context for LFM — plain text only, no raw JSON blobs."""
+def _ocr_chunk_text(chunk: Dict[str, Any]) -> str:
+    return str(
+        chunk.get("translated_ar_text")
+        or chunk.get("translated_text")
+        or chunk.get("normalized_text")
+        or chunk.get("text")
+        or ""
+    ).strip()
+
+
+def _contract_ocr_text(result: Dict[str, Any], *, max_chars: int = 10000) -> str:
+    """Contract body only — preferred for LFM document chat (avoids rule-ID echo)."""
+    full_text = str(result.get("full_text") or "").strip()
+    ocr_chunks = result.get("ocr_chunks") or []
+    from_chunks = "\n\n".join(t for c in ocr_chunks if (t := _ocr_chunk_text(c)))
+    body = from_chunks if len(from_chunks) >= len(full_text) else full_text
+    if not body and from_chunks:
+        body = from_chunks
+    return body[:max_chars] if body else ""
+
+
+def _is_general_contract_question(message: str) -> bool:
+    """Broad 'explain/summarize the contract' questions — omit rule IDs from context."""
+    m = (message or "").strip().lower()
+    if not m:
+        return False
+    general_ar = (
+        "اشرح",
+        "لخص",
+        "ملخص",
+        "وضح",
+        "فسّر",
+        "فسر",
+        "شرح العقد",
+        "اشرح العقد",
+        "ما هو العقد",
+        "ما هي بنود",
+    )
+    general_en = ("explain", "summarize", "summary", "overview", "what is this contract")
+    if any(g in m for g in general_ar) or any(g in m for g in general_en):
+        return True
+    return len(m.split()) <= 8 and ("عقد" in m or "contract" in m)
+
+
+def _build_context(result: Dict[str, Any], *, for_general_qa: bool = False) -> str:
+    """Build readable context for LFM — contract OCR first; violations only when needed."""
     parts: List[str] = []
 
-    ocr_chunks = result.get("ocr_chunks") or []
-    if ocr_chunks:
-        ocr_text = "\n\n".join(
-            str(c.get("normalized_text") or c.get("text") or "").strip()
-            for c in ocr_chunks
-            if c.get("normalized_text") or c.get("text")
-        )
-        if ocr_text:
-            parts.append("## نص العقد\n" + ocr_text[:10000])
+    ocr_text = _contract_ocr_text(result)
+    if ocr_text:
+        parts.append("## نص العقد\n" + ocr_text)
 
-    rule_hits = result.get("rule_hits") or []
-    if rule_hits:
-        hits_lines = []
-        for h in rule_hits[:20]:
-            rid = h.get("rule_id") or h.get("id") or "?"
-            sev = h.get("severity") or "?"
-            desc = h.get("description") or ""
-            hits_lines.append(f"- [{sev}] {rid}: {desc}")
-        parts.append("## المخالفات المكتشفة\n" + "\n".join(hits_lines))
+    if not for_general_qa:
+        rule_hits = result.get("rule_hits") or []
+        if rule_hits:
+            hits_lines = []
+            for h in rule_hits[:12]:
+                sev = h.get("severity") or "?"
+                desc = (h.get("description") or "").strip()
+                if desc:
+                    hits_lines.append(f"- ({sev}) {desc[:200]}")
+            if hits_lines:
+                parts.append("## ملخص المخالفات (وصف فقط)\n" + "\n".join(hits_lines))
 
     labor = result.get("labor_summary") or {}
-    if isinstance(labor, dict):
+    if isinstance(labor, dict) and not for_general_qa:
         labor_lines: List[str] = []
         violations_detected = labor.get("violations_detected")
         if violations_detected is not None:
@@ -156,9 +209,16 @@ def _build_context(result: Dict[str, Any]) -> str:
             labor_lines.append(f"مستوى المخاطرة: {risk}")
         if labor_lines:
             parts.append("## ملخص قانون العمل\n" + "\n".join(labor_lines))
+    elif for_general_qa:
+        rule_hits = result.get("rule_hits") or []
+        if rule_hits:
+            parts.append(
+                f"## ملاحظة\nتم رصد {len(rule_hits)} مخالفة محتملة في التحليل. "
+                "لا تذكر أرقام القواعد إلا إذا سأل المستخدم عن المخالفات صراحة."
+            )
 
     cb = result.get("cross_border_summary") or {}
-    if isinstance(cb, dict) and cb.get("is_cross_border"):
+    if isinstance(cb, dict) and cb.get("is_cross_border") and not for_general_qa:
         jur = cb.get("jurisdiction") or cb.get("country") or ""
         parts.append(f"## ملاحظة: عقد عابر للحدود\nالاختصاص القضائي: {jur}")
 
@@ -250,6 +310,8 @@ Be concise. Cite sections or rule IDs when relevant. If the answer is not in the
 
 # ----- Document chat with local LFM -----
 _MAX_DOCUMENT_CONTEXT_CHARS = 6000
+_DOCUMENT_CHAT_MAX_NEW_TOKENS = 512
+_DOCUMENT_CHAT_RETRY_CONTEXT_CHARS = 3500
 
 
 def _local_model_hint() -> str:
@@ -283,19 +345,69 @@ def _format_document_chat_history(history: Optional[List[ChatMessage]]) -> str:
     return "محادثة سابقة:\n" + "\n".join(lines) + "\n\n"
 
 
-def _build_document_chat_prompt(context: str, message: str, history: Optional[List[ChatMessage]] = None) -> str:
-    """Build prompt for document Q&A; includes optional multi-turn history."""
+def _build_document_chat_prompt(
+    context: str,
+    message: str,
+    history: Optional[List[ChatMessage]] = None,
+    *,
+    context_limit: int = _MAX_DOCUMENT_CONTEXT_CHARS,
+) -> str:
+    """Build prompt for Arabic contract Q&A; structured answer, no rule-ID echo."""
     hist = _format_document_chat_history(history)
-    return f"""أنت مساعد قانوني. أجب على سؤال المستخدم بناءً على النص التالي فقط. إذا لم يكن الجواب في النص فقل ذلك.
-استخدم المحادثة السابقة فقط لربط الأسئلة دون إضافة حقائق من خارج النص.
+    ctx_slice = context[:context_limit]
+    return f"""أنت مساعد قانوني. اقرأ نص العقد أدناه وأجب على سؤال المستخدم بالعربية فقط.
+- اكتب شرحاً واضحاً ومنظماً يتضمن ما يتوفر في النص: نوع العقد، الأطراف، المدة، الأجر، الواجبات، وشروط الإنهاء إن وُجدت.
+- لا تكتب كلمة "الرجوع" ولا أرقام قواعد بين أقواس مثل [لا 182].
+- لا تكرر رموزاً مثل ")." أو أسطراً فارغة فقط.
+- استخدم المحادثة السابقة فقط لربط الأسئلة دون إضافة حقائق من خارج النص.
+- إذا لم يكن الجواب في النص، قل: لا يوجد في النص معلومات كافية.
 
-{hist}النص:
-{context[: _MAX_DOCUMENT_CONTEXT_CHARS]}
+{hist}نص العقد:
+{ctx_slice}
 
-سؤال المستخدم:
-{message}
+سؤال المستخدم: {message}
 
-الجواب:"""
+الشرح:"""
+
+
+def _lfm_document_low_quality(content: str, message: str) -> bool:
+    """True when local LFM output is too short or looks like rule-ID / fragment garbage."""
+    t = (content or "").strip()
+    if not t:
+        return True
+    if len(t) < 50:
+        return True
+    import re
+
+    letters = re.sub(r"[\s\W_]+", "", t, flags=re.UNICODE)
+    if len(letters) < 35:
+        return True
+    if t in (").", ".", ")", "(") or t.startswith(")."):
+        return True
+    if "الرجوع:" in t and len(t) < 150:
+        return True
+    if re.search(r"\[[^\]]{1,24}\]", t) and len(t) < 180:
+        return True
+    return False
+
+
+def _lfm_document_quality_error_ar() -> str:
+    return (
+        "تعذّر إنشاء شرح مفيد بالنموذج المحلي (LFM). "
+        "جرّب سؤالاً أقصر أو أكثر تحديداً (مثلاً: ما مدة العقد؟ من هم الأطراف؟ ما الأجر؟). "
+        "إذا استمرت المشكلة، تأكد من أن النموذج محمّل عند بدء الخادم (WARMUP_LFM_AT_STARTUP=1)."
+    )
+
+
+def _strip_context_to_contract_body(context: str) -> str:
+    """Keep only the contract OCR section for a shorter LFM retry."""
+    if "## نص العقد" in context:
+        body = context.split("## نص العقد", 1)[1]
+        for marker in ("## ملخص", "## ملاحظة", "## المخالفات"):
+            if marker in body:
+                body = body.split(marker, 1)[0]
+        return ("## نص العقد\n" + body.strip())[:_DOCUMENT_CHAT_RETRY_CONTEXT_CHARS]
+    return context[:_DOCUMENT_CHAT_RETRY_CONTEXT_CHARS]
 
 
 def _get_lfm_document_reply(
@@ -303,18 +415,21 @@ def _get_lfm_document_reply(
     message: str,
     *,
     history: Optional[List[ChatMessage]] = None,
-    max_new_tokens: int = 256,
+    max_new_tokens: int = _DOCUMENT_CHAT_MAX_NEW_TOKENS,
+    context_limit: int = _MAX_DOCUMENT_CONTEXT_CHARS,
 ) -> str:
     """Call local LFM (app/local_llm first, then llm/generate) for document Q&A."""
     context = (document_context or "").strip()
-    if len(context) > _MAX_DOCUMENT_CONTEXT_CHARS:
-        context = context[:_MAX_DOCUMENT_CONTEXT_CHARS] + "..."
+    if len(context) > context_limit:
+        context = context[:context_limit] + "..."
     if not context:
         return "[No document context provided.]"
     try:
         from app.local_llm import is_available as app_avail, generate as app_generate
         if app_avail():
-            prompt = _build_document_chat_prompt(context, message, history=history)
+            prompt = _build_document_chat_prompt(
+                context, message, history=history, context_limit=context_limit
+            )
             return app_generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
     except Exception as e_app:
         try:
@@ -430,7 +545,10 @@ def chat_document(
             result = json.loads(row.result_json) if isinstance(row.result_json, str) else row.result_json
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid analysis data")
-        context = _build_context(result)
+        context = _build_context(
+            result,
+            for_general_qa=_is_general_contract_question(payload.message),
+        )
     else:
         context = payload.document_context
 
@@ -439,6 +557,18 @@ def chat_document(
 
     used_fallback = False
     content = _get_lfm_document_reply(context, payload.message, history=payload.history)
+    if not _local_document_failed(content) and _lfm_document_low_quality(content, payload.message):
+        retry_ctx = _strip_context_to_contract_body(context)
+        retry = _get_lfm_document_reply(
+            retry_ctx,
+            payload.message,
+            history=payload.history,
+            context_limit=_DOCUMENT_CHAT_RETRY_CONTEXT_CHARS,
+        )
+        if not _local_document_failed(retry) and not _lfm_document_low_quality(retry, payload.message):
+            content = retry
+        else:
+            raise HTTPException(status_code=503, detail=_lfm_document_quality_error_ar())
     if _local_document_failed(content):
         allow_gemini = os.getenv("DOCUMENT_CHAT_GEMINI_FALLBACK", "1").strip().lower() in {
             "1",

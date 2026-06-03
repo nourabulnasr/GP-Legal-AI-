@@ -1,4 +1,6 @@
-ï»¿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
+
+import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
 /// Phase 5 product features from the Legato roadmap (backend work varies per item).
 class RoadmapScreen extends StatelessWidget {
@@ -8,69 +10,69 @@ class RoadmapScreen extends StatelessWidget {
     _RoadmapItem(
       'E-sign',
       'Sign contracts in-app; usually needs a provider API + audit storage.',
-      'Tier C â€” backend TBD',
+      'Tier C — backend TBD',
     ),
     _RoadmapItem(
       'Contract comparison (A vs B)',
       'Diff two versions; needs compare endpoint or two analysis IDs.',
-      'Tier B â€” backend TBD',
+      'Tier B — backend TBD',
     ),
     _RoadmapItem(
       'Voice assistant',
       'Speech-to-text on device, then existing chat/analyze APIs.',
-      'Tier D â€” use mic + /chat/*',
+      'Tier D — use mic + /chat/*',
     ),
     _RoadmapItem(
-      'Tap clause â†’ legal explanation',
+      'Tap clause ? legal explanation',
       'Reader UI + /explain/clause (or extend chat with clause context).',
-      'Tier A/B â€” backend TBD',
+      'Tier A/B — backend TBD',
     ),
     _RoadmapItem(
       'Risk scoring + smart notifications',
       'Dashboard score + FCM; needs prefs + worker for pushes.',
-      'Tier B â€” partial: show risks from analysis JSON today',
+      'Tier B — partial: show risks from analysis JSON today',
     ),
     _RoadmapItem(
       'Face ID / biometrics',
       'Use `local_auth` to protect app / step-up (mostly client-side).',
-      'Tier D â€” Settings: test biometric',
+      'Tier D — Settings: test biometric',
     ),
     _RoadmapItem(
       'Clause summarization',
       'Batch summarize clauses; needs /summarize/clauses or LLM prompt mode.',
-      'Tier A â€” backend TBD',
+      'Tier A — backend TBD',
     ),
     _RoadmapItem(
       'AI negotiation assistant',
       'Negotiation chat mode + disclaimers; extend chat router.',
-      'Tier B â€” backend TBD',
+      'Tier B — backend TBD',
     ),
     _RoadmapItem(
       'Share analysis',
       'Share links / invites; needs shares table + auth on GET.',
-      'Tier B â€” backend TBD',
+      'Tier B — backend TBD',
     ),
     _RoadmapItem(
       'Contract timeline (admin)',
       'Milestones from text or manual tags; extend admin APIs.',
-      'Tier B/E â€” backend TBD',
+      'Tier B/E — backend TBD',
     ),
     _RoadmapItem(
       'Chat with other party',
       'Threads per contract; WebSocket or poll + moderation policy.',
-      'Tier B/E â€” backend TBD',
+      'Tier B/E — backend TBD',
     ),
     _RoadmapItem(
       'Legal LinkedIn-style network',
-      'Profiles, orgs, feed â€” separate product pillar; Postgres-scale.',
-      'Tier E â€” not started',
+      'Profiles, orgs, feed — separate product pillar; Postgres-scale.',
+      'Tier E — not started',
     ),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Roadmap')),
+      appBar: LegatoAppBar(title: const Text('Roadmap')),
       body: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: _items.length,
