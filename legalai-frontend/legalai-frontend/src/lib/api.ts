@@ -109,6 +109,13 @@ export async function adminUpdateUserRole(userId: number, role: "admin" | "user"
   return data;
 }
 
+export async function adminDeleteUser(userId: number): Promise<{ status: string; deleted_id: number; email: string }> {
+  const { data } = await api.delete<{ status: string; deleted_id: number; email: string }>(
+    `/analyses/admin/users/${userId}`,
+  );
+  return data;
+}
+
 export async function adminListUserAnalyses(userId: number): Promise<AnalysisItem[]> {
   const { data } = await api.get<AnalysisItem[]>(`/analyses/admin/user/${userId}`);
   return data;

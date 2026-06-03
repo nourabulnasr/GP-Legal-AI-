@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
+import 'package:legato_mobile/providers/auth_provider.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -68,8 +69,41 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
+  Future<void> _deleteUser(int userId, String email) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete user?'),
+        content: Text(
+          'Permanently delete $email and all their analyses, posts, and profile data? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await context.read<AppServices>().legato.adminDeleteUser(userId);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted $email')));
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUserId = context.watch<AuthProvider>().user?.id;
     return Scaffold(
       appBar: LegatoAppBar(
         title: const Text('Admin'),
@@ -114,16 +148,28 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         final role = m['role']?.toString() ?? 'user';
                         return ListTile(
                           title: Text(email),
-                          subtitle: Text('id: $id · $role'),
-                          trailing: role == 'admin'
-                              ? TextButton(
-                                  onPressed: () => _setRole(id, 'user'),
+                          subtitle: Text('id: $id  $role'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (id != currentUserId)
+                                IconButton(
+                                  tooltip: 'Delete user',
+                                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                                  onPressed: () => _deleteUser(id, email),
+                                ),
+                              if (role == 'admin')
+                                TextButton(
+                                  onPressed: id == currentUserId ? null : () => _setRole(id, 'user'),
                                   child: const Text('Make user'),
                                 )
-                              : TextButton(
+                              else
+                                TextButton(
                                   onPressed: () => _setRole(id, 'admin'),
                                   child: const Text('Make admin'),
                                 ),
+                            ],
+                          ),
                         );
                       },
                     ),

@@ -419,12 +419,10 @@ if Retriever is None:
 api = FastAPI(title="legalai")
 app = api  # alias for uvicorn
 
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter as _core_limiter
 
 app.state.limiter = _core_limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 import os as _os
 from fastapi.staticfiles import StaticFiles
@@ -434,35 +432,61 @@ api.mount("/static", StaticFiles(directory="static"), name="static")
 # ============================================================
 # CORS — allow frontend (e.g. localhost:5173) to call the API
 # ============================================================
-CORS_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173,https://nourabulnasr-legato.hf.space",
-).split(",")
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "https://nourabulnasr-legato.hf.space,"
+        "https://legatoappgp2026.web.app,"
+        "https://legatoappgp2026.firebaseapp.com",
+    ).split(",")
+    if o.strip()
+]
 
 # Matches any localhost/127.0.0.1 port — covers Flutter Web dev on random ports
 _LOCALHOST_RE = _re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+# Firebase Hosting default domains (web.app + firebaseapp.com for the same site)
+_FIREBASE_HOSTING_RE = _re.compile(r"^https://[\w-]+\.(web\.app|firebaseapp\.com)$")
 
-api.add_middleware(
-    CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+def _cors_origin_for_request(request: Request) -> str:
+    origin = request.headers.get("origin", "").strip()
+    if not origin:
+        return CORS_ORIGINS[0]
+    if origin in CORS_ORIGINS or _LOCALHOST_RE.match(origin) or _FIREBASE_HOSTING_RE.match(origin):
+        return origin
+    return CORS_ORIGINS[0]
 
 
 def _cors_headers(request: Request) -> dict:
     """Return CORS headers using request origin if allowed, else first allowed origin."""
-    origin = request.headers.get("origin", "").strip()
-    if origin not in CORS_ORIGINS and not _LOCALHOST_RE.match(origin):
-        origin = CORS_ORIGINS[0]
     return {
-        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Origin": _cors_origin_for_request(request),
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods": "*",
         "Access-Control-Allow-Headers": "*",
     }
+
+
+@api.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    """Rate-limit responses must include CORS headers or browsers report 'Load failed'."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": str(exc.detail)},
+        headers=_cors_headers(request),
+    )
+
+
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+|https://[\w-]+\.(web\.app|firebaseapp\.com)",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @api.exception_handler(StarletteHTTPException)
@@ -495,8 +519,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 if _HAS_LOG_MW and RequestLoggingMiddleware:
     api.add_middleware(RequestLoggingMiddleware)
 
-if _HAS_LIMITER and limiter and SlowAPIMiddleware:
-    api.state.limiter = limiter
+if _HAS_LIMITER and SlowAPIMiddleware:
+    api.state.limiter = _core_limiter
     api.add_middleware(SlowAPIMiddleware)
 
 if _HAS_AUTH and auth_router:

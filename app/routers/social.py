@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
@@ -528,6 +528,35 @@ class EducationItem(BaseModel):
     year: str = ""
 
 
+def _connection_status_between(db: Session, viewer_id: int, profile_user_id: int) -> str:
+    """Return connection_status for profile viewer: connected, pending, or none."""
+    if viewer_id == profile_user_id:
+        return "self"
+    inv = (
+        db.query(NetworkInvite)
+        .filter(
+            or_(
+                and_(
+                    NetworkInvite.requester_id == viewer_id,
+                    NetworkInvite.addressee_id == profile_user_id,
+                ),
+                and_(
+                    NetworkInvite.requester_id == profile_user_id,
+                    NetworkInvite.addressee_id == viewer_id,
+                ),
+            ),
+            NetworkInvite.status.in_(("accepted", "pending")),
+        )
+        .order_by(NetworkInvite.id.desc())
+        .first()
+    )
+    if not inv:
+        return "none"
+    if inv.status == "accepted":
+        return "connected"
+    return "pending"
+
+
 @router.get("/profile/{user_id}")
 def get_profile(
     user_id: int,
@@ -580,6 +609,7 @@ def get_profile(
             "endorsements": endorsements,
         },
         "is_self": user_id == current_user.id,
+        "connection_status": _connection_status_between(db, current_user.id, user_id),
     }
 
 

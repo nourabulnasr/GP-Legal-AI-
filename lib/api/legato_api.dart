@@ -135,6 +135,10 @@ class LegatoApi {
     return _api.patchJson('/analyses/admin/users/$userId', {'role': role});
   }
 
+  Future<Map<String, dynamic>> adminDeleteUser(int userId) {
+    return _api.deleteJson('/analyses/admin/users/$userId');
+  }
+
   Future<List<dynamic>> adminListUserAnalyses(int userId) {
     return _api.getJsonList('/analyses/admin/user/$userId');
   }

@@ -39,6 +39,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
 
   AuthService get _auth => context.read<AppServices>().auth;
 
+  String _friendlyError(Object e) {
+    final msg = e.toString();
+    if (msg.contains('Load failed') || msg.contains('ClientException')) {
+      return 'Could not reach the server. Check your connection and try again.';
+    }
+    return msg;
+  }
+
   Future<void> _verify() async {
     final ok = _formCtx != null && (Form.of(_formCtx!).validate());
     if (!ok) return;
@@ -53,7 +61,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     } on ApiException catch (e) {
       setState(() => _err = e.message);
     } catch (e) {
-      setState(() => _err = e.toString());
+      setState(() => _err = _friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -74,7 +82,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     } on ApiException catch (e) {
       setState(() => _err = e.message);
     } catch (e) {
-      setState(() => _err = e.toString());
+      setState(() => _err = _friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

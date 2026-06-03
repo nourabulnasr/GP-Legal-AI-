@@ -25,6 +25,7 @@ import {
   adminListAll,
   adminListUsers,
   adminUpdateUserRole,
+  adminDeleteUser,
   adminLawPreviewPdf,
   adminLawUploadPdf,
   adminLawReindex,
@@ -628,6 +629,33 @@ export default function AdminPage({ user, onLogout }: Props) {
                                   disabled={roleUpdating === u.id}
                                 >
                                   Set as User
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onSelect={async () => {
+                                    if (
+                                      !confirm(
+                                        `Permanently delete ${u.email} and all their data? This cannot be undone.`,
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                    setRoleUpdating(u.id);
+                                    try {
+                                      await adminDeleteUser(u.id);
+                                      await fetchAll();
+                                    } catch (e: unknown) {
+                                      const msg = e && typeof e === "object" && "response" in e
+                                        ? (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+                                        : null;
+                                      alert(typeof msg === "string" ? msg : "Failed to delete user");
+                                    } finally {
+                                      setRoleUpdating(null);
+                                    }
+                                  }}
+                                  disabled={roleUpdating === u.id}
+                                >
+                                  Delete user
                                 </DropdownMenuItem>
                               </>
                             )}

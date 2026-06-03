@@ -13,6 +13,7 @@ from app.schemas.analyses import (
     FlagRequest,
 )
 from app.core.deps import get_current_user, require_admin  # ✅ IMPORTANT
+from app.services.user_deletion import delete_user_account
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 
@@ -124,6 +125,32 @@ def admin_update_user_role(
     db.commit()
     db.refresh(target)
     return {"id": target.id, "email": target.email, "role": target.role}
+
+
+@router.delete("/admin/users/{user_id}")
+def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Permanently delete a user account and related data. Admin only."""
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if getattr(target, "role", "user") == "admin":
+        admin_count = db.query(User).filter(User.role == "admin").count()
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last admin account")
+    try:
+        deleted = delete_user_account(db, user_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="User not found")
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete user")
+    return {"status": "ok", "deleted_id": user_id, "email": deleted.email}
 
 
 @router.get("/{analysis_id}")

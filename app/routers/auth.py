@@ -317,7 +317,6 @@ def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/resend-verification")
-@limiter.limit("5/minute")
 def resend_verification(request: Request, payload: ResendVerificationRequest, db: Session = Depends(get_db)):
     """Send a new verification code to an unverified user. Rate-limited per email."""
     global _resend_last_sent

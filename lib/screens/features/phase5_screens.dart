@@ -1,6 +1,5 @@
-import 'dart:convert' show JsonEncoder, base64Encode, jsonDecode, utf8;
+import 'dart:convert' show JsonEncoder, base64Encode, jsonDecode;
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hand_signature/signature.dart';
@@ -210,31 +209,6 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
     super.dispose();
   }
 
-  Future<void> _pick(bool left) async {
-    final r = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['txt'],
-      withData: true,
-    );
-    if (r == null || r.files.isEmpty) return;
-    final f = r.files.single;
-    final bytes = f.bytes;
-    if (bytes == null) return;
-    if (bytes.length > 300000) {
-      setState(() => _err = 'File too large. Paste the contract text directly or use an analysis ID.');
-      return;
-    }
-    final txt = utf8.decode(bytes, allowMalformed: false);
-    setState(() {
-      _err = null;
-      if (left) {
-        _a.text = txt;
-      } else {
-        _b.text = txt;
-      }
-    });
-  }
-
   Future<void> _run() async {
     setState(() {
       _busy = true;
@@ -272,17 +246,10 @@ class _CompareFeatureScreenState extends State<CompareFeatureScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            'Load a plain .txt file, or paste contract text directly. For PDF/DOCX contracts, use two analysis IDs instead.',
+            'Paste contract text directly, or for PDF/DOCX contracts use two analysis IDs instead.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: OutlinedButton(onPressed: () => _pick(true), child: const Text('Load A'))),
-              const SizedBox(width: 8),
-              Expanded(child: OutlinedButton(onPressed: () => _pick(false), child: const Text('Load B'))),
-            ],
-          ),
           TextField(controller: _a, decoration: const InputDecoration(labelText: 'Text A (or leave empty if using id A)'), maxLines: 4),
           TextField(controller: _b, decoration: const InputDecoration(labelText: 'Text B (or leave empty if using id B)'), maxLines: 4),
           const SizedBox(height: 8),

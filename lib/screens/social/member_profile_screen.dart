@@ -40,7 +40,21 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     });
     try {
       final email = context.read<AuthProvider>().user?.email ?? '';
-      final d = await context.read<AppServices>().legato.getSocialProfileResilient(widget.userId, email);
+      final legato = context.read<AppServices>().legato;
+      var d = await legato.getSocialProfileResilient(widget.userId, email);
+      final status = d['connection_status']?.toString();
+      if (status == null || status.isEmpty || status == 'none') {
+        try {
+          final conns = await legato.getNetworkConnections();
+          final items = (conns['items'] as List<dynamic>?) ?? [];
+          final connected = items.any(
+            (c) => c is Map && (c['user_id'] as num?)?.toInt() == widget.userId,
+          );
+          if (connected) {
+            d = Map<String, dynamic>.from(d)..['connection_status'] = 'connected';
+          }
+        } catch (_) {}
+      }
       if (!mounted) return;
       setState(() {
         _data = d;

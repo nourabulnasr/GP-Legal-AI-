@@ -124,7 +124,11 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>> resendVerification(String email) {
-    return _api.postJson('/auth/resend-verification', {'email': email.trim()});
+    return _postJsonWithRetry(
+      '/auth/resend-verification',
+      {'email': email.trim().toLowerCase()},
+      timeout: AppConfig.authTimeout,
+    );
   }
 
   Future<bool> hasToken() async {
