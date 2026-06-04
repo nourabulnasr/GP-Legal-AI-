@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/analyze/analyze_screen.dart';
+import 'package:legato_mobile/screens/features/features_hub_screen.dart';
 import 'package:legato_mobile/screens/translate/translate_contract_screen.dart';
 import 'package:legato_mobile/screens/chat/chat_hub_screen.dart';
 import 'package:legato_mobile/screens/history/history_screen.dart';
@@ -14,20 +17,33 @@ class DashboardTab extends StatefulWidget {
   const DashboardTab({super.key});
 
   @override
-  State<DashboardTab> createState() => _DashboardTabState();
+  State<DashboardTab> createState() => DashboardTabState();
 }
 
-class _DashboardTabState extends State<DashboardTab> {
-  bool _loading = false;
-  String? _health;
-  String? _err;
+class DashboardTabState extends State<DashboardTab> {
+  void refresh() {
+    _loadProfile();
+    _checkConnection();
+  }
+  bool? _connected;
+  Timer? _connectionTimer;
   String? _avatarUrl;
   String _displayName = '';
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfile());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadProfile();
+      _checkConnection();
+    });
+    _connectionTimer = Timer.periodic(const Duration(seconds: 45), (_) => _checkConnection());
+  }
+
+  @override
+  void dispose() {
+    _connectionTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadProfile() async {
@@ -46,20 +62,34 @@ class _DashboardTabState extends State<DashboardTab> {
     } catch (_) {}
   }
 
-  Future<void> _ping() async {
-    setState(() {
-      _loading = true;
-      _err = null;
-      _health = null;
-    });
+  Future<void> _checkConnection() async {
     try {
-      final body = await context.read<AppServices>().api.getHealthRaw();
-      setState(() => _health = body);
-    } catch (e) {
-      setState(() => _err = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      await context.read<AppServices>().api.getHealthRaw();
+      if (mounted) setState(() => _connected = true);
+    } catch (_) {
+      if (mounted) setState(() => _connected = false);
     }
+  }
+
+  Widget _connectionBadge() {
+    final ok = _connected == true;
+    final color = ok ? Colors.greenAccent : Colors.redAccent;
+    final label = ok ? 'Connected' : 'Disconnected';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.95), fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+      ],
+    );
   }
 
   @override
@@ -89,43 +119,50 @@ class _DashboardTabState extends State<DashboardTab> {
                       ),
                       borderRadius: BorderRadius.vertical(bottom: Radius.circular(12)),
                     ),
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        UserAvatar(
-                          radius: 36,
-                          imageUrl: _avatarUrl,
-                          name: displayName,
-                          backgroundColor: Colors.white,
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Welcome back',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 13),
+                        Align(alignment: Alignment.topRight, child: _connectionBadge()),
+                        const SizedBox(height: 4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            UserAvatar(
+                              radius: 36,
+                              imageUrl: _avatarUrl,
+                              name: displayName,
+                              backgroundColor: Colors.white,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Welcome back',
+                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    displayName,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  if (user != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      user.role.toUpperCase(),
+                                      style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12),
+                                    ),
+                                  ],
+                                ],
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                displayName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              if (user != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  user.role.toUpperCase(),
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12),
-                                ),
-                              ],
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -209,46 +246,17 @@ class _DashboardTabState extends State<DashboardTab> {
                       MaterialPageRoute<void>(builder: (_) => const ChatHubScreen()),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'System',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.cloud_outlined, color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95)),
-                              const SizedBox(width: 8),
-                              Text('Backend health', style: Theme.of(context).textTheme.titleMedium),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          FilledButton.tonal(
-                            onPressed: _loading ? null : _ping,
-                            child: _loading
-                                ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                                : const Text('Check health'),
-                          ),
-                          if (_health != null) ...[
-                            const SizedBox(height: 12),
-                            SelectableText(_health!, style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                          if (_err != null) ...[
-                            const SizedBox(height: 8),
-                            Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13)),
-                          ],
-                        ],
-                      ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: LegatoLinkedInTheme.navActiveGold,
+                      foregroundColor: const Color(0xFF1B1F23),
                     ),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
+                    ),
+                    icon: const Icon(Icons.apps_outlined),
+                    label: Text(FeaturesHubScreen.openAllToolsLabel),
                   ),
                 ],
               ),
@@ -301,7 +309,9 @@ class _ActionCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                          ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),

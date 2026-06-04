@@ -5,10 +5,27 @@ import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
+import 'package:legato_mobile/widgets/user_avatar.dart';
 
-/// Alerts: contract milestones (timeline) + network invites.
+String _relativeTime(String iso) {
+  try {
+    final dt = DateTime.parse(iso).toLocal();
+    final d = DateTime.now().difference(dt);
+    if (d.inSeconds < 60) return '${d.inSeconds}s ago';
+    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+    if (d.inHours < 48) return '${d.inHours}h ago';
+    if (d.inDays < 14) return '${d.inDays}d ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  } catch (_) {
+    return iso;
+  }
+}
+
+/// Alerts: feed activity + contract milestones + network invites.
 class AlertsScreen extends StatefulWidget {
-  const AlertsScreen({super.key});
+  const AlertsScreen({super.key, this.onOpenPost});
+
+  final void Function(int postId)? onOpenPost;
 
   @override
   State<AlertsScreen> createState() => AlertsScreenState();
@@ -19,6 +36,7 @@ class AlertsScreenState extends State<AlertsScreen> {
   void refresh() => _load();
   bool _loading = false;
   String? _err;
+  List<dynamic> _activity = const [];
   List<dynamic> _timeline = const [];
   List<dynamic> _invites = const [];
 
@@ -36,13 +54,22 @@ class AlertsScreenState extends State<AlertsScreen> {
     });
     final app = context.read<AppServices>();
     final errs = <String>[];
+    var activity = <dynamic>[];
     var tl = <dynamic>[];
     var inv = <dynamic>[];
 
     try {
+      final r = await app.legato.listNotifications();
+      activity = (r['items'] as List<dynamic>?) ?? [];
+    } on ApiException catch (e) {
+      if (e.statusCode != 404) errs.add('Activity: ${e.message}');
+    } catch (e) {
+      errs.add('Activity: $e');
+    }
+
+    try {
       tl = await app.legato.timelineMe();
     } on ApiException catch (e) {
-      // Backend not updated yet -> don't break the whole screen.
       if (e.statusCode != 404) errs.add('Milestones: ${e.message}');
     } catch (e) {
       errs.add('Milestones: $e');
@@ -59,11 +86,60 @@ class AlertsScreenState extends State<AlertsScreen> {
 
     if (!mounted) return;
     setState(() {
+      _activity = activity;
       _timeline = tl;
       _invites = inv;
       _err = errs.isEmpty ? null : errs.join('\n');
       _loading = false;
     });
+  }
+
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'like':
+        return Icons.favorite_outline;
+      case 'comment':
+        return Icons.chat_bubble_outline;
+      case 'connection_post':
+        return Icons.article_outlined;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+
+  int? _postIdFromNotification(Map<String, dynamic> m) {
+    final raw = m['post_id'] ?? m['postId'];
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim());
+    return null;
+  }
+
+  Future<void> _onActivityTap(Map<String, dynamic> m) async {
+    final id = (m['id'] as num?)?.toInt();
+    final postId = _postIdFromNotification(m);
+    if (id != null) {
+      try {
+        await context.read<AppServices>().legato.markNotificationRead(id);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      _activity = _activity.map((raw) {
+        if (raw is! Map) return raw;
+        final copy = Map<String, dynamic>.from(raw);
+        if ((copy['id'] as num?)?.toInt() == id) copy['read'] = true;
+        return copy;
+      }).toList();
+    });
+    if (postId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This alert is not linked to a post.')),
+      );
+      return;
+    }
+    if (widget.onOpenPost != null) {
+      widget.onOpenPost!(postId);
+    }
   }
 
   Future<void> _acceptInvite(int id) async {
@@ -79,6 +155,30 @@ class AlertsScreenState extends State<AlertsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }
+  }
+
+  Future<void> _deleteActivity(int id) async {
+    try {
+      await context.read<AppServices>().legato.deleteNotification(id);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _activity = _activity.where((raw) {
+        if (raw is! Map) return true;
+        return (raw['id'] as num?)?.toInt() != id;
+      }).toList();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Alert deleted')),
+    );
   }
 
   Future<void> _deleteMilestone(int id, String label) async {
@@ -120,7 +220,21 @@ class AlertsScreenState extends State<AlertsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: LegatoAppBar(title: const Text('Alerts')),
+      appBar: LegatoAppBar(
+        title: const Text('Alerts'),
+        actions: [
+          if (_activity.any((a) => a is Map && a['read'] != true))
+            TextButton(
+              onPressed: () async {
+                try {
+                  await context.read<AppServices>().legato.markAllNotificationsRead();
+                  if (mounted) await _load();
+                } catch (_) {}
+              },
+              child: const Text('Mark all read'),
+            ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -130,6 +244,60 @@ class AlertsScreenState extends State<AlertsScreen> {
                 children: [
                   if (_err != null) Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   Text(
+                    'Feed activity',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_activity.isEmpty)
+                    Text(
+                      'No activity yet. Likes, comments, and posts from connections appear here.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                          ),
+                    )
+                  else
+                    ..._activity.map((raw) {
+                      final m = Map<String, dynamic>.from(raw as Map);
+                      final id = (m['id'] as num?)?.toInt();
+                      final unread = m['read'] != true;
+                      return Card(
+                        color: unread
+                            ? LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.08)
+                            : null,
+                        child: ListTile(
+                          leading: UserAvatar(
+                            radius: 22,
+                            imageUrl: m['actor_avatar_url']?.toString(),
+                            name: m['actor_name']?.toString() ?? 'Member',
+                          ),
+                          title: Text(
+                            m['message']?.toString() ?? 'Activity',
+                            style: TextStyle(fontWeight: unread ? FontWeight.w600 : FontWeight.normal),
+                          ),
+                          subtitle: Text(_relativeTime(m['created_at']?.toString() ?? '')),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _iconForType(m['type']?.toString() ?? ''),
+                                size: 18,
+                                color: LegatoLinkedInTheme.navActiveGold,
+                              ),
+                              if (id != null)
+                                IconButton(
+                                  tooltip: 'Delete alert',
+                                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                                  onPressed: () => _deleteActivity(id),
+                                ),
+                              if (_postIdFromNotification(m) != null) const Icon(Icons.chevron_right),
+                            ],
+                          ),
+                          onTap: () => _onActivityTap(m),
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 16),
+                  Text(
                     'Network invitations',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                   ),
@@ -137,7 +305,9 @@ class AlertsScreenState extends State<AlertsScreen> {
                   if (_invites.isEmpty)
                     Text(
                       'No pending invitations.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                          ),
                     )
                   else
                     ..._invites.map((raw) {
@@ -164,7 +334,9 @@ class AlertsScreenState extends State<AlertsScreen> {
                   if (_timeline.isEmpty)
                     Text(
                       'No milestones yet.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                          ),
                     )
                   else
                     ..._timeline.map((raw) {

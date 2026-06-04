@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_admin
@@ -17,12 +18,18 @@ from app.db.models import (
     LegatoShare,
     LegatoDealThread,
     LegatoDealMessage,
+    LegatoDealThreadMember,
     LegatoTimelineEvent,
     LegatoProfile,
     LegatoSignature,
 )
 from app.db.session import get_db
 from app import legato_service
+from app.services.contract_category import (
+    category_label,
+    extract_category_from_analysis,
+    list_known_categories,
+)
 from app.utils_text import detect_language, llm_locale_from_detection
 
 router = APIRouter(prefix="/legato", tags=["legato-mobile"])
@@ -271,8 +278,186 @@ def public_share(token: str, db: Session = Depends(get_db)):
 
 # ---------- deal threads ----------
 class DealThreadCreate(BaseModel):
-    analysis_id: int
-    title: Optional[str] = None
+    analysis_id: Optional[int] = None
+    contract_category: Optional[str] = None
+    title: str = Field(..., min_length=3, max_length=512)
+
+
+class DealThreadUpdate(BaseModel):
+    title: str = Field(..., min_length=3, max_length=512)
+
+
+def _ensure_deal_thread_member(db: Session, thread_id: int, user_id: int) -> None:
+    exists = (
+        db.query(LegatoDealThreadMember)
+        .filter(
+            LegatoDealThreadMember.thread_id == thread_id,
+            LegatoDealThreadMember.user_id == user_id,
+        )
+        .first()
+    )
+    if exists:
+        return
+    db.add(LegatoDealThreadMember(thread_id=thread_id, user_id=user_id))
+    db.commit()
+
+
+def _sync_deal_thread_members(db: Session, th: LegatoDealThread) -> None:
+    """Backfill creator + message authors into membership table."""
+    _ensure_deal_thread_member(db, th.id, th.user_id)
+    author_rows = (
+        db.query(LegatoDealMessage.author_id)
+        .filter(
+            LegatoDealMessage.thread_id == th.id,
+            LegatoDealMessage.author_id.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    for (author_id,) in author_rows:
+        if author_id:
+            _ensure_deal_thread_member(db, th.id, int(author_id))
+
+
+def _deal_thread_member_payload(db: Session, th: LegatoDealThread) -> List[Dict[str, Any]]:
+    from app.routers.social import (
+        _avatar_url_for_user,
+        _display_name,
+        _parse_profile_row,
+        _public_base_url,
+    )
+
+    _sync_deal_thread_members(db, th)
+    rows = (
+        db.query(LegatoDealThreadMember)
+        .filter(LegatoDealThreadMember.thread_id == th.id)
+        .order_by(LegatoDealThreadMember.joined_at.asc())
+        .all()
+    )
+    base = _public_base_url()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        u = db.query(User).filter(User.id == row.user_id).first()
+        if not u:
+            continue
+        prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == row.user_id).first()
+        prof = _parse_profile_row(prow)
+        out.append(
+            {
+                "user_id": row.user_id,
+                "name": _display_name(u, prof),
+                "email": u.email,
+                "avatar_url": _avatar_url_for_user(row.user_id, prof, base, profile_row=prow) or "",
+                "is_creator": row.user_id == th.user_id,
+                "joined_at": row.joined_at.isoformat() + "Z",
+            }
+        )
+    return out
+
+
+def _ensure_analysis_category(db: Session, row: Analysis) -> str:
+    if row.contract_category:
+        return row.contract_category
+    cat = extract_category_from_analysis(row.result_json or "{}", row.filename or "")
+    row.contract_category = cat
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return cat
+
+
+@router.get("/deal-categories")
+def deal_categories(
+    current_user: User = Depends(get_current_user),
+):
+    return {"items": list_known_categories()}
+
+
+@router.get("/deal-peers")
+def deal_peers(
+    contract_category: str,
+    limit: int = 30,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Users who uploaded a contract in the same category (e.g. medical/doctor)."""
+    cat = (contract_category or "general").strip().lower()
+    if cat == "employment":
+        cat_filter = or_(Analysis.contract_category == cat, Analysis.contract_category.is_(None))
+    else:
+        cat_filter = Analysis.contract_category == cat
+    rows = (
+        db.query(Analysis, User)
+        .join(User, User.id == Analysis.user_id)
+        .filter(
+            cat_filter,
+            Analysis.user_id != current_user.id,
+        )
+        .order_by(Analysis.created_at.desc())
+        .limit(limit * 3)
+        .all()
+    )
+    seen: set[int] = set()
+    out: List[Dict[str, Any]] = []
+    for analysis, user in rows:
+        if user.id in seen:
+            continue
+        seen.add(user.id)
+        out.append(
+            {
+                "user_id": user.id,
+                "email": user.email,
+                "analysis_id": analysis.id,
+                "filename": analysis.filename,
+                "contract_category": cat,
+                "category_label": category_label(cat),
+            }
+        )
+        if len(out) >= limit:
+            break
+    return {"items": out, "contract_category": cat, "category_label": category_label(cat)}
+
+
+@router.get("/my-deal-categories")
+def my_deal_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Categories present in the current user's saved analyses."""
+    rows = (
+        db.query(Analysis.contract_category, func.count(Analysis.id))
+        .filter(Analysis.user_id == current_user.id, Analysis.contract_category.isnot(None))
+        .group_by(Analysis.contract_category)
+        .all()
+    )
+    items = []
+    for cat, cnt in rows:
+        if not cat:
+            continue
+        items.append(
+            {
+                "contract_category": cat,
+                "category_label": category_label(cat),
+                "analysis_count": int(cnt),
+            }
+        )
+    if not items:
+        user_rows = (
+            db.query(Analysis)
+            .filter(Analysis.user_id == current_user.id)
+            .order_by(Analysis.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        cats: dict[str, int] = {}
+        for row in user_rows:
+            c = _ensure_analysis_category(db, row)
+            cats[c] = cats.get(c, 0) + 1
+        items = [
+            {"contract_category": k, "category_label": category_label(k), "analysis_count": v}
+            for k, v in sorted(cats.items(), key=lambda x: -x[1])
+        ]
+    return {"items": items}
 
 
 @router.post("/deal-threads")
@@ -281,43 +466,142 @@ def deal_thread_create(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    row = db.query(Analysis).filter(Analysis.id == body.analysis_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-    # Shared threads: allow any authenticated user to start a discussion on an analysis id.
-    th = LegatoDealThread(analysis_id=body.analysis_id, user_id=current_user.id, title=body.title or "Discussion")
+    cat = (body.contract_category or "").strip().lower() or None
+    analysis_id = body.analysis_id
+    if analysis_id is not None:
+        row = db.query(Analysis).filter(Analysis.id == analysis_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Analysis not found")
+        if not cat:
+            cat = _ensure_analysis_category(db, row)
+    elif not cat:
+        raise HTTPException(status_code=400, detail="Provide analysis_id or contract_category")
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Room title is required")
+    th = LegatoDealThread(
+        analysis_id=analysis_id,
+        contract_category=cat,
+        user_id=current_user.id,
+        title=title,
+    )
     db.add(th)
     db.commit()
     db.refresh(th)
-    return {"id": th.id, "analysis_id": th.analysis_id, "title": th.title, "created_at": th.created_at.isoformat() + "Z"}
+    _ensure_deal_thread_member(db, th.id, current_user.id)
+    return {
+        "id": th.id,
+        "analysis_id": th.analysis_id,
+        "contract_category": th.contract_category,
+        "category_label": category_label(th.contract_category or "general"),
+        "title": th.title,
+        "created_at": th.created_at.isoformat() + "Z",
+    }
 
 
 @router.get("/deal-threads")
 def deal_thread_list(
-    analysis_id: int,
+    analysis_id: Optional[int] = None,
+    contract_category: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    row = db.query(Analysis).filter(Analysis.id == analysis_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-    # Shared threads: any authenticated user may list threads for a given analysis id.
-    threads = (
-        db.query(LegatoDealThread)
-        .filter(LegatoDealThread.analysis_id == analysis_id)
-        .order_by(LegatoDealThread.created_at.desc())
-        .all()
-    )
+    q = db.query(LegatoDealThread)
+    if analysis_id is not None:
+        row = db.query(Analysis).filter(Analysis.id == analysis_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Analysis not found")
+        cat = _ensure_analysis_category(db, row)
+        q = q.filter(
+            or_(
+                LegatoDealThread.analysis_id == analysis_id,
+                LegatoDealThread.contract_category == cat,
+            )
+        )
+    elif contract_category:
+        cat = contract_category.strip().lower()
+        q = q.filter(LegatoDealThread.contract_category == cat)
+    else:
+        raise HTTPException(status_code=400, detail="Provide analysis_id or contract_category")
+    threads = q.order_by(LegatoDealThread.created_at.desc()).limit(100).all()
+    member_ids: set[int] = set()
+    if threads:
+        thread_ids = [t.id for t in threads]
+        member_rows = (
+            db.query(LegatoDealThreadMember.thread_id)
+            .filter(
+                LegatoDealThreadMember.user_id == current_user.id,
+                LegatoDealThreadMember.thread_id.in_(thread_ids),
+            )
+            .all()
+        )
+        member_ids = {int(r[0]) for r in member_rows}
     return [
         {
             "id": t.id,
             "analysis_id": t.analysis_id,
+            "contract_category": t.contract_category,
+            "category_label": category_label(t.contract_category or "general"),
             "title": t.title,
             "created_at": t.created_at.isoformat() + "Z",
             "created_by": t.user_id,
+            "is_member": t.id in member_ids or t.user_id == current_user.id,
         }
         for t in threads
     ]
+
+
+@router.patch("/deal-threads/{thread_id}")
+def deal_thread_update(
+    thread_id: int,
+    body: DealThreadUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    th = db.query(LegatoDealThread).filter(LegatoDealThread.id == thread_id).first()
+    if not th:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    if th.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the room creator can rename this room")
+    th.title = body.title.strip()
+    db.add(th)
+    db.commit()
+    db.refresh(th)
+    return {
+        "id": th.id,
+        "analysis_id": th.analysis_id,
+        "contract_category": th.contract_category,
+        "category_label": category_label(th.contract_category or "general"),
+        "title": th.title,
+        "created_at": th.created_at.isoformat() + "Z",
+        "created_by": th.user_id,
+    }
+
+
+@router.post("/deal-threads/{thread_id}/join")
+def deal_thread_join(
+    thread_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    th = db.query(LegatoDealThread).filter(LegatoDealThread.id == thread_id).first()
+    if not th:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    _ensure_deal_thread_member(db, thread_id, current_user.id)
+    return {"ok": True, "thread_id": thread_id, "user_id": current_user.id}
+
+
+@router.get("/deal-threads/{thread_id}/members")
+def deal_thread_members(
+    thread_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    th = db.query(LegatoDealThread).filter(LegatoDealThread.id == thread_id).first()
+    if not th:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    members = _deal_thread_member_payload(db, th)
+    return {"items": members, "count": len(members), "created_by": th.user_id}
 
 
 class DealMessageBody(BaseModel):
@@ -369,6 +653,7 @@ def deal_message_post(
     if not th:
         raise HTTPException(status_code=404, detail="Thread not found")
     # Shared threads: any authenticated user may post.
+    _ensure_deal_thread_member(db, thread_id, current_user.id)
     m = LegatoDealMessage(thread_id=thread_id, body=body.body, author_id=current_user.id)
     db.add(m)
     db.commit()

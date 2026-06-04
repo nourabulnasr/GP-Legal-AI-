@@ -63,11 +63,12 @@ class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
   @override
-  State<FeedScreen> createState() => _FeedScreenState();
+  State<FeedScreen> createState() => FeedScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> {
+class FeedScreenState extends State<FeedScreen> {
   final _scroll = ScrollController();
+  final _postKeys = <int, GlobalKey>{};
   String _category = 'All Updates';
   final List<Map<String, dynamic>> _posts = [];
   int _page = 1;
@@ -83,6 +84,11 @@ class _FeedScreenState extends State<FeedScreen> {
     _scroll.addListener(_onScroll);
     _load(reset: true);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadMyAvatar());
+  }
+
+  void refresh() {
+    _load(reset: true);
+    _loadMyAvatar();
   }
 
   Future<void> _loadMyAvatar() async {
@@ -114,6 +120,84 @@ class _FeedScreenState extends State<FeedScreen> {
       _load();
     }
   }
+
+  Future<void> _waitForLoadIdle() async {
+    while (_loading && mounted) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+  }
+
+  Future<void> _scrollFeedToTop() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      if (_scroll.hasClients) {
+        if (_scroll.offset > 0) {
+          await _scroll.animateTo(
+            0,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOut,
+          );
+        }
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+  }
+
+  void _movePostToTop(int postId) {
+    final idx = _posts.indexWhere((p) => (p['id'] as num?)?.toInt() == postId);
+    if (idx > 0) {
+      final post = _posts.removeAt(idx);
+      _posts.insert(0, post);
+    }
+  }
+
+  /// Open a post from Alerts — loads it, pins it to the top, and scrolls into view.
+  Future<void> openPostById(int postId) async {
+    if (!mounted) return;
+
+    if (_category != 'All Updates') {
+      setState(() => _category = 'All Updates');
+      await _load(reset: true);
+    } else {
+      await _waitForLoadIdle();
+    }
+
+    var idx = _posts.indexWhere((p) => (p['id'] as num?)?.toInt() == postId);
+    if (idx < 0) {
+      try {
+        final post = await context.read<AppServices>().legato.getPost(postId);
+        if (!mounted) return;
+        setState(() {
+          _posts.removeWhere((p) => (p['id'] as num?)?.toInt() == postId);
+          _posts.insert(0, Map<String, dynamic>.from(post));
+        });
+        idx = 0;
+      } on ApiException {
+        if (_posts.isEmpty) {
+          await _load(reset: true);
+        }
+        while (idx < 0 && _hasMore && mounted) {
+          await _waitForLoadIdle();
+          idx = _posts.indexWhere((p) => (p['id'] as num?)?.toInt() == postId);
+          if (idx >= 0) break;
+          await _load();
+        }
+      }
+    }
+
+    if (!mounted) return;
+    if (idx < 0) {
+      await FeedPostScreen.open(context, postId);
+      return;
+    }
+
+    setState(() => _movePostToTop(postId));
+    await _scrollFeedToTop();
+  }
+
+  Future<void> scrollToPost(int postId) => openPostById(postId);
 
   Future<void> _load({bool reset = false}) async {
     if (_loading) return;
@@ -308,9 +392,18 @@ class _FeedScreenState extends State<FeedScreen> {
                               child: Center(child: CircularProgressIndicator()),
                             );
                           }
-                          return _PostCard(
-                            post: _posts[i],
-                            onChanged: () => _load(reset: true),
+                          final post = _posts[i];
+                          final postId = (post['id'] as num?)?.toInt();
+                          if (postId != null) {
+                            _postKeys.putIfAbsent(postId, GlobalKey.new);
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _PostCard(
+                              key: postId != null ? _postKeys[postId] : null,
+                              post: post,
+                              onChanged: () => _load(reset: true),
+                            ),
                           );
                         },
                       ),
@@ -560,7 +653,7 @@ class _FeedComposerSheetState extends State<_FeedComposerSheet> {
 }
 
 class _PostCard extends StatefulWidget {
-  const _PostCard({required this.post, required this.onChanged});
+  const _PostCard({super.key, required this.post, required this.onChanged});
 
   final Map<String, dynamic> post;
   final VoidCallback onChanged;
@@ -572,6 +665,7 @@ class _PostCard extends StatefulWidget {
 class _PostCardState extends State<_PostCard> {
   bool _expanded = false;
   bool _loadingComments = false;
+  bool _connecting = false;
   String? _commentsErr;
   List<Map<String, dynamic>> _comments = [];
 
@@ -733,6 +827,23 @@ class _PostCardState extends State<_PostCard> {
     );
   }
 
+  Future<void> _connect() async {
+    final authorId = (widget.post['author_id'] as num?)?.toInt() ?? (widget.post['user_id'] as num?)?.toInt();
+    if (authorId == null || _connecting) return;
+    setState(() => _connecting = true);
+    try {
+      await context.read<AppServices>().legato.sendNetworkInvite(authorId);
+      if (!mounted) return;
+      setState(() => widget.post['connection_status'] = 'pending');
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Connection request sent')));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _connecting = false);
+    }
+  }
+
   Future<void> _deletePost() async {
     final id = widget.post['id'] as int?;
     if (id == null) return;
@@ -770,6 +881,7 @@ class _PostCardState extends State<_PostCard> {
     final meId = context.watch<AuthProvider>().user?.id;
     final authorId = (p['author_id'] as num?)?.toInt() ?? (p['user_id'] as num?)?.toInt();
     final isOwn = meId != null && authorId != null && meId == authorId;
+    final connectionStatus = p['connection_status']?.toString() ?? (isOwn ? 'self' : 'none');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -778,52 +890,96 @@ class _PostCardState extends State<_PostCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Author row — tappable → profile
-            GestureDetector(
-              onTap: _goToProfile,
-              behavior: HitTestBehavior.opaque,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  UserAvatar(
-                    radius: 22,
-                    imageUrl: p['author_avatar_url']?.toString(),
-                    name: p['author_name']?.toString() ?? 'Member',
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
+            // Header: author (left) + Connect / menu (top right)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _goToProfile,
+                    behavior: HitTestBehavior.opaque,
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          p['author_name']?.toString() ?? 'Member',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                        UserAvatar(
+                          radius: 22,
+                          imageUrl: p['author_avatar_url']?.toString(),
+                          name: p['author_name']?.toString() ?? 'Member',
                         ),
-                        Text(
-                          p['author_subtitle']?.toString() ?? '',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          _relativeTime(p['created_at']?.toString() ?? ''),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: LegatoLinkedInTheme.textSecondaryAdaptive(context), fontSize: 12),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p['author_name']?.toString() ?? 'Member',
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              Text(
+                                p['author_subtitle']?.toString() ?? '',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                                    ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                _relativeTime(p['created_at']?.toString() ?? ''),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                                      fontSize: 12,
+                                    ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  if (isOwn)
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_horiz, size: 20),
-                      onSelected: (v) {
-                        if (v == 'delete') _deletePost();
-                      },
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(value: 'delete', child: Text('Delete post', style: TextStyle(color: Colors.red))),
-                      ],
+                ),
+                if (!isOwn && connectionStatus == 'none')
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: OutlinedButton(
+                      onPressed: _connecting ? null : _connect,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: LegatoLinkedInTheme.navActiveGold,
+                        side: BorderSide(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.85)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        minimumSize: const Size(0, 34),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: _connecting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Connect', style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
-                ],
-              ),
+                  )
+                else if (!isOwn && connectionStatus == 'pending')
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, top: 4),
+                    child: Text(
+                      'Pending',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                          ),
+                    ),
+                  )
+                else if (isOwn)
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_horiz, size: 20),
+                    padding: EdgeInsets.zero,
+                    onSelected: (v) {
+                      if (v == 'delete') _deletePost();
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(value: 'delete', child: Text('Delete post', style: TextStyle(color: Colors.red))),
+                    ],
+                  ),
+              ],
             ),
             const SizedBox(height: 10),
             SelectableText(p['content']?.toString() ?? '', style: Theme.of(context).textTheme.bodyMedium),
@@ -963,6 +1119,99 @@ class _CommentFieldState extends State<_CommentField> {
           icon: const Icon(Icons.send),
         ),
       ],
+    );
+  }
+}
+
+/// Full-screen view for a single post (e.g. from Alerts when feed scroll fails).
+class FeedPostScreen extends StatefulWidget {
+  const FeedPostScreen({super.key, required this.postId});
+
+  final int postId;
+
+  static Future<void> open(BuildContext context, int postId) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FeedPostScreen(postId: postId),
+      ),
+    );
+  }
+
+  @override
+  State<FeedPostScreen> createState() => _FeedPostScreenState();
+}
+
+class _FeedPostScreenState extends State<FeedPostScreen> {
+  bool _loading = true;
+  String? _err;
+  Map<String, dynamic>? _post;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _err = null;
+    });
+    try {
+      final post = await context.read<AppServices>().legato.getPost(widget.postId);
+      if (!mounted) return;
+      setState(() {
+        _post = Map<String, dynamic>.from(post);
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _err = e.message;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _err = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Post')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _err != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _err!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(onPressed: _load, child: const Text('Retry')),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    _PostCard(
+                      post: _post!,
+                      onChanged: _load,
+                    ),
+                  ],
+                ),
     );
   }
 }

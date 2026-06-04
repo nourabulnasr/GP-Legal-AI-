@@ -559,6 +559,22 @@ try:
 except Exception as e:
     print("[INFO] Social API router not mounted:", repr(e))
 
+try:
+    from .routers.messaging import router as messaging_router
+
+    api.include_router(messaging_router)
+    print("[OK] Messaging router mounted:", getattr(messaging_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Messaging router not mounted:", repr(e))
+
+try:
+    from .routers.notifications import router as notifications_router
+
+    api.include_router(notifications_router)
+    print("[OK] Notifications router mounted:", getattr(notifications_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Notifications router not mounted:", repr(e))
+
 # ============================================================
 # Optional jobs router (SAFE – stub included; mount only if present)
 # ============================================================
@@ -2395,6 +2411,13 @@ async def ocr_check_and_search(
             sha256 = hashlib.sha256(data).hexdigest()
             detected_lang = lang_det.language_code
 
+            from app.services.contract_category import extract_category_from_analysis
+
+            contract_category = extract_category_from_analysis(
+                json.dumps(response, ensure_ascii=False),
+                file.filename or "",
+            )
+
             a = Analysis(
                 user_id=current_user.id,
                 filename=file.filename or "uploaded_contract",
@@ -2404,6 +2427,7 @@ async def ocr_check_and_search(
                 page_count=len(ocr_chunks),
                 ocr_used=1 if ocr_used_flag else 0,
                 detected_lang=detected_lang,
+                contract_category=contract_category,
             )
             db.add(a)
             db.commit()

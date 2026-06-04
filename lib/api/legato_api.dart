@@ -287,9 +287,70 @@ class LegatoApi {
     });
   }
 
+  Future<Map<String, dynamic>> createDealThreadByCategory({
+    required String contractCategory,
+    required String title,
+    int? analysisId,
+  }) {
+    return _api.postJson('/legato/deal-threads', {
+      'contract_category': contractCategory,
+      'title': title,
+      if (analysisId != null) 'analysis_id': analysisId,
+    });
+  }
+
+  Future<Map<String, dynamic>> updateDealThreadTitle(int threadId, String title) =>
+      _api.patchJson('/legato/deal-threads/$threadId', {'title': title});
+
+  Future<Map<String, dynamic>> joinDealThread(int threadId) =>
+      _api.postJson('/legato/deal-threads/$threadId/join', {});
+
+  Future<Map<String, dynamic>> listDealThreadMembers(int threadId) =>
+      _api.getJson('/legato/deal-threads/$threadId/members');
+
   Future<List<dynamic>> listDealThreads(int analysisId) {
     return _api.getJsonListQuery('/legato/deal-threads', {'analysis_id': '$analysisId'});
   }
+
+  Future<List<dynamic>> listDealThreadsByCategory(String contractCategory) {
+    return _api.getJsonListQuery('/legato/deal-threads', {'contract_category': contractCategory});
+  }
+
+  Future<Map<String, dynamic>> myDealCategories() => _api.getJson('/legato/my-deal-categories');
+
+  Future<Map<String, dynamic>> dealPeers(String contractCategory) =>
+      _api.getJsonQuery('/legato/deal-peers', {'contract_category': contractCategory});
+
+  Future<Map<String, dynamic>> listConversations() => _api.getJson('/api/messages/conversations');
+
+  Future<Map<String, dynamic>> getConversation(int conversationId) =>
+      _api.getJson('/api/messages/conversations/$conversationId');
+
+  Future<Map<String, dynamic>> addGroupMembers(int conversationId, List<int> memberIds) =>
+      _api.postJson('/api/messages/conversations/$conversationId/members', {'member_ids': memberIds});
+
+  Future<Map<String, dynamic>> createDirectConversation(int peerUserId) =>
+      _api.postJson('/api/messages/conversations/direct', {'peer_user_id': peerUserId});
+
+  Future<Map<String, dynamic>> createGroupConversation({
+    required String title,
+    required List<int> memberIds,
+  }) {
+    return _api.postJson('/api/messages/conversations/group', {
+      'title': title,
+      'member_ids': memberIds,
+    });
+  }
+
+  Future<Map<String, dynamic>> listConversationMessages(int conversationId) =>
+      _api.getJson('/api/messages/conversations/$conversationId/messages');
+
+  Future<Map<String, dynamic>> postConversationMessage(int conversationId, String body) {
+    return _api.postJson('/api/messages/conversations/$conversationId/messages', {'body': body});
+  }
+
+  Future<Map<String, dynamic>> updateGroupTitle(int conversationId, String title) =>
+      _api.patchJson('/api/messages/conversations/$conversationId', {'title': title});
 
   Future<List<dynamic>> listDealMessages(int threadId) =>
       _api.getJsonList('/legato/deal-threads/$threadId/messages');
@@ -342,6 +403,8 @@ class LegatoApi {
   }
 
   // --- Social / professional networking (`/api/*`) ---
+
+  Future<Map<String, dynamic>> getPost(int postId) => _api.getJson('/api/posts/$postId');
 
   Future<Map<String, dynamic>> getPosts({String? category, int page = 1, int pageSize = 20}) {
     return _api.getJsonQuery('/api/posts', {
@@ -447,6 +510,44 @@ class LegatoApi {
     });
   }
 
+  Future<Map<String, dynamic>> updateProfileExperience(
+    int index, {
+    required String title,
+    String company = '',
+    String startDate = '',
+    String? endDate,
+    String description = '',
+  }) {
+    return _api.putJson('/api/profile/me/experience/$index', {
+      'title': title,
+      'company': company,
+      'start_date': startDate,
+      'end_date': endDate ?? '',
+      'description': description,
+    });
+  }
+
+  Future<void> deleteProfileExperience(int index) async {
+    await _api.deleteJson('/api/profile/me/experience/$index');
+  }
+
+  Future<Map<String, dynamic>> updateProfileEducation(
+    int index, {
+    required String school,
+    String degree = '',
+    String year = '',
+  }) {
+    return _api.putJson('/api/profile/me/education/$index', {
+      'school': school,
+      'degree': degree,
+      'year': year,
+    });
+  }
+
+  Future<void> deleteProfileEducation(int index) async {
+    await _api.deleteJson('/api/profile/me/education/$index');
+  }
+
   Future<Map<String, dynamic>> uploadProfileAvatar(Uint8List bytes, String filename) {
     return _api.postMultipartBytes(
       '/api/profile/me/avatar',
@@ -509,4 +610,26 @@ class LegatoApi {
 
   Future<Map<String, dynamic>> addRecommendation(int userId, String content) =>
       _api.postJson('/api/profile/$userId/recommendations', {'content': content});
+
+  // --- Activity notifications (feed → alerts) ---
+
+  Future<Map<String, dynamic>> listNotifications({int page = 1, int pageSize = 40}) =>
+      _api.getJsonQuery('/api/notifications', {'page': '$page', 'page_size': '$pageSize'});
+
+  Future<int> unreadNotificationCount() async {
+    final r = await _api.getJson('/api/notifications/unread-count');
+    return (r['unread_count'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<void> markNotificationRead(int id) async {
+    await _api.postJson('/api/notifications/$id/read', {});
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    await _api.postJson('/api/notifications/read-all', {});
+  }
+
+  Future<void> deleteNotification(int id) async {
+    await _api.deleteJson('/api/notifications/$id');
+  }
 }

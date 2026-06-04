@@ -11,8 +11,9 @@ import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/config/runtime_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/providers/theme_notifier.dart';
-import 'package:legato_mobile/screens/auth_gate.dart';
+import 'package:legato_mobile/screens/share/shared_analysis_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/utils/share_link.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,10 +27,17 @@ void main() async {
   runApp(LegatoApp(themeNotifier: themeNotifier));
 }
 
-class LegatoApp extends StatelessWidget {
+class LegatoApp extends StatefulWidget {
   const LegatoApp({super.key, required this.themeNotifier});
 
   final ThemeNotifier themeNotifier;
+
+  @override
+  State<LegatoApp> createState() => _LegatoAppState();
+}
+
+class _LegatoAppState extends State<LegatoApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -45,11 +53,13 @@ class LegatoApp extends StatelessWidget {
             return p;
           },
         ),
-        ChangeNotifierProvider<ThemeNotifier>.value(value: themeNotifier),
+        ChangeNotifierProvider<ThemeNotifier>.value(value: widget.themeNotifier),
       ],
       child: _AppLifecycle(
+        navigatorKey: _navigatorKey,
         child: Consumer<ThemeNotifier>(
           builder: (_, theme, _) => MaterialApp(
+            navigatorKey: _navigatorKey,
             title: 'Legato',
             theme: LegatoLinkedInTheme.light(),
             darkTheme: LegatoLinkedInTheme.dark(),
@@ -63,7 +73,7 @@ class LegatoApp extends StatelessWidget {
                 ),
               ),
             ),
-            home: const AuthGate(),
+            home: const ShareLinkGate(),
           ),
         ),
       ),
@@ -73,9 +83,10 @@ class LegatoApp extends StatelessWidget {
 
 /// Re-validates the session when the app returns to foreground (JWT expiry sync).
 class _AppLifecycle extends StatefulWidget {
-  const _AppLifecycle({required this.child});
+  const _AppLifecycle({required this.child, required this.navigatorKey});
 
   final Widget child;
+  final GlobalKey<NavigatorState> navigatorKey;
 
   @override
   State<_AppLifecycle> createState() => _AppLifecycleState();
@@ -115,6 +126,15 @@ class _AppLifecycleState extends State<_AppLifecycle> with WidgetsBindingObserve
 
   void _handleUri(Uri uri) {
     if (!mounted) return;
+    final shareToken = parseShareTokenFromUri(uri);
+    if (shareToken != null && shareToken.isNotEmpty) {
+      widget.navigatorKey.currentState?.push(
+        MaterialPageRoute<void>(
+          builder: (_) => SharedAnalysisScreen(token: shareToken),
+        ),
+      );
+      return;
+    }
     final token = uri.queryParameters['token'];
     final error = uri.queryParameters['error'];
     if (token != null && token.isNotEmpty) {

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/widgets/analysis_id_picker.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/document_chat_bubble.dart';
 
@@ -15,17 +16,16 @@ class ChatDocumentScreen extends StatefulWidget {
 }
 
 class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
-  final _analysisId = TextEditingController();
   final _contextCtrl = TextEditingController();
   final _msg = TextEditingController();
   final _scroll = ScrollController();
+  int? _selectedAnalysisId;
   bool _busy = false;
   String? _err;
   final List<DocumentChatMessage> _thread = [];
 
   @override
   void dispose() {
-    _analysisId.dispose();
     _contextCtrl.dispose();
     _msg.dispose();
     _scroll.dispose();
@@ -35,17 +35,6 @@ class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
   Future<void> _send() async {
     final message = _msg.text.trim();
     if (message.isEmpty || _busy) return;
-    int? aid;
-    final raw = _analysisId.text.trim();
-    if (raw.isNotEmpty) {
-      aid = int.tryParse(raw);
-      if (aid == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Analysis id must be a number')),
-        );
-        return;
-      }
-    }
     setState(() {
       _busy = true;
       _err = null;
@@ -53,7 +42,7 @@ class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
     final prior = documentChatHistory(_thread);
     try {
       final res = await context.read<AppServices>().legato.chatWithDocument(
-            analysisId: aid,
+            analysisId: _selectedAnalysisId,
             documentContext: _contextCtrl.text.trim().isEmpty ? null : _contextCtrl.text.trim(),
             message: message,
             history: prior.isEmpty ? null : prior,
@@ -98,19 +87,16 @@ class _ChatDocumentScreenState extends State<ChatDocumentScreen> {
                 controller: _scroll,
                 padding: const EdgeInsets.all(16),
                 children: [
-                  TextField(
-                    controller: _analysisId,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Optional analysis id (from history)',
-                      border: OutlineInputBorder(),
-                    ),
+                  AnalysisIdPicker(
+                    label: 'Contract from your history (optional)',
+                    enabled: !_busy,
+                    onChanged: (id) => setState(() => _selectedAnalysisId = id),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _contextCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Optional pasted contract context (if no analysis id)',
+                      labelText: 'Optional pasted contract context (if no analysis selected)',
                       border: OutlineInputBorder(),
                     ),
                     minLines: 2,

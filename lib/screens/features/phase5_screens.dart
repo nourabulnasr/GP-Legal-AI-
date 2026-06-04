@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
-import 'package:legato_mobile/config/app_config.dart';
+import 'package:legato_mobile/utils/share_link.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
@@ -918,101 +918,7 @@ class _SummarizeFeatureScreenState extends State<SummarizeFeatureScreen> {
   }
 }
 
-// --- 8 Negotiation ---
-
-class NegotiationFeatureScreen extends StatefulWidget {
-  const NegotiationFeatureScreen({super.key});
-
-  @override
-  State<NegotiationFeatureScreen> createState() => _NegotiationFeatureScreenState();
-}
-
-class _NegotiationFeatureScreenState extends State<NegotiationFeatureScreen> {
-  final _msg = TextEditingController();
-  final _aid = TextEditingController();
-  final List<Map<String, dynamic>> _hist = [];
-  bool _busy = false;
-  String? _err;
-
-  @override
-  void dispose() {
-    _msg.dispose();
-    _aid.dispose();
-    super.dispose();
-  }
-
-  Future<void> _send() async {
-    if (_msg.text.trim().isEmpty) return;
-    setState(() {
-      _busy = true;
-      _err = null;
-    });
-    try {
-      final id = int.tryParse(_aid.text.trim());
-      final r = await context.read<AppServices>().legato.negotiationChat(
-            message: _msg.text,
-            analysisId: id,
-            history: _hist,
-          );
-      if (!mounted) return;
-      final c = r['content']?.toString() ?? '';
-      setState(() {
-        _hist.add({'role': 'user', 'content': _msg.text});
-        _hist.add({'role': 'assistant', 'content': c});
-        _msg.clear();
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _err = e.message);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: LegatoAppBar(title: const Text('Negotiation assistant')),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                TextField(
-                  controller: _aid,
-                  decoration: const InputDecoration(labelText: 'Optional analysis id'),
-                  keyboardType: TextInputType.number,
-                ),
-                for (final m in _hist)
-                  ListTile(
-                    title: Text(m['role'] ?? ''),
-                    subtitle: Text(m['content'] ?? ''),
-                  ),
-                if (_err != null) Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              ],
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.only(
-              left: 8,
-              right: 8,
-              bottom: MediaQuery.viewInsetsOf(context).bottom + 8,
-            ),
-            child: Row(
-              children: [
-                Expanded(child: TextField(controller: _msg, decoration: const InputDecoration(hintText: 'Message'))),
-                IconButton(onPressed: _busy ? null : _send, icon: const Icon(Icons.send)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// --- 9 Share ---
+// --- 8 Share ---
 
 class ShareFeatureScreen extends StatefulWidget {
   const ShareFeatureScreen({super.key});
@@ -1047,11 +953,11 @@ class _ShareFeatureScreenState extends State<ShareFeatureScreen> {
 
   Future<void> _copyLink() async {
     if (_token == null) return;
-    final link = '${AppConfig.shareBaseUrl}/legato/shares/public/$_token';
-    await Clipboard.setData(ClipboardData(text: link));
+    final message = buildPublicShareMessage(_token!);
+    await Clipboard.setData(ClipboardData(text: message));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Share link copied to clipboard')),
+      const SnackBar(content: Text('Share message copied — paste in chat to send as a card')),
     );
   }
 
@@ -1110,16 +1016,15 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
 
   Future<void> _load() async {
     final auth = context.read<AuthProvider>();
-    if (auth.user == null || !auth.user!.isAdmin) {
-      setState(() => _err = 'Admin only');
-      return;
-    }
+    if (auth.user == null) return;
     setState(() {
       _busy = true;
       _err = null;
     });
     try {
-      final rows = await context.read<AppServices>().legato.adminTimelineAll();
+      final rows = auth.user!.isAdmin
+          ? await context.read<AppServices>().legato.adminTimelineAll()
+          : await context.read<AppServices>().legato.timelineMe();
       if (!mounted) return;
       setState(() => _rows = rows);
     } on ApiException catch (e) {
@@ -1132,6 +1037,7 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
 
   Future<void> _add() async {
     if (_selectedId == null || _label.text.trim().isEmpty || _date.text.trim().isEmpty) return;
+    setState(() => _err = null);
     try {
       await context.read<AppServices>().legato.createTimelineEvent(
             analysisId: _selectedId!,
@@ -1140,6 +1046,9 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
           );
       if (!mounted) return;
       _label.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Milestone created')),
+      );
       await _load();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -1160,8 +1069,6 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('Add milestone (owner must own analysis; admin can view all)'),
-                      const SizedBox(height: 8),
                       AnalysisIdPicker(
                         enabled: !_busy,
                         onChanged: (v) => setState(() => _selectedId = v),
@@ -1186,279 +1093,10 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
                     if (r is Map)
                       ListTile(
                         title: Text('${r['label']}'),
-                        subtitle: Text('${r['event_date']} � analysis ${r['analysis_id']}'),
+                        subtitle: Text('${r['event_date']} · analysis ${r['analysis_id']}'),
                       ),
               ],
             ),
-    );
-  }
-}
-
-// --- 11 Deal messaging ---
-
-class DealMessagingFeatureScreen extends StatefulWidget {
-  const DealMessagingFeatureScreen({super.key});
-
-  @override
-  State<DealMessagingFeatureScreen> createState() => _DealMessagingFeatureScreenState();
-}
-
-class _DealMessagingFeatureScreenState extends State<DealMessagingFeatureScreen> {
-  int? _selectedId;
-  int? _threadId;
-  List<dynamic>? _threads;
-  final _body = TextEditingController();
-  List<dynamic>? _msgs;
-  String? _err;
-  bool _sending = false;
-
-  @override
-  void dispose() {
-    _body.dispose();
-    super.dispose();
-  }
-
-  Future<void> _openThread() async {
-    if (_selectedId == null) return;
-    try {
-      final t = await context.read<AppServices>().legato.createDealThread(_selectedId!, title: 'Discussion');
-      if (!mounted) return;
-      final tid = t['id'];
-      setState(() {
-        _threadId = tid is int ? tid : int.tryParse('$tid');
-        _err = null;
-      });
-      await _loadMsgs();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _err = e.message);
-    }
-  }
-
-  Future<void> _loadThreads() async {
-    if (_selectedId == null) return;
-    try {
-      final rows = await context.read<AppServices>().legato.listDealThreads(_selectedId!);
-      if (!mounted) return;
-      setState(() => _threads = rows);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _err = e.message);
-    }
-  }
-
-  Future<void> _loadMsgs() async {
-    if (_threadId == null) return;
-    try {
-      final m = await context.read<AppServices>().legato.listDealMessages(_threadId!);
-      if (!mounted) return;
-      setState(() => _msgs = m);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _err = e.message);
-    }
-  }
-
-  Future<void> _send() async {
-    if (_sending) return;
-    if (_threadId == null || _body.text.trim().isEmpty) return;
-    setState(() => _sending = true);
-    try {
-      final text = _body.text.trim();
-      _body.clear(); // clear before async gap (prevents disposed-controller crash)
-      await context.read<AppServices>().legato.postDealMessage(_threadId!, text);
-      if (!mounted) return;
-      await _loadMsgs();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _err = e.message);
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: LegatoAppBar(title: const Text('Deal messaging')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AnalysisIdPicker(
-                  enabled: !_sending,
-                  onChanged: (v) => setState(() {
-                    _selectedId = v;
-                    _threadId = null;
-                    _threads = null;
-                    _msgs = null;
-                  }),
-                ),
-                const SizedBox(height: 8),
-                FilledButton(onPressed: _openThread, child: const Text('Start thread')),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              children: [
-                TextButton(onPressed: _loadThreads, child: const Text('Refresh threads')),
-                if (_threads != null) Text('${_threads!.length} threads'),
-              ],
-            ),
-          ),
-          if (_threads != null && _threads!.isNotEmpty)
-            SizedBox(
-              height: 120,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final raw in _threads!)
-                    if (raw is Map)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: ChoiceChip(
-                          label: Text('#${raw['id']}'),
-                          selected: _threadId == raw['id'],
-                          onSelected: (_) async {
-                            final tid = raw['id'];
-                            setState(() => _threadId = tid is int ? tid : int.tryParse('$tid'));
-                            await _loadMsgs();
-                          },
-                        ),
-                      ),
-                ],
-              ),
-            ),
-          if (_threadId != null) Text('Thread #$_threadId'),
-          Expanded(
-            child: ListView(
-              children: [
-                if (_msgs != null)
-                  for (final m in _msgs!)
-                    if (m is Map)
-                      ListTile(
-                        title: Text(m['email']?.toString() ?? ''),
-                        subtitle: Text(m['body']?.toString() ?? ''),
-                      ),
-                if (_err != null) Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              ],
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.only(
-              left: 8,
-              right: 8,
-              bottom: MediaQuery.viewInsetsOf(context).bottom + 8,
-            ),
-            child: Row(
-              children: [
-                Expanded(child: TextField(controller: _body, decoration: const InputDecoration(hintText: 'Message'))),
-                IconButton(onPressed: _sending ? null : _send, icon: const Icon(Icons.send)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// --- 12 Legal network ---
-
-class LegalNetworkFeatureScreen extends StatefulWidget {
-  const LegalNetworkFeatureScreen({super.key});
-
-  @override
-  State<LegalNetworkFeatureScreen> createState() => _LegalNetworkFeatureScreenState();
-}
-
-class _LegalNetworkFeatureScreenState extends State<LegalNetworkFeatureScreen> {
-  final _name = TextEditingController();
-  final _headline = TextEditingController();
-  final _org = TextEditingController();
-  List<dynamic>? _profiles;
-  String? _err;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _headline.dispose();
-    _org.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    try {
-      await context.read<AppServices>().legato.putLegalProfile({
-        'display_name': _name.text,
-        'headline': _headline.text,
-        'organization': _org.text,
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile saved')),
-      );
-      await _load();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _err = e.message);
-    }
-  }
-
-  Future<void> _load() async {
-    try {
-      final p = await context.read<AppServices>().legato.listNetworkProfiles();
-      if (!mounted) return;
-      setState(() => _profiles = p);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _err = e.message);
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        final me = await context.read<AppServices>().legato.getLegalProfile();
-        _name.text = me['display_name']?.toString() ?? '';
-        _headline.text = me['headline']?.toString() ?? '';
-        _org.text = me['organization']?.toString() ?? '';
-        await _load();
-      } catch (_) {}
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: LegatoAppBar(title: const Text('Legal network (MVP)')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text('MVP: editable profile + directory list. Full �LinkedIn� is a separate product wave.'),
-          TextField(controller: _name, decoration: const InputDecoration(labelText: 'Display name')),
-          TextField(controller: _headline, decoration: const InputDecoration(labelText: 'Headline')),
-          TextField(controller: _org, decoration: const InputDecoration(labelText: 'Organization')),
-          FilledButton(onPressed: _save, child: const Text('Save profile')),
-          if (_err != null) Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          const Divider(),
-          const Text('Directory', style: TextStyle(fontWeight: FontWeight.bold)),
-          if (_profiles != null)
-            for (final p in _profiles!)
-              if (p is Map)
-                ListTile(
-                  title: Text(p['display_name']?.toString() ?? p['email']?.toString() ?? ''),
-                  subtitle: Text(p['headline']?.toString() ?? ''),
-                ),
-        ],
-      ),
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
+import 'package:legato_mobile/screens/messaging/conversation_screen.dart';
 import 'package:legato_mobile/screens/social/member_profile_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/user_avatar.dart';
@@ -11,10 +12,11 @@ class NetworkScreen extends StatefulWidget {
   const NetworkScreen({super.key});
 
   @override
-  State<NetworkScreen> createState() => _NetworkScreenState();
+  State<NetworkScreen> createState() => NetworkScreenState();
 }
 
-class _NetworkScreenState extends State<NetworkScreen> {
+class NetworkScreenState extends State<NetworkScreen> {
+  void refresh() => _load(silent: _stats != null);
   final _search = TextEditingController();
   bool _loading = true;
   String? _err;
@@ -38,11 +40,13 @@ class _NetworkScreenState extends State<NetworkScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _err = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _err = null;
+      });
+    }
     try {
       final api = context.read<AppServices>().legato;
       final results = await Future.wait<dynamic>([
@@ -154,6 +158,27 @@ class _NetworkScreenState extends State<NetworkScreen> {
         _err = e.toString();
         _searching = false;
       });
+    }
+  }
+
+  Future<void> _openChat(int userId, String name) async {
+    try {
+      final conv = await context.read<AppServices>().legato.createDirectConversation(userId);
+      if (!mounted) return;
+      final id = (conv['id'] as num?)?.toInt();
+      if (id == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ConversationScreen(
+            conversationId: id,
+            title: name,
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
     }
   }
 
@@ -364,6 +389,16 @@ class _NetworkScreenState extends State<NetworkScreen> {
                       ),
                       title: Text(m['name']?.toString() ?? m['display_name']?.toString() ?? 'Member'),
                       subtitle: Text(m['subtitle']?.toString() ?? m['title']?.toString() ?? ''),
+                      trailing: IconButton(
+                        tooltip: 'Message',
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        onPressed: uid > 0
+                            ? () {
+                                Navigator.pop(ctx2);
+                                _openChat(uid, m['name']?.toString() ?? 'Member');
+                              }
+                            : null,
+                      ),
                       onTap: uid > 0
                           ? () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(

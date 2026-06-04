@@ -7,6 +7,7 @@ from app.db.models import (
     Analysis,
     LegatoDealMessage,
     LegatoDealThread,
+    LegatoDealThreadMember,
     LegatoProfile,
     LegatoShare,
     LegatoSignature,
@@ -20,6 +21,10 @@ from app.db.models import (
     SocialPostLike,
     SocialPostShare,
     User,
+    UserConversation,
+    UserConversationMember,
+    UserMessage,
+    UserNotification,
 )
 
 
@@ -49,9 +54,15 @@ def delete_user_account(db: Session, user_id: int) -> User:
                 LegatoDealMessage.author_id == user_id,
             )
         ).delete(synchronize_session=False)
+        db.query(LegatoDealThreadMember).filter(
+            LegatoDealThreadMember.thread_id.in_(thread_ids)
+        ).delete(synchronize_session=False)
         db.query(LegatoDealThread).filter(LegatoDealThread.id.in_(thread_ids)).delete(
             synchronize_session=False
         )
+    db.query(LegatoDealThreadMember).filter(LegatoDealThreadMember.user_id == user_id).delete(
+        synchronize_session=False
+    )
 
     if analysis_ids:
         db.query(LegatoShare).filter(LegatoShare.analysis_id.in_(analysis_ids)).delete(
@@ -97,6 +108,9 @@ def delete_user_account(db: Session, user_id: int) -> User:
     db.query(SocialPostShare).filter(SocialPostShare.user_id == user_id).delete(
         synchronize_session=False
     )
+    db.query(UserNotification).filter(
+        or_(UserNotification.recipient_id == user_id, UserNotification.actor_id == user_id)
+    ).delete(synchronize_session=False)
     db.query(NetworkInvite).filter(
         or_(NetworkInvite.requester_id == user_id, NetworkInvite.addressee_id == user_id)
     ).delete(synchronize_session=False)
@@ -115,6 +129,33 @@ def delete_user_account(db: Session, user_id: int) -> User:
     db.query(LegatoProfile).filter(LegatoProfile.user_id == user_id).delete(
         synchronize_session=False
     )
+
+    conv_ids = [
+        row[0]
+        for row in db.query(UserConversationMember.conversation_id)
+        .filter(UserConversationMember.user_id == user_id)
+        .all()
+    ]
+    if conv_ids:
+        db.query(UserMessage).filter(UserMessage.conversation_id.in_(conv_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(UserConversationMember).filter(UserConversationMember.user_id == user_id).delete(
+            synchronize_session=False
+        )
+        for cid in conv_ids:
+            remaining = (
+                db.query(UserConversationMember)
+                .filter(UserConversationMember.conversation_id == cid)
+                .count()
+            )
+            if remaining == 0:
+                db.query(UserConversation).filter(UserConversation.id == cid).delete(
+                    synchronize_session=False
+                )
+        db.query(UserConversation).filter(UserConversation.created_by == user_id).delete(
+            synchronize_session=False
+        )
 
     try:
         db.execute(

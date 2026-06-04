@@ -51,6 +51,18 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE analyses ADD COLUMN ocr_used INTEGER;"))
             if "detected_lang" not in col_names:
                 conn.execute(text("ALTER TABLE analyses ADD COLUMN detected_lang VARCHAR;"))
+            if "contract_category" not in col_names:
+                conn.execute(text("ALTER TABLE analyses ADD COLUMN contract_category VARCHAR(64);"))
+    except Exception:
+        pass
+
+    try:
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(legato_deal_threads);")).fetchall()
+            col_names = {c[1] for c in cols}
+            if "contract_category" not in col_names:
+                conn.execute(text("ALTER TABLE legato_deal_threads ADD COLUMN contract_category VARCHAR(64);"))
+            _migrate_legato_deal_threads_nullable_analysis_id(conn)
     except Exception:
         pass
 
@@ -95,7 +107,70 @@ def init_db() -> None:
     except Exception:
         pass
 
+    try:
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(user_conversation_members);")).fetchall()
+            col_names = {c[1] for c in cols}
+            if "last_read_message_id" not in col_names:
+                conn.execute(text("ALTER TABLE user_conversation_members ADD COLUMN last_read_message_id INTEGER;"))
+    except Exception:
+        pass
+
     _backfill_social_images_from_disk()
+
+
+def _migrate_legato_deal_threads_nullable_analysis_id(conn) -> None:
+    """SQLite: recreate legato_deal_threads so analysis_id can be NULL (category-only rooms)."""
+    cols = conn.execute(text("PRAGMA table_info(legato_deal_threads);")).fetchall()
+    if not cols:
+        return
+    analysis_notnull = False
+    col_names = {c[1] for c in cols}
+    for c in cols:
+        if c[1] == "analysis_id" and c[3] == 1:
+            analysis_notnull = True
+            break
+    if not analysis_notnull:
+        return
+    cat_expr = "contract_category" if "contract_category" in col_names else "NULL"
+    conn.execute(
+        text(
+            """
+            CREATE TABLE legato_deal_threads_mig (
+                id INTEGER PRIMARY KEY,
+                analysis_id INTEGER,
+                contract_category VARCHAR(64),
+                user_id INTEGER NOT NULL,
+                title VARCHAR(512),
+                created_at DATETIME
+            );
+            """
+        )
+    )
+    conn.execute(
+        text(
+            f"""
+            INSERT INTO legato_deal_threads_mig
+                (id, analysis_id, contract_category, user_id, title, created_at)
+            SELECT id, analysis_id, {cat_expr}, user_id, title, created_at
+            FROM legato_deal_threads;
+            """
+        )
+    )
+    conn.execute(text("DROP TABLE legato_deal_threads;"))
+    conn.execute(text("ALTER TABLE legato_deal_threads_mig RENAME TO legato_deal_threads;"))
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_legato_deal_threads_analysis_id ON legato_deal_threads (analysis_id);")
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_legato_deal_threads_contract_category "
+            "ON legato_deal_threads (contract_category);"
+        )
+    )
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_legato_deal_threads_user_id ON legato_deal_threads (user_id);")
+    )
 
 
 def _disk_path_from_static_url(url: Optional[str]) -> Optional[str]:

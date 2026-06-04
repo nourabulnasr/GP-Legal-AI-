@@ -26,6 +26,7 @@ from app.db.models import (
     SkillEndorsement,
     ProfileRecommendation,
     ProfileUserDocument,
+    UserNotification,
 )
 from app.db.session import get_db
 from app.db.init_db import (
@@ -34,6 +35,11 @@ from app.db.init_db import (
     _normalize_uploaded_image,
     _write_avatar_image_file,
     _write_post_image_file,
+)
+from app.services.social_notifications import (
+    notify_connections_new_post,
+    notify_post_commented,
+    notify_post_liked,
 )
 
 router = APIRouter(prefix="/api", tags=["social"])
@@ -148,6 +154,39 @@ def _batch_post_stats(
     return likes_counts, comments_counts, shares_counts, viewer_liked
 
 
+def _batch_connection_status(
+    db: Session,
+    viewer_id: int,
+    user_ids: List[int],
+) -> Dict[int, str]:
+    """Map author user_id -> none | pending | connected for feed Connect buttons."""
+    peers = [uid for uid in user_ids if uid != viewer_id]
+    if not peers:
+        return {}
+    out: Dict[int, str] = {uid: "none" for uid in peers}
+    rows = (
+        db.query(NetworkInvite)
+        .filter(
+            NetworkInvite.status.in_(("accepted", "pending")),
+            or_(
+                and_(NetworkInvite.requester_id == viewer_id, NetworkInvite.addressee_id.in_(peers)),
+                and_(NetworkInvite.addressee_id == viewer_id, NetworkInvite.requester_id.in_(peers)),
+            ),
+        )
+        .order_by(NetworkInvite.id.desc())
+        .all()
+    )
+    for inv in rows:
+        peer = inv.addressee_id if inv.requester_id == viewer_id else inv.requester_id
+        if peer not in out:
+            continue
+        if inv.status == "accepted":
+            out[peer] = "connected"
+        elif out[peer] != "connected":
+            out[peer] = "pending"
+    return out
+
+
 def _serialize_post(
     post: SocialPost,
     db: Session,
@@ -161,6 +200,7 @@ def _serialize_post(
     shares_counts: Optional[Dict[int, int]] = None,
     viewer_liked: Optional[set] = None,
     image_base: Optional[str] = None,
+    connection_status: Optional[str] = None,
 ) -> Dict[str, Any]:
     # Use pre-fetched data when available (batch path), else fall back to single queries.
     if authors_map is not None:
@@ -193,6 +233,13 @@ def _serialize_post(
         db.query(SocialPostLike).filter(SocialPostLike.post_id == post.id, SocialPostLike.user_id == viewer_id).first() is not None
     )
 
+    if post.author_id == viewer_id:
+        conn = "self"
+    elif connection_status is not None:
+        conn = connection_status
+    else:
+        conn = _connection_status_between(db, viewer_id, post.author_id)
+
     return {
         "id": post.id,
         "author_id": post.author_id,
@@ -212,6 +259,7 @@ def _serialize_post(
         "comments_count": cc,
         "shares_count": sc,
         "liked": liked,
+        "connection_status": conn,
         "image_url": _normalize_image_url(post.image_url, image_base or _public_base_url()),
     }
 
@@ -255,6 +303,7 @@ def list_posts(
     likes_counts, comments_counts, shares_counts, viewer_liked = _batch_post_stats(
         db, post_ids, current_user.id
     )
+    connection_map = _batch_connection_status(db, current_user.id, author_ids)
     image_base = _public_base_url(request)
 
     return {
@@ -269,6 +318,7 @@ def list_posts(
                 shares_counts=shares_counts,
                 viewer_liked=viewer_liked,
                 image_base=image_base,
+                connection_status=connection_map.get(p.author_id),
             )
             for p in rows
         ],
@@ -339,6 +389,9 @@ async def create_post(
         db.commit()
         db.refresh(post)
 
+    notify_connections_new_post(db, author_id=current_user.id, post_id=post.id)
+    db.commit()
+
     return _serialize_post(post, db, current_user.id, image_base=_public_base_url(request))
 
 
@@ -359,6 +412,19 @@ def _delete_local_static_file(url: Optional[str]) -> None:
             os.remove(path)
     except OSError:
         pass
+
+
+@router.get("/posts/{post_id}")
+def get_post(
+    post_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = db.query(SocialPost).filter(SocialPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return _serialize_post(post, db, current_user.id, image_base=_public_base_url(request))
 
 
 @router.delete("/posts/{post_id}")
@@ -387,6 +453,7 @@ def delete_post(
     db.query(SocialPostLike).filter(SocialPostLike.post_id == post_id).delete()
     db.query(SocialPostComment).filter(SocialPostComment.post_id == post_id).delete()
     db.query(SocialPostShare).filter(SocialPostShare.post_id == post_id).delete()
+    db.query(UserNotification).filter(UserNotification.post_id == post_id).delete()
     db.delete(post)
     db.commit()
     return {"ok": True}
@@ -412,6 +479,12 @@ def toggle_like(
     else:
         db.add(SocialPostLike(post_id=post_id, user_id=current_user.id))
         liked = True
+        notify_post_liked(
+            db,
+            actor_id=current_user.id,
+            post_author_id=post.author_id,
+            post_id=post_id,
+        )
     db.commit()
     likes_count = db.query(SocialPostLike).filter(SocialPostLike.post_id == post_id).count()
     return {"liked": liked, "likes_count": likes_count}
@@ -433,6 +506,13 @@ def add_comment(
         raise HTTPException(status_code=404, detail="Post not found")
     c = SocialPostComment(post_id=post_id, author_id=current_user.id, content=body.content.strip())
     db.add(c)
+    notify_post_commented(
+        db,
+        actor_id=current_user.id,
+        post_author_id=post.author_id,
+        post_id=post_id,
+        comment_preview=body.content.strip(),
+    )
     db.commit()
     db.refresh(c)
     return {"id": c.id, "ok": True}
@@ -669,6 +749,28 @@ def edit_experience(
     return _merge_profile_payload(db, current_user.id, mut)
 
 
+@router.delete("/profile/me/experience/{idx}")
+def delete_experience(
+    idx: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(LegatoProfile).filter(LegatoProfile.user_id == current_user.id).first()
+    prof = _parse_profile_row(row)
+    exp = prof.get("experience")
+    if not isinstance(exp, list) or idx < 0 or idx >= len(exp):
+        raise HTTPException(status_code=400, detail="Invalid experience index")
+
+    def mut(data: Dict[str, Any]) -> None:
+        ex = data.get("experience")
+        if not isinstance(ex, list) or idx < 0 or idx >= len(ex):
+            return
+        ex.pop(idx)
+        data["experience"] = ex
+
+    return _merge_profile_payload(db, current_user.id, mut)
+
+
 @router.post("/profile/me/education")
 def add_education(
     body: EducationItem,
@@ -687,6 +789,55 @@ def add_education(
             }
         )
         data["education"] = edu
+
+    return _merge_profile_payload(db, current_user.id, mut)
+
+
+@router.put("/profile/me/education/{idx}")
+def edit_education(
+    idx: int,
+    body: EducationItem,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(LegatoProfile).filter(LegatoProfile.user_id == current_user.id).first()
+    prof = _parse_profile_row(row)
+    edu = prof.get("education")
+    if not isinstance(edu, list) or idx < 0 or idx >= len(edu):
+        raise HTTPException(status_code=400, detail="Invalid education index")
+
+    def mut(data: Dict[str, Any]) -> None:
+        ed = data.get("education")
+        if not isinstance(ed, list) or idx < 0 or idx >= len(ed):
+            return
+        ed[idx] = {
+            "school": body.school,
+            "degree": body.degree,
+            "year": body.year,
+        }
+        data["education"] = ed
+
+    return _merge_profile_payload(db, current_user.id, mut)
+
+
+@router.delete("/profile/me/education/{idx}")
+def delete_education(
+    idx: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(LegatoProfile).filter(LegatoProfile.user_id == current_user.id).first()
+    prof = _parse_profile_row(row)
+    edu = prof.get("education")
+    if not isinstance(edu, list) or idx < 0 or idx >= len(edu):
+        raise HTTPException(status_code=400, detail="Invalid education index")
+
+    def mut(data: Dict[str, Any]) -> None:
+        ed = data.get("education")
+        if not isinstance(ed, list) or idx < 0 or idx >= len(ed):
+            return
+        ed.pop(idx)
+        data["education"] = ed
 
     return _merge_profile_payload(db, current_user.id, mut)
 
@@ -1295,6 +1446,7 @@ def list_connections(
                 "invite_id": inv.id,
                 "user_id": peer_id,
                 "name": _display_name(u, pr),
+                "email": u.email,
                 "subtitle": _title_company(pr),
                 "location": pr.get("location") or "",
                 "avatar_url": _avatar_url_for_user(peer_id, pr, base, profile_row=prow),

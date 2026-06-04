@@ -9,7 +9,6 @@ import 'package:legato_mobile/providers/theme_notifier.dart';
 import 'package:legato_mobile/screens/features/features_hub_screen.dart';
 import 'package:legato_mobile/screens/more/more_screen.dart';
 import 'package:legato_mobile/screens/social/profile_documents_screen.dart';
-import 'package:legato_mobile/screens/social/profile_recommendations_screen.dart';
 import 'package:legato_mobile/screens/social/profile_skills_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/utils/platform_file_bytes.dart';
@@ -18,10 +17,11 @@ class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<ProfileScreen> createState() => ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class ProfileScreenState extends State<ProfileScreen> {
+  void refresh() => _load(silent: _data != null);
   bool _loading = true;
   String? _err;
   Map<String, dynamic>? _data;
@@ -33,7 +33,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool silent = false}) async {
     final uid = context.read<AuthProvider>().user?.id;
     if (uid == null) {
       setState(() {
@@ -42,10 +42,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
       return;
     }
-    setState(() {
-      _loading = true;
-      _err = null;
-    });
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _err = null;
+      });
+    }
     try {
       final email = context.read<AuthProvider>().user?.email ?? '';
       final d = await context.read<AppServices>().legato.getSocialProfileResilient(uid, email);
@@ -289,7 +291,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     onPressed: () => Navigator.of(context).push(
                                       MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
                                     ),
-                                    child: const Text('All tools'),
+                                    child: Text(FeaturesHubScreen.allToolsLabel),
                                   ),
                                 ),
                               ],
@@ -336,36 +338,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 8),
 
                   // ── Skills ────────────────────────────────────────────
-                  if (skills.isNotEmpty)
-                    _Section(
-                      title: 'Skills',
-                      action: TextButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(builder: (_) => const ProfileSkillsScreen()),
-                        ),
-                        child: const Text('See all'),
-                      ),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: skills.take(8).map<Widget>((s) {
-                          return Chip(
-                            label: Text(s.toString(), style: const TextStyle(fontSize: 12)),
-                            backgroundColor: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.08),
-                            side: BorderSide(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.25)),
-                          );
-                        }).toList(),
-                      ),
+                  _Section(
+                    title: 'Skills',
+                    action: TextButton(
+                      onPressed: () async {
+                        await _addSkill(context);
+                        await _load();
+                      },
+                      child: const Text('+ Add'),
                     ),
+                    child: skills.isEmpty
+                        ? Text(
+                            'No skills added yet.',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                                ),
+                          )
+                        : Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: skills.map<Widget>((s) {
+                              final label = s.toString();
+                              return InputChip(
+                                label: Text(label, style: const TextStyle(fontSize: 12)),
+                                backgroundColor: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.08),
+                                side: BorderSide(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.25)),
+                                onPressed: () async {
+                                  await _editSkill(context, label);
+                                  await _load();
+                                },
+                                onDeleted: () async {
+                                  await _deleteSkill(context, label);
+                                  await _load();
+                                },
+                              );
+                            }).toList(),
+                          ),
+                  ),
 
-                  if (skills.isNotEmpty) const SizedBox(height: 8),
+                  const SizedBox(height: 8),
 
                   // ── Experience ────────────────────────────────────────
                   _Section(
                     title: 'Experience',
                     action: TextButton(
                       onPressed: () async {
-                        await _addExperience(context);
+                        await _showExperienceDialog(context);
                         await _load();
                       },
                       child: const Text('+ Add'),
@@ -410,6 +428,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           ],
                                         ),
                                       ),
+                                      PopupMenuButton<String>(
+                                        onSelected: (v) async {
+                                          if (v == 'edit') {
+                                            await _showExperienceDialog(context, index: i, initial: m);
+                                            await _load();
+                                          } else if (v == 'delete') {
+                                            await _deleteExperience(context, i);
+                                            await _load();
+                                          }
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                          PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ],
@@ -425,7 +458,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: 'Education',
                     action: TextButton(
                       onPressed: () async {
-                        await _addEducation(context);
+                        await _showEducationDialog(context);
                         await _load();
                       },
                       child: const Text('+ Add'),
@@ -446,10 +479,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         width: 42,
                                         height: 42,
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF1B2A3E).withValues(alpha: 0.08),
+                                          color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.1),
                                           borderRadius: BorderRadius.circular(6),
                                         ),
-                                        child: const Icon(Icons.school_outlined, size: 22, color: Color(0xFF1B2A3E)),
+                                        child: Icon(
+                                          Icons.school_outlined,
+                                          size: 22,
+                                          color: LegatoLinkedInTheme.navActiveGold,
+                                        ),
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
@@ -463,6 +500,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                             ),
                                           ],
                                         ),
+                                      ),
+                                      PopupMenuButton<String>(
+                                        onSelected: (v) async {
+                                          if (v == 'edit') {
+                                            await _showEducationDialog(context, index: i, initial: m);
+                                            await _load();
+                                          } else if (v == 'delete') {
+                                            await _deleteEducation(context, i);
+                                            await _load();
+                                          }
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                          PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -520,34 +572,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1B2A3E).withValues(alpha: 0.08),
+                              color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Icon(Icons.folder_outlined, size: 20, color: Color(0xFF1B2A3E)),
+                            child: Icon(
+                              Icons.folder_outlined,
+                              size: 20,
+                              color: LegatoLinkedInTheme.navActiveGold,
+                            ),
                           ),
                           title: const Text('My Documents', style: TextStyle(fontWeight: FontWeight.w600)),
                           subtitle: const Text('Contracts and legal documents'),
                           trailing: Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(builder: (_) => const ProfileDocumentsScreen()),
-                          ),
-                        ),
-                        const Divider(height: 1, indent: 70),
-                        ListTile(
-                          leading: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Icon(Icons.people_outline, size: 20, color: Colors.green),
-                          ),
-                          title: const Text('Recommendations', style: TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: const Text('Give and receive recommendations'),
-                          trailing: Icon(Icons.chevron_right, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(builder: (_) => const ProfileRecommendationsScreen()),
                           ),
                         ),
                       ],
@@ -633,16 +671,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _addExperience(BuildContext context) async {
-    final title = TextEditingController();
-    final company = TextEditingController();
-    final startDate = TextEditingController();
-    final endDate = TextEditingController();
-    final description = TextEditingController();
+  Future<void> _showExperienceDialog(
+    BuildContext context, {
+    int? index,
+    Map<String, dynamic>? initial,
+  }) async {
+    final title = TextEditingController(text: initial?['title']?.toString() ?? '');
+    final company = TextEditingController(text: initial?['company']?.toString() ?? '');
+    final startDate = TextEditingController(text: initial?['startDate']?.toString() ?? '');
+    final endRaw = initial?['endDate']?.toString() ?? '';
+    final endDate = TextEditingController(text: endRaw == 'Present' ? '' : endRaw);
+    final description = TextEditingController(text: initial?['description']?.toString() ?? '');
+    final isEdit = index != null;
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Add experience'),
+        title: Text(isEdit ? 'Edit experience' : 'Add experience'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -660,13 +704,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
           FilledButton(
             onPressed: () async {
               try {
-                await context.read<AppServices>().legato.addProfileExperience(
-                      title: title.text.trim(),
-                      company: company.text.trim(),
-                      startDate: startDate.text.trim(),
-                      endDate: endDate.text.trim().isEmpty ? null : endDate.text.trim(),
-                      description: description.text.trim(),
-                    );
+                final api = context.read<AppServices>().legato;
+                if (isEdit) {
+                  await api.updateProfileExperience(
+                    index!,
+                    title: title.text.trim(),
+                    company: company.text.trim(),
+                    startDate: startDate.text.trim(),
+                    endDate: endDate.text.trim().isEmpty ? null : endDate.text.trim(),
+                    description: description.text.trim(),
+                  );
+                } else {
+                  await api.addProfileExperience(
+                    title: title.text.trim(),
+                    company: company.text.trim(),
+                    startDate: startDate.text.trim(),
+                    endDate: endDate.text.trim().isEmpty ? null : endDate.text.trim(),
+                    description: description.text.trim(),
+                  );
+                }
                 if (ctx.mounted) Navigator.pop(ctx);
               } on ApiException catch (e) {
                 if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.message)));
@@ -684,14 +740,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     description.dispose();
   }
 
-  Future<void> _addEducation(BuildContext context) async {
-    final school = TextEditingController();
-    final degree = TextEditingController();
-    final year = TextEditingController();
+  Future<void> _deleteExperience(BuildContext context, int index) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete experience?'),
+        content: const Text('This entry will be removed from your profile.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await context.read<AppServices>().legato.deleteProfileExperience(index);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _showEducationDialog(
+    BuildContext context, {
+    int? index,
+    Map<String, dynamic>? initial,
+  }) async {
+    final school = TextEditingController(text: initial?['school']?.toString() ?? '');
+    final degree = TextEditingController(text: initial?['degree']?.toString() ?? '');
+    final year = TextEditingController(text: initial?['year']?.toString() ?? '');
+    final isEdit = index != null;
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Add education'),
+        title: Text(isEdit ? 'Edit education' : 'Add education'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -705,11 +786,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
           FilledButton(
             onPressed: () async {
               try {
-                await context.read<AppServices>().legato.addProfileEducation(
-                      school: school.text.trim(),
-                      degree: degree.text.trim(),
-                      year: year.text.trim(),
-                    );
+                final api = context.read<AppServices>().legato;
+                if (isEdit) {
+                  await api.updateProfileEducation(
+                    index!,
+                    school: school.text.trim(),
+                    degree: degree.text.trim(),
+                    year: year.text.trim(),
+                  );
+                } else {
+                  await api.addProfileEducation(
+                    school: school.text.trim(),
+                    degree: degree.text.trim(),
+                    year: year.text.trim(),
+                  );
+                }
                 if (ctx.mounted) Navigator.pop(ctx);
               } on ApiException catch (e) {
                 if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.message)));
@@ -723,6 +814,114 @@ class _ProfileScreenState extends State<ProfileScreen> {
     school.dispose();
     degree.dispose();
     year.dispose();
+  }
+
+  Future<void> _deleteEducation(BuildContext context, int index) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete education?'),
+        content: const Text('This entry will be removed from your profile.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await context.read<AppServices>().legato.deleteProfileEducation(index);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _addSkill(BuildContext context) async {
+    final ctrl = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add skill'),
+        content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Skill name')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              final t = ctrl.text.trim();
+              if (t.isEmpty) return;
+              try {
+                final d = _data;
+                if (d == null) return;
+                final cur = ((d['skills'] as List<dynamic>?) ?? []).map((e) => e.toString()).toList();
+                if (!cur.contains(t)) cur.add(t);
+                await context.read<AppServices>().legato.putProfileResilient({'skills': cur});
+                if (ctx.mounted) Navigator.pop(ctx);
+              } on ApiException catch (e) {
+                if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.message)));
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+  }
+
+  Future<void> _editSkill(BuildContext context, String current) async {
+    final ctrl = TextEditingController(text: current);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit skill'),
+        content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Skill name')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              final t = ctrl.text.trim();
+              if (t.isEmpty) return;
+              try {
+                final d = _data;
+                if (d == null) return;
+                final cur = ((d['skills'] as List<dynamic>?) ?? []).map((e) => e.toString()).toList();
+                final idx = cur.indexOf(current);
+                if (idx >= 0) cur[idx] = t;
+                await context.read<AppServices>().legato.putProfileResilient({'skills': cur});
+                if (ctx.mounted) Navigator.pop(ctx);
+              } on ApiException catch (e) {
+                if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.message)));
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+  }
+
+  Future<void> _deleteSkill(BuildContext context, String skill) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove skill?'),
+        content: Text('Remove "$skill" from your profile?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      final d = _data;
+      if (d == null) return;
+      final cur = ((d['skills'] as List<dynamic>?) ?? []).map((e) => e.toString()).where((s) => s != skill).toList();
+      await context.read<AppServices>().legato.putProfileResilient({'skills': cur});
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 }
 

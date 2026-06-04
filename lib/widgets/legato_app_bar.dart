@@ -8,12 +8,14 @@ class LegatoAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.actions,
     this.bottom,
     this.centerTitle,
+    this.leading,
   });
 
   final Widget title;
   final List<Widget>? actions;
   final PreferredSizeWidget? bottom;
   final bool? centerTitle;
+  final Widget? leading;
 
   @override
   Size get preferredSize {
@@ -30,13 +32,14 @@ class LegatoAppBar extends StatelessWidget implements PreferredSizeWidget {
       bottom: bottom,
       centerTitle: centerTitle,
       automaticallyImplyLeading: false,
-      leading: canPop
-          ? IconButton(
-              icon: const Icon(Icons.arrow_back),
-              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              onPressed: () => Navigator.of(context).maybePop(),
-            )
-          : null,
+      leading: leading ??
+          (canPop
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  onPressed: () => Navigator.of(context).maybePop(),
+                )
+              : null),
     );
   }
 }

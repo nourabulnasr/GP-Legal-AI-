@@ -5,7 +5,7 @@ import 'package:legato_mobile/screens/features/features_hub_screen.dart';
 import 'package:legato_mobile/screens/history/history_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 
-/// Contracts tab: quick entry to analysis workflow + full tools grid (12 tools).
+/// Contracts tab: quick entry to analysis workflow + full tools grid.
 class ContractsTabScreen extends StatelessWidget {
   const ContractsTabScreen({super.key});
 
@@ -59,7 +59,7 @@ class ContractsTabScreen extends StatelessWidget {
                 MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
               ),
               icon: const Icon(Icons.apps_outlined),
-              label: const Text('Open all tools (12)'),
+              label: Text(FeaturesHubScreen.openAllToolsLabel),
             ),
           ],
         ),

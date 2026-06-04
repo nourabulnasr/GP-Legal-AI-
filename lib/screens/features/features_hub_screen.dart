@@ -10,6 +10,10 @@ import 'package:legato_mobile/widgets/legato_app_bar.dart';
 class FeaturesHubScreen extends StatelessWidget {
   const FeaturesHubScreen({super.key});
 
+  static int get toolCount => _items.length;
+  static String get openAllToolsLabel => 'Open all tools ($toolCount)';
+  static String get allToolsLabel => 'All tools ($toolCount)';
+
   static const _items = <_FeatureItem>[
     _FeatureItem(
       'Translate contract',
@@ -19,23 +23,20 @@ class FeaturesHubScreen extends StatelessWidget {
     ),
     _FeatureItem('E-sign (in-app record)', 'Record consent + signer name', Icons.draw_outlined, EsignFeatureScreen()),
     _FeatureItem('Compare A vs B', 'Diff files or two saved analyses', Icons.compare_arrows, CompareFeatureScreen()),
-    _FeatureItem('AI Assistant', 'Chat with Gemini via /chat/assistant', Icons.chat_outlined, ChatAssistantScreen()),
+    _FeatureItem('AI Assistant', 'General Q&A or negotiation coach (Gemini)', Icons.chat_outlined, ChatAssistantScreen()),
     _FeatureItem('Explain clause', 'Paste clause text + optional analysis id', Icons.menu_book_outlined, ExplainClauseFeatureScreen()),
     _FeatureItem('Risk dashboard', 'Scores from saved analysis', Icons.analytics_outlined, RiskFeatureScreen()),
     _FeatureItem('Summarize clauses', 'Batch summaries via LFM', Icons.summarize_outlined, SummarizeFeatureScreen()),
-    _FeatureItem('Negotiation assistant', 'Redlines and talking points', Icons.handshake_outlined, NegotiationFeatureScreen()),
     _FeatureItem('Share analysis', 'Read-only share link', Icons.share_outlined, ShareFeatureScreen()),
     _FeatureItem('Contract timeline', 'Milestones (admin)', Icons.timeline_outlined, TimelineAdminFeatureScreen()),
-    _FeatureItem('Deal messaging', 'Threads per analysis', Icons.forum_outlined, DealMessagingFeatureScreen()),
-    _FeatureItem('Legal network', 'Profiles and directory', Icons.groups_outlined, LegalNetworkFeatureScreen()),
-    _FeatureItem('Biometrics', 'Face ID info · JWT storage notes', Icons.fingerprint_outlined, BiometricInfoScreen()),
+    _FeatureItem('Biometrics', 'Face ID info — JWT storage notes', Icons.fingerprint_outlined, BiometricInfoScreen()),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: LegatoAppBar(
-        title: const Text('Tools'),
+        title: Text('Tools ($toolCount)'),
       ),
       body: GridView.builder(
         padding: const EdgeInsets.all(12),

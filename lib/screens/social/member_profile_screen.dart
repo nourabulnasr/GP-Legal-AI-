@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
+import 'package:legato_mobile/screens/messaging/conversation_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/user_avatar.dart';
@@ -96,6 +97,24 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
     }
   }
 
+  Future<void> _message() async {
+    try {
+      final name = _data?['display_name']?.toString() ?? 'Chat';
+      final conv = await context.read<AppServices>().legato.createDirectConversation(widget.userId);
+      if (!mounted) return;
+      final id = (conv['id'] as num?)?.toInt();
+      if (id == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ConversationScreen(conversationId: id, title: name),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -117,20 +136,40 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                     _HeaderCard(data: _data!),
                     const SizedBox(height: 12),
                     if (me != null && me != widget.userId)
-                      _inviteSent || (_data?['connection_status']?.toString() == 'connected') || (_data?['connection_status']?.toString() == 'pending')
-                          ? OutlinedButton.icon(
-                              onPressed: null,
-                              icon: const Icon(Icons.check, size: 16),
-                              label: Text(_data?['connection_status']?.toString() == 'connected' ? 'Connected' : 'Pending'),
+                      _data?['connection_status']?.toString() == 'connected'
+                          ? Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: null,
+                                    icon: const Icon(Icons.check, size: 16),
+                                    label: const Text('Connected'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: _message,
+                                    icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                                    label: const Text('Message'),
+                                  ),
+                                ),
+                              ],
                             )
-                          : FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: LegatoLinkedInTheme.navActiveGold,
-                                foregroundColor: const Color(0xFF1B1F23),
-                              ),
-                              onPressed: _connect,
-                              child: const Text('Connect'),
-                            ),
+                          : _inviteSent || (_data?['connection_status']?.toString() == 'pending')
+                              ? OutlinedButton.icon(
+                                  onPressed: null,
+                                  icon: const Icon(Icons.check, size: 16),
+                                  label: const Text('Pending'),
+                                )
+                              : FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: LegatoLinkedInTheme.navActiveGold,
+                                    foregroundColor: const Color(0xFF1B1F23),
+                                  ),
+                                  onPressed: _connect,
+                                  child: const Text('Connect'),
+                                ),
                   ],
                 ],
               ),

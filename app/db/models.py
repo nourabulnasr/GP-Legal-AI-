@@ -35,6 +35,7 @@ class Analysis(Base):
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ocr_used: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0/1
     detected_lang: Mapped[str | None] = mapped_column(String, nullable=True)
+    contract_category: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     lawyer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -57,7 +58,8 @@ class LegatoDealThread(Base):
     __tablename__ = "legato_deal_threads"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    analysis_id: Mapped[int] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=False)
+    analysis_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("analyses.id"), index=True, nullable=True)
+    contract_category: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -71,6 +73,16 @@ class LegatoDealMessage(Base):
     author_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class LegatoDealThreadMember(Base):
+    __tablename__ = "legato_deal_thread_members"
+
+    thread_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("legato_deal_threads.id"), primary_key=True, index=True
+    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True, index=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class LegatoTimelineEvent(Base):
@@ -152,6 +164,21 @@ class SocialPostShare(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class UserNotification(Base):
+    __tablename__ = "user_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    recipient_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    actor_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    post_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("social_posts.id"), index=True, nullable=True)
+    message: Mapped[str] = mapped_column(String(512), nullable=False)
+    read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 class NetworkInvite(Base):
     __tablename__ = "network_invites"
     __table_args__ = (UniqueConstraint("requester_id", "addressee_id", name="uq_network_invite_pair"),)
@@ -194,3 +221,41 @@ class ProfileUserDocument(Base):
     mime_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     file_bytes: Mapped[Optional[bytes]] = mapped_column(nullable=True)  # SQLite BLOB
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# --- User messaging (private + group, connected users only) ---
+
+
+class UserConversation(Base):
+    __tablename__ = "user_conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="direct", index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    created_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class UserConversationMember(Base):
+    __tablename__ = "user_conversation_members"
+    __table_args__ = (UniqueConstraint("conversation_id", "user_id", name="uq_conv_member"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    conversation_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user_conversations.id"), index=True, nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_read_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class UserMessage(Base):
+    __tablename__ = "user_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    conversation_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user_conversations.id"), index=True, nullable=False
+    )
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)

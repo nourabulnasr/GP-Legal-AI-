@@ -13,11 +13,15 @@ class AnalysisDetailScreen extends StatelessWidget {
     required this.title,
     required this.payload,
     this.analysisId,
+    this.readOnly = false,
+    this.onClose,
   });
 
   final String title;
   final Map<String, dynamic> payload;
   final int? analysisId;
+  final bool readOnly;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +38,11 @@ class AnalysisDetailScreen extends StatelessWidget {
       child: Scaffold(
         appBar: LegatoAppBar(
           title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          leading: onClose != null
+              ? IconButton(icon: const Icon(Icons.close), onPressed: onClose)
+              : null,
           actions: [
-            if (analysisId != null)
+            if (!readOnly && analysisId != null)
               IconButton(
                 tooltip: 'Chat about this analysis',
                 icon: const Icon(Icons.chat_bubble_outline),
@@ -54,16 +61,34 @@ class AnalysisDetailScreen extends StatelessWidget {
             ],
           ),
         ),
-        body: TabBarView(
+        body: Column(
           children: [
-            _ViolationsTab(
-              hits: hitsAsList,
-              needsReview: needsReview,
-              unifiedRisk: unifiedRisk,
-              analysisId: analysisId,
+            if (readOnly)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.12),
+                child: const Text(
+                  'Read-only shared analysis — view only',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _ViolationsTab(
+                    hits: hitsAsList,
+                    needsReview: needsReview,
+                    unifiedRisk: unifiedRisk,
+                    analysisId: analysisId,
+                    readOnly: readOnly,
+                  ),
+                  _SummaryTab(labor: labor, payload: payload),
+                  _RagTab(ragList: ragList),
+                ],
+              ),
             ),
-            _SummaryTab(labor: labor, payload: payload),
-            _RagTab(ragList: ragList),
           ],
         ),
       ),
@@ -79,12 +104,14 @@ class _ViolationsTab extends StatelessWidget {
     required this.needsReview,
     this.unifiedRisk,
     this.analysisId,
+    this.readOnly = false,
   });
 
   final List<dynamic> hits;
   final bool needsReview;
   final dynamic unifiedRisk;
   final int? analysisId;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +185,11 @@ class _ViolationsTab extends StatelessWidget {
           const SizedBox(height: 10),
           for (final raw in hits)
             if (raw is Map)
-              _ViolationCard(hit: Map<String, dynamic>.from(raw), analysisId: analysisId),
+              _ViolationCard(
+                hit: Map<String, dynamic>.from(raw),
+                analysisId: analysisId,
+                readOnly: readOnly,
+              ),
         ],
       ],
     );
@@ -166,10 +197,15 @@ class _ViolationsTab extends StatelessWidget {
 }
 
 class _ViolationCard extends StatelessWidget {
-  const _ViolationCard({required this.hit, this.analysisId});
+  const _ViolationCard({
+    required this.hit,
+    this.analysisId,
+    this.readOnly = false,
+  });
 
   final Map<String, dynamic> hit;
   final int? analysisId;
+  final bool readOnly;
 
   Color _severityColor(BuildContext context, String? sev) {
     switch (sev?.toLowerCase()) {
@@ -288,32 +324,34 @@ class _ViolationCard extends StatelessWidget {
                 style: const TextStyle(fontSize: 13, height: 1.5, color: _onCardText),
               ),
             ],
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: color,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () {
-                  final text = _clauseText();
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ExplainClauseFeatureScreen(
-                        initialClauseText: text,
-                        initialAnalysisId: analysisId,
-                        initialRuleId: ruleId,
+            if (!readOnly) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: color,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () {
+                    final text = _clauseText();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ExplainClauseFeatureScreen(
+                          initialClauseText: text,
+                          initialAnalysisId: analysisId,
+                          initialRuleId: ruleId,
+                        ),
                       ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.menu_book_outlined, size: 16),
-                label: const Text('Explain with LFM', style: TextStyle(fontSize: 12)),
+                    );
+                  },
+                  icon: const Icon(Icons.menu_book_outlined, size: 16),
+                  label: const Text('Explain with LFM', style: TextStyle(fontSize: 12)),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
