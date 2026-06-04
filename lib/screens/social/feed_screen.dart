@@ -9,6 +9,7 @@ import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/config/app_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
+import 'package:legato_mobile/providers/user_profile_provider.dart';
 import 'package:legato_mobile/screens/chat/chat_hub_screen.dart';
 import 'package:legato_mobile/screens/social/member_profile_screen.dart';
 import 'package:legato_mobile/screens/social/social_constants.dart';
@@ -75,36 +76,16 @@ class FeedScreenState extends State<FeedScreen> {
   bool _loading = false;
   bool _hasMore = true;
   String? _err;
-  String? _myAvatarUrl;
-  String _myDisplayName = '';
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
     _load(reset: true);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadMyAvatar());
   }
 
   void refresh() {
     _load(reset: true);
-    _loadMyAvatar();
-  }
-
-  Future<void> _loadMyAvatar() async {
-    final auth = context.read<AuthProvider>();
-    final uid = auth.user?.id;
-    final email = auth.user?.email ?? '';
-    if (uid == null) return;
-    try {
-      final d = await context.read<AppServices>().legato.getSocialProfileResilient(uid, email);
-      if (!mounted) return;
-      setState(() {
-        _myAvatarUrl = d['avatar_url']?.toString();
-        _myDisplayName = d['display_name']?.toString() ??
-            (email.contains('@') ? email.split('@').first : email);
-      });
-    } catch (_) {}
   }
 
   @override
@@ -260,11 +241,17 @@ class FeedScreenState extends State<FeedScreen> {
         onPosted: () => _load(reset: true),
       ),
     );
-    if (mounted) _loadMyAvatar();
   }
 
   @override
   Widget build(BuildContext context) {
+    final profile = context.watch<UserProfileProvider>();
+    final auth = context.watch<AuthProvider>();
+    final myName = profile.displayName.isNotEmpty
+        ? profile.displayName
+        : (auth.user?.email.contains('@') == true
+            ? auth.user!.email.split('@').first
+            : auth.user?.email ?? '');
     return ColoredBox(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
@@ -349,8 +336,8 @@ class FeedScreenState extends State<FeedScreen> {
                       children: [
                         UserAvatar(
                           radius: 18,
-                          imageUrl: _myAvatarUrl,
-                          name: _myDisplayName,
+                          imageUrl: profile.avatarUrl,
+                          name: myName,
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -879,8 +866,14 @@ class _PostCardState extends State<_PostCard> {
     final sc = (p['shares_count'] as num?)?.toInt() ?? 0;
     final liked = p['liked'] == true;
     final meId = context.watch<AuthProvider>().user?.id;
+    final profile = context.watch<UserProfileProvider>();
     final authorId = (p['author_id'] as num?)?.toInt() ?? (p['user_id'] as num?)?.toInt();
     final isOwn = meId != null && authorId != null && meId == authorId;
+    final authorAvatar = profile.avatarForUser(
+      authorId,
+      meId,
+      p['author_avatar_url']?.toString(),
+    );
     final connectionStatus = p['connection_status']?.toString() ?? (isOwn ? 'self' : 'none');
 
     return Card(
@@ -903,7 +896,7 @@ class _PostCardState extends State<_PostCard> {
                       children: [
                         UserAvatar(
                           radius: 22,
-                          imageUrl: p['author_avatar_url']?.toString(),
+                          imageUrl: authorAvatar,
                           name: p['author_name']?.toString() ?? 'Member',
                         ),
                         const SizedBox(width: 10),
@@ -1052,16 +1045,24 @@ class _PostCardState extends State<_PostCard> {
                   child: Text('No comments yet. Be the first!', style: TextStyle(fontSize: 13, color: LegatoLinkedInTheme.textSecondaryAdaptive(context))),
                 ),
               ..._comments.map(
-                (c) => ListTile(
+                (c) {
+                  final commentAuthorId = (c['author_id'] as num?)?.toInt();
+                  final commentAvatar = profile.avatarForUser(
+                    commentAuthorId,
+                    meId,
+                    c['author_avatar_url']?.toString(),
+                  );
+                  return ListTile(
                   dense: true,
                   leading: UserAvatar(
                     radius: 16,
-                    imageUrl: c['author_avatar_url']?.toString(),
+                    imageUrl: commentAvatar,
                     name: c['author_name']?.toString() ?? '',
                   ),
                   title: Text(c['author_name']?.toString() ?? ''),
                   subtitle: Text(c['content']?.toString() ?? ''),
-                ),
+                );
+                },
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 8),

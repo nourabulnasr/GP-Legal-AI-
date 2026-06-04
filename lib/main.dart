@@ -11,6 +11,7 @@ import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/config/runtime_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/providers/theme_notifier.dart';
+import 'package:legato_mobile/providers/user_profile_provider.dart';
 import 'package:legato_mobile/screens/share/shared_analysis_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/utils/share_link.dart';
@@ -52,6 +53,9 @@ class _LegatoAppState extends State<LegatoApp> {
             p.bootstrap();
             return p;
           },
+        ),
+        ChangeNotifierProvider<UserProfileProvider>(
+          create: (context) => UserProfileProvider(context.read<AppServices>().legato),
         ),
         ChangeNotifierProvider<ThemeNotifier>.value(value: widget.themeNotifier),
       ],

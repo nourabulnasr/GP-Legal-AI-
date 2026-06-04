@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
+import 'package:legato_mobile/providers/user_profile_provider.dart';
 import 'package:legato_mobile/screens/analyze/analyze_screen.dart';
 import 'package:legato_mobile/screens/features/features_hub_screen.dart';
 import 'package:legato_mobile/screens/translate/translate_contract_screen.dart';
@@ -22,21 +23,20 @@ class DashboardTab extends StatefulWidget {
 
 class DashboardTabState extends State<DashboardTab> {
   void refresh() {
-    _loadProfile();
+    final auth = context.read<AuthProvider>();
+    context.read<UserProfileProvider>().refresh(
+          userId: auth.user?.id,
+          email: auth.user?.email ?? '',
+        );
     _checkConnection();
   }
   bool? _connected;
   Timer? _connectionTimer;
-  String? _avatarUrl;
-  String _displayName = '';
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadProfile();
-      _checkConnection();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkConnection());
     _connectionTimer = Timer.periodic(const Duration(seconds: 45), (_) => _checkConnection());
   }
 
@@ -44,22 +44,6 @@ class DashboardTabState extends State<DashboardTab> {
   void dispose() {
     _connectionTimer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _loadProfile() async {
-    final auth = context.read<AuthProvider>();
-    final uid = auth.user?.id;
-    final email = auth.user?.email ?? '';
-    if (uid == null) return;
-    try {
-      final d = await context.read<AppServices>().legato.getSocialProfileResilient(uid, email);
-      if (!mounted) return;
-      setState(() {
-        _avatarUrl = d['avatar_url']?.toString();
-        _displayName = d['display_name']?.toString() ??
-            (email.contains('@') ? email.split('@').first : email);
-      });
-    } catch (_) {}
   }
 
   Future<void> _checkConnection() async {
@@ -95,10 +79,11 @@ class DashboardTabState extends State<DashboardTab> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final profile = context.watch<UserProfileProvider>();
     final user = auth.user;
     final rawEmail = user?.email ?? 'Guest';
-    final displayName = _displayName.isNotEmpty
-        ? _displayName
+    final displayName = profile.displayName.isNotEmpty
+        ? profile.displayName
         : (rawEmail.contains('@') ? rawEmail.split('@').first : rawEmail);
 
     return ColoredBox(
@@ -130,7 +115,7 @@ class DashboardTabState extends State<DashboardTab> {
                           children: [
                             UserAvatar(
                               radius: 36,
-                              imageUrl: _avatarUrl,
+                              imageUrl: profile.avatarUrl,
                               name: displayName,
                               backgroundColor: Colors.white,
                             ),

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/app_services.dart';
+import 'package:legato_mobile/providers/auth_provider.dart';
+import 'package:legato_mobile/providers/user_profile_provider.dart';
 import 'package:legato_mobile/screens/home/dashboard_tab.dart';
 import 'package:legato_mobile/screens/messaging/messages_hub_screen.dart';
 import 'package:legato_mobile/screens/social/alerts_screen.dart';
@@ -46,6 +48,15 @@ class _HomeShellState extends State<HomeShell> {
     super.initState();
     _refreshBadge();
     _badgeTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshBadge());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadUserProfile());
+  }
+
+  Future<void> _loadUserProfile() async {
+    final auth = context.read<AuthProvider>();
+    await context.read<UserProfileProvider>().refresh(
+          userId: auth.user?.id,
+          email: auth.user?.email ?? '',
+        );
   }
 
   @override

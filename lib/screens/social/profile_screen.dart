@@ -6,6 +6,7 @@ import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/providers/theme_notifier.dart';
+import 'package:legato_mobile/providers/user_profile_provider.dart';
 import 'package:legato_mobile/screens/features/features_hub_screen.dart';
 import 'package:legato_mobile/screens/more/more_screen.dart';
 import 'package:legato_mobile/screens/social/profile_documents_screen.dart';
@@ -25,7 +26,6 @@ class ProfileScreenState extends State<ProfileScreen> {
   bool _loading = true;
   String? _err;
   Map<String, dynamic>? _data;
-  int _avatarVersion = 0;
 
   @override
   void initState() {
@@ -52,6 +52,10 @@ class ProfileScreenState extends State<ProfileScreen> {
       final email = context.read<AuthProvider>().user?.email ?? '';
       final d = await context.read<AppServices>().legato.getSocialProfileResilient(uid, email);
       if (!mounted) return;
+      context.read<UserProfileProvider>().applyFromProfile(
+            d,
+            fallbackName: email.contains('@') ? email.split('@').first : email,
+          );
       setState(() {
         _data = d;
         _loading = false;
@@ -71,13 +75,6 @@ class ProfileScreenState extends State<ProfileScreen> {
         });
       }
     }
-  }
-
-  String? _avatarDisplayUrl(Map<String, dynamic> d) {
-    final raw = d['avatar_url']?.toString().trim();
-    if (raw == null || raw.isEmpty) return null;
-    final sep = raw.contains('?') ? '&' : '?';
-    return '$raw${sep}v=$_avatarVersion';
   }
 
   Future<void> _editProfile() async {
@@ -188,6 +185,7 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
 
     final d = _data!;
+    final profile = context.watch<UserProfileProvider>();
     final stats = (d['stats'] as Map<String, dynamic>?) ?? {};
     final skills = (d['skills'] as List<dynamic>?) ?? [];
     final experience = (d['experience'] as List<dynamic>?) ?? [];
@@ -305,7 +303,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                     left: 16,
                     top: _ProfileCoverBanner.height - _ProfileAvatarTile.size / 2,
                     child: _ProfileAvatarTile(
-                      avatarUrl: _avatarDisplayUrl(d),
+                      avatarUrl: profile.avatarUrl,
                       initial: initial,
                       onTap: _uploadAvatar,
                     ),
@@ -652,8 +650,8 @@ class ProfileScreenState extends State<ProfileScreen> {
       final resp = await legato.uploadProfileAvatar(bytes, pickedImageFilename(file));
       final url = resp['avatar_url']?.toString().trim();
       if (mounted && url != null && url.isNotEmpty) {
+        context.read<UserProfileProvider>().setAvatarUrl(url);
         setState(() {
-          _avatarVersion = DateTime.now().millisecondsSinceEpoch;
           _data = Map<String, dynamic>.from(_data ?? {})..['avatar_url'] = url;
         });
       }
