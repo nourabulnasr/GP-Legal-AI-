@@ -26,7 +26,7 @@ class NetworkScreenState extends State<NetworkScreen> {
   List<dynamic> _connections = [];
   bool _searching = false;
   List<dynamic> _results = [];
-  final Set<int> _sentInvites = {};
+  static final Set<int> _sentInvites = {};
 
   @override
   void initState() {
@@ -101,7 +101,6 @@ class NetworkScreenState extends State<NetworkScreen> {
           ?.toInt();
       if (rid != null && rid > 0) ids.add(rid);
     }
-    ids.addAll(_sentInvites);
     return ids;
   }
 
@@ -118,9 +117,14 @@ class NetworkScreenState extends State<NetworkScreen> {
   Future<List<dynamic>> _loadConnections(dynamic api) async {
     try {
       final connRes = await api.getNetworkConnections();
-      return (connRes['items'] as List<dynamic>?) ??
+      final raw = (connRes['items'] as List<dynamic>?) ??
           (connRes['connections'] as List<dynamic>?) ??
           <dynamic>[];
+      final seen = <int>{};
+      return raw.where((item) {
+        final uid = (Map<String, dynamic>.from(item as Map)['user_id'] as num?)?.toInt() ?? 0;
+        return uid > 0 && seen.add(uid);
+      }).toList();
     } on ApiException catch (e) {
       if (e.statusCode != 404) rethrow; // 404 = endpoint not yet deployed, silently ignore
       return <dynamic>[];
@@ -190,7 +194,6 @@ class NetworkScreenState extends State<NetworkScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Invitation sent — they will see your request')),
       );
-      await _load();
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
@@ -259,7 +262,14 @@ class NetworkScreenState extends State<NetworkScreen> {
                                     )
                                 : null,
                             trailing: sent
-                                ? const Chip(label: Text('Sent ✓'))
+                                ? OutlinedButton(
+                                    onPressed: null,
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.grey,
+                                      side: const BorderSide(color: Colors.grey),
+                                    ),
+                                    child: const Text('Invitation Sent'),
+                                  )
                                 : FilledButton.tonal(
                                     onPressed: uid > 0 ? () => _invite(uid) : null,
                                     child: const Text('Connect'),
@@ -270,7 +280,9 @@ class NetworkScreenState extends State<NetworkScreen> {
                       const SizedBox(height: 12),
                     ],
                     const SizedBox(height: 16),
-                    if (_stats != null) _StatsGrid(stats: _stats!),
+                    if (_stats != null) _StatsGrid(
+                      stats: {..._stats!, 'connections': _connections.length},
+                    ),
                     const SizedBox(height: 16),
                     Card(
                       child: ListTile(
@@ -327,7 +339,14 @@ class NetworkScreenState extends State<NetworkScreen> {
                                   )
                               : null,
                           trailing: sent
-                              ? const Chip(label: Text('Sent ✓'))
+                              ? OutlinedButton(
+                                  onPressed: null,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.grey,
+                                    side: const BorderSide(color: Colors.grey),
+                                  ),
+                                  child: const Text('Invitation Sent'),
+                                )
                               : FilledButton.tonal(
                                   onPressed: uid > 0 ? () => _invite(uid) : null,
                                   child: const Text('Connect'),
@@ -411,7 +430,7 @@ class NetworkScreenState extends State<NetworkScreen> {
                 const Divider(height: 24),
               ] else if (_stats != null) ...[
                 Text(
-                  '${_stats!['connections_count'] ?? _stats!['total_connections'] ?? _stats!['connections'] ?? 0} connections',
+                  '${_connections.length} connections',
                   style: const TextStyle(fontSize: 14),
                 ),
                 const Divider(height: 24),
@@ -459,7 +478,14 @@ class NetworkScreenState extends State<NetworkScreen> {
                     title: Text(m['name']?.toString() ?? 'Member'),
                     subtitle: Text(m['subtitle']?.toString() ?? ''),
                     trailing: sent
-                        ? const Chip(label: Text('Sent ✓'))
+                        ? OutlinedButton(
+                            onPressed: null,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.grey,
+                              side: const BorderSide(color: Colors.grey),
+                            ),
+                            child: const Text('Invitation Sent'),
+                          )
                         : FilledButton.tonal(
                             onPressed: uid > 0 ? () => _invite(uid) : null,
                             child: const Text('Connect'),
