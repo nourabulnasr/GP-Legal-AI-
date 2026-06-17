@@ -27,6 +27,7 @@ class NetworkScreenState extends State<NetworkScreen> {
   bool _searching = false;
   List<dynamic> _results = [];
   final Set<int> _sentInvites = {};
+  final Set<int> _invitingUserIds = {};
 
   @override
   void initState() {
@@ -182,18 +183,71 @@ class NetworkScreenState extends State<NetworkScreen> {
     }
   }
 
-  Future<void> _invite(int userId) async {
+  Future<void> _invite(int userId, {VoidCallback? onLocalUpdate}) async {
+    if (userId <= 0 || _sentInvites.contains(userId) || _invitingUserIds.contains(userId)) return;
+    setState(() => _invitingUserIds.add(userId));
+    onLocalUpdate?.call();
     try {
       await context.read<AppServices>().legato.sendNetworkInvite(userId);
       if (!mounted) return;
-      setState(() => _sentInvites.add(userId));
+      setState(() {
+        _invitingUserIds.remove(userId);
+        _sentInvites.add(userId);
+      });
+      onLocalUpdate?.call();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invitation sent — they will see your request')),
+        const SnackBar(content: Text('Invitation sent')),
       );
-      await _load();
+      await _load(silent: true);
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (!mounted) return;
+      setState(() => _invitingUserIds.remove(userId));
+      onLocalUpdate?.call();
+      final msg = e.message.toLowerCase();
+      if (msg.contains('already') || msg.contains('pending') || msg.contains('connected')) {
+        setState(() => _sentInvites.add(userId));
+        onLocalUpdate?.call();
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
+  }
+
+  Widget _connectTrailing({
+    required int uid,
+    required bool sent,
+    required bool inviting,
+    required VoidCallback? onConnect,
+  }) {
+    if (sent) {
+      return OutlinedButton(
+        onPressed: null,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: LegatoLinkedInTheme.navActiveGold,
+          side: BorderSide(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.85)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          minimumSize: const Size(0, 34),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: const Text('Invitation sent', style: TextStyle(fontWeight: FontWeight.w600)),
+      );
+    }
+    return FilledButton(
+      style: FilledButton.styleFrom(
+        backgroundColor: LegatoLinkedInTheme.navActiveGold,
+        foregroundColor: const Color(0xFF1B1F23),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        minimumSize: const Size(0, 34),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      onPressed: inviting || uid <= 0 ? null : onConnect,
+      child: inviting
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1B1F23)),
+            )
+          : const Text('Connect', style: TextStyle(fontWeight: FontWeight.w600)),
+    );
   }
 
   @override
@@ -241,6 +295,7 @@ class NetworkScreenState extends State<NetworkScreen> {
                         final m = Map<String, dynamic>.from(raw as Map);
                         final uid = (m['user_id'] as num?)?.toInt() ?? 0;
                         final sent = _sentInvites.contains(uid);
+                        final inviting = _invitingUserIds.contains(uid);
                         return Card(
                           child: ListTile(
                             leading: UserAvatar(
@@ -258,12 +313,12 @@ class NetworkScreenState extends State<NetworkScreen> {
                                       MaterialPageRoute<void>(builder: (_) => MemberProfileScreen(userId: uid)),
                                     )
                                 : null,
-                            trailing: sent
-                                ? const Chip(label: Text('Sent ✓'))
-                                : FilledButton.tonal(
-                                    onPressed: uid > 0 ? () => _invite(uid) : null,
-                                    child: const Text('Connect'),
-                                  ),
+                            trailing: _connectTrailing(
+                              uid: uid,
+                              sent: sent,
+                              inviting: inviting,
+                              onConnect: () => _invite(uid),
+                            ),
                           ),
                         );
                       }),
@@ -309,6 +364,7 @@ class NetworkScreenState extends State<NetworkScreen> {
                       final m = Map<String, dynamic>.from(raw as Map);
                       final uid = (m['user_id'] as num?)?.toInt() ?? 0;
                       final sent = _sentInvites.contains(uid);
+                      final inviting = _invitingUserIds.contains(uid);
                       return Card(
                         child: ListTile(
                           leading: UserAvatar(
@@ -326,12 +382,12 @@ class NetworkScreenState extends State<NetworkScreen> {
                                     MaterialPageRoute<void>(builder: (_) => MemberProfileScreen(userId: uid)),
                                   )
                               : null,
-                          trailing: sent
-                              ? const Chip(label: Text('Sent ✓'))
-                              : FilledButton.tonal(
-                                  onPressed: uid > 0 ? () => _invite(uid) : null,
-                                  child: const Text('Connect'),
-                                ),
+                          trailing: _connectTrailing(
+                            uid: uid,
+                            sent: sent,
+                            inviting: inviting,
+                            onConnect: () => _invite(uid),
+                          ),
                         ),
                       );
                     }),
@@ -347,7 +403,8 @@ class NetworkScreenState extends State<NetworkScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
+      builder: (_) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => DraggableScrollableSheet(
         initialChildSize: 0.95,
         minChildSize: 0.5,
         maxChildSize: 0.95,
@@ -450,6 +507,7 @@ class NetworkScreenState extends State<NetworkScreen> {
                   final m = Map<String, dynamic>.from(raw as Map);
                   final uid = (m['user_id'] as num?)?.toInt() ?? 0;
                   final sent = _sentInvites.contains(uid);
+                  final inviting = _invitingUserIds.contains(uid);
                   return ListTile(
                     leading: UserAvatar(
                       radius: 20,
@@ -458,17 +516,18 @@ class NetworkScreenState extends State<NetworkScreen> {
                     ),
                     title: Text(m['name']?.toString() ?? 'Member'),
                     subtitle: Text(m['subtitle']?.toString() ?? ''),
-                    trailing: sent
-                        ? const Chip(label: Text('Sent ✓'))
-                        : FilledButton.tonal(
-                            onPressed: uid > 0 ? () => _invite(uid) : null,
-                            child: const Text('Connect'),
-                          ),
+                    trailing: _connectTrailing(
+                      uid: uid,
+                      sent: sent,
+                      inviting: inviting,
+                      onConnect: () => _invite(uid, onLocalUpdate: () => setSheetState(() {})),
+                    ),
                   );
                 }),
             ],
           ),
         ),
+      ),
       ),
     );
   }
