@@ -10,7 +10,10 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
+import json as _json
+
 from app.db.models import (
+    LawyerApplication,
     LegatoProfile,
     NetworkInvite,
     User,
@@ -36,15 +39,21 @@ def _user_public(db: Session, user_id: int) -> Dict[str, Any]:
 
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
-        return {"user_id": user_id, "name": "?", "email": "", "avatar_url": ""}
+        return {"user_id": user_id, "name": "?", "email": "", "avatar_url": "", "is_verified_lawyer": False}
     prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == user_id).first()
     prof = _parse_profile_row(prow)
     base = _public_base_url()
+    is_vl = bool(
+        db.query(LawyerApplication)
+        .filter(LawyerApplication.user_id == user_id, LawyerApplication.status == "approved")
+        .first()
+    )
     return {
         "user_id": user_id,
         "name": _display_name(u, db),
         "email": u.email,
         "avatar_url": _avatar_url_for_user(user_id, prof, base, profile_row=prow) or "",
+        "is_verified_lawyer": is_vl,
     }
 
 
@@ -414,6 +423,15 @@ def list_messages(
     )
     if msgs:
         _mark_conversation_read(db, conversation_id, current_user.id, msgs[-1].id)
+    author_ids = list({m.author_id for m in msgs})
+    vl_set: set[int] = set()
+    if author_ids:
+        rows = (
+            db.query(LawyerApplication.user_id)
+            .filter(LawyerApplication.user_id.in_(author_ids), LawyerApplication.status == "approved")
+            .all()
+        )
+        vl_set = {r.user_id for r in rows}
     out = []
     for m in msgs:
         u = db.query(User).filter(User.id == m.author_id).first()
@@ -421,8 +439,12 @@ def list_messages(
             "id": m.id,
             "author_id": m.author_id,
             "author_name": _display_name(u, db) if u else "?",
+            "author_is_verified_lawyer": m.author_id in vl_set,
             "email": u.email if u else "",
             "body": m.body,
+            "msg_type": getattr(m, "msg_type", "text") or "text",
+            "offer_data": _json.loads(m.offer_json) if getattr(m, "offer_json", None) else None,
+            "offer_status": getattr(m, "offer_status", None),
             "created_at": m.created_at.isoformat() + "Z",
             "is_mine": m.author_id == current_user.id,
         }
@@ -452,9 +474,99 @@ def post_message(
         "id": msg.id,
         "author_id": current_user.id,
         "author_name": _display_name(current_user, db),
+        "author_is_verified_lawyer": bool(
+            db.query(LawyerApplication)
+            .filter(LawyerApplication.user_id == current_user.id, LawyerApplication.status == "approved")
+            .first()
+        ),
         "email": current_user.email,
         "body": msg.body,
+        "msg_type": "text",
+        "offer_data": None,
+        "offer_status": None,
         "created_at": msg.created_at.isoformat() + "Z",
         "is_mine": True,
         "status": "sent",
     }
+
+
+class PostOfferBody(BaseModel):
+    service_title: str = Field(..., min_length=1, max_length=256)
+    description: str = Field(..., min_length=1, max_length=2000)
+    price: float = Field(..., gt=0)
+    currency: str = Field(default="USD", min_length=1, max_length=8)
+
+
+@router.post("/conversations/{conversation_id}/offer")
+def post_lawyer_offer(
+    conversation_id: int,
+    body: PostOfferBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    is_vl = bool(
+        db.query(LawyerApplication)
+        .filter(LawyerApplication.user_id == current_user.id, LawyerApplication.status == "approved")
+        .first()
+    )
+    if not is_vl:
+        raise HTTPException(status_code=403, detail="Only verified lawyers can send offers")
+    conv = _require_member(db, conversation_id, current_user.id)
+    if conv.kind != "direct":
+        raise HTTPException(status_code=400, detail="Offers can only be sent in direct conversations")
+    offer_payload = {
+        "service_title": body.service_title,
+        "description": body.description,
+        "price": body.price,
+        "currency": body.currency,
+    }
+    display = f"[Lawyer Offer] {body.service_title} — {body.currency} {body.price:.2f}"
+    msg = UserMessage(
+        conversation_id=conversation_id,
+        author_id=current_user.id,
+        body=display,
+        msg_type="lawyer_offer",
+        offer_json=_json.dumps(offer_payload),
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return {
+        "id": msg.id,
+        "author_id": current_user.id,
+        "author_name": _display_name(current_user, db),
+        "author_is_verified_lawyer": True,
+        "email": current_user.email,
+        "body": msg.body,
+        "msg_type": "lawyer_offer",
+        "offer_data": offer_payload,
+        "offer_status": None,
+        "created_at": msg.created_at.isoformat() + "Z",
+        "is_mine": True,
+        "status": "sent",
+    }
+
+
+class OfferStatusBody(BaseModel):
+    status: str = Field(..., pattern="^(accepted|rejected)$")
+
+
+@router.patch("/{message_id}/offer-status")
+def update_offer_status(
+    message_id: int,
+    body: OfferStatusBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Recipient accepts or rejects a lawyer offer message."""
+    msg = db.query(UserMessage).filter(UserMessage.id == message_id).first()
+    if not msg or getattr(msg, "msg_type", "text") != "lawyer_offer":
+        raise HTTPException(status_code=404, detail="Offer message not found")
+    _require_member(db, msg.conversation_id, current_user.id)
+    if msg.author_id == current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot respond to your own offer")
+    msg.offer_status = body.status
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return {"id": msg.id, "offer_status": msg.offer_status}

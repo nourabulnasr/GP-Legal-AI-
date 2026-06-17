@@ -2,13 +2,13 @@
 """Feed activity alerts: likes, comments, connection posts."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
-from app.db.models import User, UserNotification, LegatoProfile
+from app.db.models import LawyerApplication, User, UserNotification, LegatoProfile
 from app.db.session import get_db
 from app.services.social_notifications import actor_display_name
 from app.routers.social import _parse_profile_row, _avatar_url_for_user, _public_base_url
@@ -25,7 +25,19 @@ def _actor_avatar_url(db: Session, actor_id: int) -> str:
     return _avatar_url_for_user(actor_id, prof, _public_base_url(), profile_row=prow) or ""
 
 
-def _serialize(n: UserNotification, db: Session) -> Dict[str, Any]:
+def _serialize(
+    n: UserNotification,
+    db: Session,
+    verified_lawyer_ids: Optional[set] = None,
+) -> Dict[str, Any]:
+    if verified_lawyer_ids is not None:
+        is_vl = n.actor_id in verified_lawyer_ids
+    else:
+        is_vl = bool(
+            db.query(LawyerApplication)
+            .filter(LawyerApplication.user_id == n.actor_id, LawyerApplication.status == "approved")
+            .first()
+        )
     return {
         "id": n.id,
         "type": n.type,
@@ -34,6 +46,7 @@ def _serialize(n: UserNotification, db: Session) -> Dict[str, Any]:
         "actor_id": n.actor_id,
         "actor_name": actor_display_name(db, n.actor_id),
         "actor_avatar_url": _actor_avatar_url(db, n.actor_id),
+        "actor_is_verified_lawyer": is_vl,
         "read": bool(n.read),
         "created_at": n.created_at.isoformat() + "Z",
     }
@@ -59,8 +72,17 @@ def list_notifications(
         .limit(page_size)
         .all()
     )
+    actor_ids = list({n.actor_id for n in rows})
+    vl_ids: set = set()
+    if actor_ids:
+        vl_ids = {
+            r.user_id
+            for r in db.query(LawyerApplication.user_id)
+            .filter(LawyerApplication.user_id.in_(actor_ids), LawyerApplication.status == "approved")
+            .all()
+        }
     return {
-        "items": [_serialize(n, db) for n in rows],
+        "items": [_serialize(n, db, verified_lawyer_ids=vl_ids) for n in rows],
         "page": page,
         "page_size": page_size,
         "total": total,

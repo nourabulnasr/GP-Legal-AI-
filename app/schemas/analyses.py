@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -28,7 +29,9 @@ class AnalysisDetailResponse(AnalysisResponse):
 
 
 class AdminUpdateRoleRequest(BaseModel):
-    role: str = Field(..., description="Must be 'admin' or 'user'")
+    role: Optional[str] = Field(None, description="Must be 'admin' or 'user'")
+    user_type: Optional[str] = Field(None, description="'user' or 'lawyer'")
+    lawyer_status: Optional[str] = Field(None, description="approved / rejected / pending")
 
 
 class FlagRequest(BaseModel):

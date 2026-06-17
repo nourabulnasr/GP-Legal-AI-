@@ -544,6 +544,22 @@ except Exception as e:
     print("[INFO] Admin law router not mounted:", repr(e))
 
 try:
+    from .routers.lawyer import router as lawyer_router
+
+    api.include_router(lawyer_router)
+    print("[OK] Lawyer router mounted:", getattr(lawyer_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Lawyer router not mounted:", repr(e))
+
+try:
+    from .routers.admin_lawyers import router as admin_lawyers_router
+
+    api.include_router(admin_lawyers_router)
+    print("[OK] Admin lawyers router mounted:", getattr(admin_lawyers_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Admin lawyers router not mounted:", repr(e))
+
+try:
     from .routers.legato_mobile import router as legato_mobile_router
 
     api.include_router(legato_mobile_router)
