@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/chat/chat_assistant_screen.dart';
 import 'package:legato_mobile/screens/features/phase5_screens.dart';
+import 'package:legato_mobile/screens/lawyer/lawyer_application_screen.dart';
 import 'package:legato_mobile/screens/translate/translate_contract_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
@@ -10,14 +13,17 @@ import 'package:legato_mobile/widgets/legato_app_bar.dart';
 class FeaturesHubScreen extends StatelessWidget {
   const FeaturesHubScreen({super.key});
 
-  static int get toolCount => _items.length;
+  // Count of always-visible tools (excluding the conditional lawyer item).
+  // Used by external screens for labels; off-by-one is acceptable when the
+  // lawyer tool is also shown.
+  static int get toolCount => _baseItems.length;
   static String get openAllToolsLabel => 'Open all tools ($toolCount)';
   static String get allToolsLabel => 'All tools ($toolCount)';
 
-  static const _items = <_FeatureItem>[
+  static const _baseItems = <_FeatureItem>[
     _FeatureItem(
       'Translate contract',
-      'OCR + automatic MT (Google ? LFM)',
+      'OCR + automatic MT (Google → LFM)',
       Icons.translate,
       TranslateContractScreen(),
     ),
@@ -29,14 +35,29 @@ class FeaturesHubScreen extends StatelessWidget {
     _FeatureItem('Summarize clauses', 'Batch summaries via LFM', Icons.summarize_outlined, SummarizeFeatureScreen()),
     _FeatureItem('Share analysis', 'Read-only share link', Icons.share_outlined, ShareFeatureScreen()),
     _FeatureItem('Contract timeline', 'Milestones (admin)', Icons.timeline_outlined, TimelineAdminFeatureScreen()),
-    _FeatureItem('Biometrics', 'Face ID info � JWT storage notes', Icons.fingerprint_outlined, BiometricInfoScreen()),
+    _FeatureItem('Biometrics', 'Face ID info — JWT storage notes', Icons.fingerprint_outlined, BiometricInfoScreen()),
   ];
+
+  static const _lawyerItem = _FeatureItem(
+    'Lawyer Verification',
+    'Apply or check your verification status',
+    Icons.gavel_outlined,
+    LawyerApplicationScreen(),
+  );
 
   @override
   Widget build(BuildContext context) {
+    final user = context.watch<AuthProvider>().user;
+
+    // Admins manage applications — they don't apply.
+    // Verified lawyers can still tap it to view their approved status.
+    final items = (user != null && !user.isAdmin)
+        ? [..._baseItems, _lawyerItem]
+        : _baseItems;
+
     return Scaffold(
       appBar: LegatoAppBar(
-        title: Text('Tools ($toolCount)'),
+        title: Text('Tools (${items.length})'),
       ),
       body: GridView.builder(
         padding: const EdgeInsets.all(12),
@@ -46,18 +67,25 @@ class FeaturesHubScreen extends StatelessWidget {
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
         ),
-        itemCount: _items.length,
+        itemCount: items.length,
         itemBuilder: (context, i) {
-          final it = _items[i];
+          final it = items[i];
+          final isLawyerTool = it == _lawyerItem;
+          final isVerified = user?.isVerifiedLawyer ?? false;
+
           return Material(
             color: Theme.of(context).colorScheme.surface,
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
               side: BorderSide(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF30363D)
-                    : LegatoLinkedInTheme.border,
+                color: isLawyerTool
+                    ? (isVerified
+                        ? Colors.green.withValues(alpha: 0.45)
+                        : LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.6))
+                    : (Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF30363D)
+                        : LegatoLinkedInTheme.border),
               ),
             ),
             child: InkWell(
@@ -70,7 +98,21 @@ class FeaturesHubScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(it.icon, size: 26, color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95)),
+                    Row(
+                      children: [
+                        Icon(
+                          it.icon,
+                          size: 26,
+                          color: isLawyerTool
+                              ? (isVerified ? Colors.green : LegatoLinkedInTheme.navActiveGold)
+                              : LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95),
+                        ),
+                        if (isLawyerTool && isVerified) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.verified, size: 14, color: Colors.green),
+                        ],
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     Text(
                       it.title,
@@ -83,11 +125,13 @@ class FeaturesHubScreen extends StatelessWidget {
                     ),
                     const Spacer(),
                     Text(
-                      it.subtitle,
+                      isLawyerTool && isVerified ? 'Verified lawyer — tap to view status' : it.subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                            color: isLawyerTool && isVerified
+                                ? Colors.green.withValues(alpha: 0.85)
+                                : LegatoLinkedInTheme.textSecondaryAdaptive(context),
                             fontSize: 11,
                             height: 1.25,
                           ),

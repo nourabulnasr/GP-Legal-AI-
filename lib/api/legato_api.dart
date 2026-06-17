@@ -135,6 +135,11 @@ class LegatoApi {
     return _api.patchJson('/analyses/admin/users/$userId', {'role': role});
   }
 
+  /// Updates the user's account type (e.g. 'lawyer' or 'user') in the database.
+  Future<Map<String, dynamic>> adminUpdateUserType(int userId, String userType) {
+    return _api.patchJson('/analyses/admin/users/$userId', {'user_type': userType});
+  }
+
   Future<Map<String, dynamic>> adminDeleteUser(int userId) {
     return _api.deleteJson('/analyses/admin/users/$userId');
   }
@@ -348,6 +353,24 @@ class LegatoApi {
   Future<Map<String, dynamic>> postConversationMessage(int conversationId, String body) {
     return _api.postJson('/api/messages/conversations/$conversationId/messages', {'body': body});
   }
+
+  Future<Map<String, dynamic>> postLawyerOffer(
+    int conversationId, {
+    required String serviceTitle,
+    required String description,
+    required double price,
+    String currency = 'USD',
+  }) {
+    return _api.postJson('/api/messages/conversations/$conversationId/offer', {
+      'service_title': serviceTitle,
+      'description': description,
+      'price': price,
+      'currency': currency,
+    });
+  }
+
+  Future<Map<String, dynamic>> acceptOffer(int messageId) =>
+      _api.patchJson('/api/messages/$messageId/offer-status', {'status': 'accepted'});
 
   Future<Map<String, dynamic>> updateGroupTitle(int conversationId, String title) =>
       _api.patchJson('/api/messages/conversations/$conversationId', {'title': title});
@@ -631,5 +654,56 @@ class LegatoApi {
 
   Future<void> deleteNotification(int id) async {
     await _api.deleteJson('/api/notifications/$id');
+  }
+
+  // --- Lawyer verification ---
+
+  Future<Map<String, dynamic>> lawyerApply({
+    String barLicenseNumber = '',
+    int? yearsOfExperience,
+    Uint8List? documentBytes,
+    String? documentFilename,
+    Uint8List? cvBytes,
+    String? cvFilename,
+    Uint8List? idCardBytes,
+    String? idCardFilename,
+  }) {
+    return _api.postMultipartLawyerApply(
+      barLicenseNumber: barLicenseNumber,
+      yearsOfExperience: yearsOfExperience,
+      documentBytes: documentBytes,
+      documentFilename: documentFilename,
+      cvBytes: cvBytes,
+      cvFilename: cvFilename,
+      idCardBytes: idCardBytes,
+      idCardFilename: idCardFilename,
+    );
+  }
+
+  Future<Map<String, dynamic>> adminUpdateLawyerStatus(int userId, String lawyerStatus) {
+    return _api.patchJson('/analyses/admin/users/$userId', {'lawyer_status': lawyerStatus});
+  }
+
+  Future<Map<String, dynamic>> lawyerStatus() => _api.getJson('/lawyer/status');
+
+  Future<Uint8List> adminDownloadLawyerCv(int applicationId) =>
+      _api.getBytes('/admin/lawyers/cv/$applicationId');
+
+  Future<Uint8List> adminDownloadLawyerIdCard(int applicationId) =>
+      _api.getBytes('/admin/lawyers/id-card/$applicationId');
+
+  Future<List<dynamic>> adminListLawyerApplications({String status = 'pending'}) {
+    return _api.getJsonList('/admin/lawyers?status=$status');
+  }
+
+  Future<Map<String, dynamic>> adminReviewLawyerApplication(
+    int applicationId, {
+    required String action,
+    String? adminNote,
+  }) {
+    return _api.patchJson('/admin/lawyers/$applicationId/review', {
+      'action': action,
+      if (adminNote != null && adminNote.isNotEmpty) 'admin_note': adminNote,
+    });
   }
 }

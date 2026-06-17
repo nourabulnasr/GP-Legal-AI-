@@ -165,8 +165,172 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
     }
   }
 
+  Future<void> _showOfferDialog() async {
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final priceCtrl = TextEditingController();
+    final currencyCtrl = TextEditingController(text: 'USD');
+    final formKey = GlobalKey<FormState>();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.gavel, color: Color(0xFF0A66C2), size: 20),
+            SizedBox(width: 8),
+            Text('Send Legal Offer'),
+          ],
+        ),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(labelText: 'Service title', hintText: 'e.g. Contract Review'),
+                  maxLength: 256,
+                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: descCtrl,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                  maxLines: 3,
+                  maxLength: 2000,
+                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextFormField(
+                        controller: priceCtrl,
+                        decoration: const InputDecoration(labelText: 'Price'),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Required';
+                          if (double.tryParse(v.trim()) == null) return 'Invalid';
+                          if (double.parse(v.trim()) <= 0) return 'Must be > 0';
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextFormField(
+                        controller: currencyCtrl,
+                        decoration: const InputDecoration(labelText: 'Currency'),
+                        maxLength: 8,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() == true) Navigator.pop(ctx, true);
+            },
+            child: const Text('Send Offer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      titleCtrl.dispose();
+      descCtrl.dispose();
+      priceCtrl.dispose();
+      currencyCtrl.dispose();
+      return;
+    }
+
+    setState(() => _sending = true);
+    try {
+      await context.read<AppServices>().legato.postLawyerOffer(
+            widget.conversationId,
+            serviceTitle: titleCtrl.text.trim(),
+            description: descCtrl.text.trim(),
+            price: double.parse(priceCtrl.text.trim()),
+            currency: currencyCtrl.text.trim().isEmpty ? 'USD' : currencyCtrl.text.trim(),
+          );
+      if (!mounted) return;
+      await _load(showSpinner: false);
+      _scrollToBottomIfNeeded(force: true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+      titleCtrl.dispose();
+      descCtrl.dispose();
+      priceCtrl.dispose();
+      currencyCtrl.dispose();
+    }
+  }
+
+  Future<void> _payOffer(int messageId, Map<String, dynamic> offerData) async {
+    final title = offerData['service_title']?.toString() ?? 'Legal Service';
+    final price = offerData['price'];
+    final currency = offerData['currency']?.toString() ?? 'USD';
+    final priceStr = price != null ? '$currency ${(price as num).toStringAsFixed(2)}' : '';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.payment, color: Color(0xFF0A66C2), size: 20),
+            SizedBox(width: 8),
+            Text('Confirm Payment'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Service: $title'),
+            if (priceStr.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Amount: $priceStr', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ],
+            const SizedBox(height: 12),
+            const Text('By confirming, you acknowledge your payment intent for this legal service.'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0A66C2)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm Pay'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    try {
+      await context.read<AppServices>().legato.acceptOffer(messageId);
+      if (!mounted) return;
+      await _load(showSpinner: false);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isVerifiedLawyer = context.watch<AuthProvider>().user?.isVerifiedLawyer == true;
     return Scaffold(
       appBar: LegatoAppBar(
         title: widget.isGroup
@@ -228,15 +392,28 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
                             itemCount: _messages.length,
                             itemBuilder: (context, i) {
                               final m = Map<String, dynamic>.from(_messages[i] as Map);
+                              final offerRaw = m['offer_data'];
+                              final msgId = (m['id'] as num?)?.toInt();
+                              final isMine = m['is_mine'] == true;
+                              final isOffer = m['msg_type']?.toString() == 'lawyer_offer';
                               return UserChatBubble(
                                 showAuthor: widget.isGroup,
                                 message: UserChatMessage(
                                   body: m['body']?.toString() ?? '',
-                                  isMine: m['is_mine'] == true,
+                                  isMine: isMine,
                                   authorName: m['author_name']?.toString(),
                                   createdAt: m['created_at']?.toString(),
                                   status: _statusFrom(m['status']?.toString()),
+                                  msgType: m['msg_type']?.toString() ?? 'text',
+                                  offerData: offerRaw is Map
+                                      ? Map<String, dynamic>.from(offerRaw)
+                                      : null,
+                                  offerStatus: m['offer_status']?.toString(),
+                                  authorIsVerified: m['author_is_verified_lawyer'] == true,
                                 ),
+                                onOfferPay: (!isMine && isOffer && msgId != null)
+                                    ? () => _payOffer(msgId, offerRaw is Map ? Map<String, dynamic>.from(offerRaw) : {})
+                                    : null,
                               );
                             },
                           ),
@@ -247,6 +424,16 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
               padding: const EdgeInsets.all(8),
               child: Row(
                 children: [
+                  if (isVerifiedLawyer && !widget.isGroup) ...[
+                    Tooltip(
+                      message: 'Send legal offer',
+                      child: IconButton(
+                        onPressed: _sending ? null : _showOfferDialog,
+                        icon: const Icon(Icons.gavel_outlined, color: Color(0xFF0A66C2)),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   Expanded(
                     child: TextField(
                       controller: _body,

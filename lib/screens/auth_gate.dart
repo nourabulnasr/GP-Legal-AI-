@@ -66,7 +66,9 @@ class _AuthGateState extends State<AuthGate> {
 
     _wasAuthenticated = nowAuthenticated;
 
-    if (nowAuthenticated) return const HomeShell();
+    if (nowAuthenticated) {
+      return const HomeShell();
+    }
     return const LoginScreen();
   }
 }

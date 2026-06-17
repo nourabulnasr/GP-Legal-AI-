@@ -438,6 +438,7 @@ class DealContractChatScreenState extends State<DealContractChatScreen> with Mes
                         isMine: me != null && authorId == me,
                         authorName: email.isNotEmpty ? email.split('@').first : '?',
                         createdAt: m['created_at']?.toString(),
+                        authorIsVerified: m['author_is_verified_lawyer'] == true,
                       ),
                     );
                   },

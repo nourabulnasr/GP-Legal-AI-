@@ -20,8 +20,8 @@ class AppServices {
   /// Called after the API clears the JWT (401). Keeps [AuthProvider] in sync with storage.
   void setOnUnauthorized(void Function()? cb) => _onUnauthorized = cb;
 
-  late final TokenStorage storage;
-  late final ApiClient api;
-  late final AuthService auth;
-  late final LegatoApi legato;
+  late TokenStorage storage;
+  late ApiClient api;
+  late AuthService auth;
+  late LegatoApi legato;
 }

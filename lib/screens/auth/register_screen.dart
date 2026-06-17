@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
@@ -21,23 +25,96 @@ class _RegisterScreenState extends State<RegisterScreen> {
   BuildContext? _formCtx;
   bool _busy = false;
   String? _err;
+  String _userType = 'user';
+
+  Uint8List? _cvBytes;
+  String? _cvFilename;
+  Uint8List? _idCardBytes;
+  String? _idCardFilename;
+  final _years = TextEditingController();
 
   @override
   void dispose() {
     _email.dispose();
     _password.dispose();
+    _years.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickCv() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+    setState(() {
+      _cvBytes = file.bytes;
+      _cvFilename = file.name;
+    });
+  }
+
+  Future<void> _pickIdCard() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+    setState(() {
+      _idCardBytes = file.bytes;
+      _idCardFilename = file.name;
+    });
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() { _busy = true; _err = null; });
+    try {
+      if (kIsWeb) {
+        final err = await context.read<AuthProvider>()
+            .signInWithGoogleWeb(userType: _userType);
+        if (err != null && mounted) setState(() => _err = err);
+      } else {
+        await context.read<AuthProvider>()
+            .signInWithGoogleNative(userType: _userType);
+      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _err = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _err = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _submit() async {
     final ok = _formCtx != null && (Form.of(_formCtx!).validate());
     if (!ok) return;
+
+    if (_userType == 'lawyer' && (_cvBytes == null || _idCardBytes == null)) {
+      setState(() => _err = 'Please upload both your CV and ID card to register as a lawyer.');
+      return;
+    }
+
     setState(() {
       _busy = true;
       _err = null;
     });
     try {
-      await context.read<AuthProvider>().register(_email.text, _password.text);
+      await context.read<AuthProvider>().register(
+            _email.text,
+            _password.text,
+            userType: _userType,
+            cvBytes: _cvBytes,
+            cvFilename: _cvFilename,
+            idCardBytes: _idCardBytes,
+            idCardFilename: _idCardFilename,
+            yearsOfExperience: int.tryParse(_years.text.trim()),
+          );
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
@@ -53,7 +130,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             'Cannot reach the API over HTTP from this app. Clear site data (web) or reinstall the app, then use https://srv1723974.hstgr.cloud');
       } else if (msg.contains('Failed to fetch')) {
         setState(() => _err =
-            'Network error reaching the API (${RuntimeConfig.apiBaseUrl}). Check your connection or Settings ? API URL.');
+            'Network error reaching the API (${RuntimeConfig.apiBaseUrl}). Check your connection or Settings → API URL.');
       } else {
         setState(() => _err = msg);
       }
@@ -64,6 +141,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: LegatoAppBar(title: const Text('Register')),
       body: SafeArea(
@@ -76,51 +154,266 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                TextFormField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Enter email' : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _password,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Password (min 6)',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.length < 6) ? 'Min 6 characters' : null,
-                ),
-                if (_err != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_err!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _busy ? null : _submit,
-                  child: _busy
-                      ? const SizedBox(
-                          height: 22,
-                          width: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Register'),
-                ),
-                TextButton(
-                  onPressed: _busy ? null : () => Navigator.of(context).pop(),
-                  child: const Text('Already have an account? Sign in'),
-                ),
+                    TextFormField(
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Enter email' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _password,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Password (min 6)',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.length < 6) ? 'Min 6 characters' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Account type',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    _AccountTypeCard(
+                      selected: _userType == 'user',
+                      icon: Icons.person_outline,
+                      title: 'Regular User',
+                      subtitle: 'Analyze contracts and use all legal tools.',
+                      onTap: () => setState(() => _userType = 'user'),
+                    ),
+                    const SizedBox(height: 8),
+                    _AccountTypeCard(
+                      selected: _userType == 'lawyer',
+                      icon: Icons.gavel_outlined,
+                      title: 'Lawyer',
+                      subtitle:
+                          'Register as a verified lawyer. Upload your CV and ID card for admin approval.',
+                      onTap: () => setState(() => _userType = 'lawyer'),
+                    ),
+                    if (_userType == 'lawyer') ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'Lawyer documents',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      _DocPickerTile(
+                        label: 'CV / Resume',
+                        icon: Icons.description_outlined,
+                        filename: _cvFilename,
+                        onPick: _pickCv,
+                        required: true,
+                      ),
+                      const SizedBox(height: 8),
+                      _DocPickerTile(
+                        label: 'National ID Card',
+                        icon: Icons.badge_outlined,
+                        filename: _idCardFilename,
+                        onPick: _pickIdCard,
+                        required: true,
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _years,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Years of Experience (optional)',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.work_history_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: cs.secondaryContainer.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: cs.secondary.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 18, color: cs.secondary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Your documents will be reviewed by an admin. You will be notified once your account is approved.',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: cs.onSecondaryContainer),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (_err != null) ...[
+                      const SizedBox(height: 12),
+                      Text(_err!, style: TextStyle(color: cs.error)),
+                    ],
+                    const SizedBox(height: 20),
+                    FilledButton(
+                      onPressed: _busy ? null : _submit,
+                      child: _busy
+                          ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Register'),
+                    ),
+                    // Google OAuth cannot carry file uploads, so hide it for
+                    // the Lawyer account type.
+                    if (_userType != 'lawyer') ...[
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed: _busy ? null : _signInWithGoogle,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'G',
+                              style: TextStyle(
+                                color: _busy ? Colors.grey : const Color(0xFF4285F4),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Text('Continue with Google'),
+                          ],
+                        ),
+                      ),
+                    ],
+                    TextButton(
+                      onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                      child: const Text('Already have an account? Sign in'),
+                    ),
                   ],
                 );
               },
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DocPickerTile extends StatelessWidget {
+  const _DocPickerTile({
+    required this.label,
+    required this.icon,
+    required this.filename,
+    required this.onPick,
+    this.required = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final String? filename;
+  final VoidCallback onPick;
+  final bool required;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final picked = filename != null;
+    return OutlinedButton(
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        side: BorderSide(
+          color: picked ? cs.primary : (required ? cs.error.withValues(alpha: 0.5) : cs.outlineVariant),
+        ),
+        foregroundColor: picked ? cs.primary : cs.onSurfaceVariant,
+        alignment: Alignment.centerLeft,
+      ),
+      onPressed: onPick,
+      child: Row(
+        children: [
+          Icon(picked ? Icons.check_circle_outline : icon, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              picked ? filename! : '$label${required ? ' *' : ''} (PDF / image)',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Icon(Icons.upload_file_outlined, size: 16, color: cs.onSurfaceVariant),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccountTypeCard extends StatelessWidget {
+  const _AccountTypeCard({
+    required this.selected,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? cs.primary : cs.outlineVariant,
+            width: selected ? 2 : 1,
+          ),
+          color: selected ? cs.primaryContainer.withValues(alpha: 0.35) : Colors.transparent,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: selected ? cs.primary : cs.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: selected ? cs.primary : null,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            if (selected)
+              Icon(Icons.check_circle, color: cs.primary, size: 20),
+          ],
         ),
       ),
     );

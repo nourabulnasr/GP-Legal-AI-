@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:legato_mobile/api/api_exception.dart';
+import 'package:legato_mobile/config/runtime_config.dart';
 import 'package:legato_mobile/models/user_model.dart';
 import 'package:legato_mobile/services/auth_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AuthProvider extends ChangeNotifier {
   AuthProvider({AuthService? authService}) : _auth = authService ?? AuthService();
@@ -33,7 +35,10 @@ class AuthProvider extends ChangeNotifier {
       }
       if (uriCode != null && uriCode.isNotEmpty) {
         final redirectUri = Uri.base.origin;
-        await _auth.exchangeGoogleCode(uriCode, redirectUri: redirectUri);
+        // state carries user_type when coming from the register screen Google flow
+        final stateUserType = Uri.base.queryParameters['state'] ?? 'user';
+        final userType = (stateUserType == 'lawyer') ? 'lawyer' : 'user';
+        await _auth.exchangeGoogleCode(uriCode, redirectUri: redirectUri, userType: userType);
         _user = await _auth.me();
         return;
       }
@@ -82,10 +87,10 @@ class AuthProvider extends ChangeNotifier {
         _ => 'Google sign-in failed. Please try again.',
       };
 
-  Future<void> loginWithGoogleIdToken(String idToken) async {
+  Future<void> loginWithGoogleIdToken(String idToken, {String userType = 'user'}) async {
     _error = null;
     try {
-      await _auth.loginWithGoogleIdToken(idToken);
+      await _auth.loginWithGoogleIdToken(idToken, userType: userType);
       _user = await _auth.me();
     } on ApiException catch (e) {
       _error = e.message;
@@ -95,6 +100,51 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Web: redirect the browser to Google sign-in.
+  /// Uses the current page origin as redirect_uri so both the auth request and
+  /// the code exchange in [bootstrap] send the same URI — required by Google.
+  /// Register your app's origin in Google Cloud Console → Authorized redirect URIs.
+  Future<String?> signInWithGoogleWeb({String userType = 'user'}) async {
+    _error = null;
+    notifyListeners();
+    try {
+      final cfg = await _auth.googleSignInConfig();
+      final clientId = cfg['client_id']?.toString().trim() ?? '';
+      if (clientId.isEmpty || cfg['enabled'] != true) {
+        _error = 'Google sign-in is not configured on the server.';
+        notifyListeners();
+        return _error;
+      }
+      final redirectUri = Uri.base.origin;
+      final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
+        'client_id': clientId,
+        'redirect_uri': redirectUri,
+        'response_type': 'code',
+        'scope': 'openid email profile',
+        'access_type': 'online',
+        'prompt': 'select_account',
+        'state': userType,
+      });
+      await launchUrl(authUrl, webOnlyWindowName: '_self');
+      return null;
+    } on ApiException catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return _error;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return _error;
+    }
+  }
+
+  /// Mobile/desktop: launch backend Google OAuth redirect with user_type.
+  Future<void> signInWithGoogleNative({String userType = 'user'}) async {
+    final uri = Uri.parse('${RuntimeConfig.apiBaseUrl}/auth/google?user_type=$userType');
+    if (!await canLaunchUrl(uri)) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   Future<void> login(String email, String password) async {
     _error = null;
     await _auth.login(email, password);
@@ -102,9 +152,30 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> register(String email, String password) async {
+  Future<void> register(
+    String email,
+    String password, {
+    String userType = 'user',
+    int? yearsOfExperience,
+    Uint8List? cvBytes,
+    String? cvFilename,
+    Uint8List? idCardBytes,
+    String? idCardFilename,
+  }) async {
     _error = null;
-    await _auth.register(email, password);
+    if (userType == 'lawyer' && (cvBytes != null || idCardBytes != null)) {
+      await _auth.registerAsLawyer(
+        email: email,
+        password: password,
+        yearsOfExperience: yearsOfExperience,
+        cvBytes: cvBytes,
+        cvFilename: cvFilename,
+        idCardBytes: idCardBytes,
+        idCardFilename: idCardFilename,
+      );
+    } else {
+      await _auth.register(email, password, userType: userType);
+    }
     notifyListeners();
   }
 

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:legato_mobile/api/api_client.dart';
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/config/app_config.dart';
@@ -63,10 +65,10 @@ class AuthService {
         s.contains('timed out');
   }
 
-  Future<Map<String, dynamic>> loginWithGoogleIdToken(String idToken) async {
+  Future<Map<String, dynamic>> loginWithGoogleIdToken(String idToken, {String userType = 'user'}) async {
     final data = await _postJsonWithRetry(
       '/auth/google/id-token',
-      {'id_token': idToken},
+      {'id_token': idToken, 'user_type': userType},
       timeout: AppConfig.authTimeout,
     );
     final token = data['access_token'] as String?;
@@ -77,12 +79,13 @@ class AuthService {
     return data;
   }
 
-  Future<Map<String, dynamic>> exchangeGoogleCode(String code, {required String redirectUri}) async {
+  Future<Map<String, dynamic>> exchangeGoogleCode(String code, {required String redirectUri, String userType = 'user'}) async {
     final data = await _postJsonWithRetry(
       '/auth/google/code',
       {
         'code': code,
         'redirect_uri': redirectUri,
+        'user_type': userType,
       },
       timeout: AppConfig.authTimeout,
     );
@@ -96,14 +99,35 @@ class AuthService {
 
   Future<Map<String, dynamic>> googleSignInConfig() => _api.getJson('/auth/google/config');
 
-  Future<Map<String, dynamic>> register(String email, String password) {
+  Future<Map<String, dynamic>> register(String email, String password, {String userType = 'user'}) {
     return _postJsonWithRetry(
       '/auth/register',
       {
         'email': email.trim(),
         'password': password,
+        'user_type': userType,
       },
       timeout: AppConfig.authTimeout,
+    );
+  }
+
+  Future<Map<String, dynamic>> registerAsLawyer({
+    required String email,
+    required String password,
+    int? yearsOfExperience,
+    Uint8List? cvBytes,
+    String? cvFilename,
+    Uint8List? idCardBytes,
+    String? idCardFilename,
+  }) {
+    return _api.postMultipartRegisterLawyer(
+      email: email,
+      password: password,
+      yearsOfExperience: yearsOfExperience,
+      cvBytes: cvBytes,
+      cvFilename: cvFilename,
+      idCardBytes: idCardBytes,
+      idCardFilename: idCardFilename,
     );
   }
 

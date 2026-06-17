@@ -904,9 +904,26 @@ class _PostCardState extends State<_PostCard> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                p['author_name']?.toString() ?? 'Member',
-                                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      p['author_name']?.toString() ?? 'Member',
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (p['author_is_verified_lawyer'] == true ||
+                                      (p['author_user_type']?.toString().toLowerCase() == 'lawyer' &&
+                                          p['author_lawyer_status']?.toString().toLowerCase() == 'approved')) ...[
+                                    const SizedBox(width: 4),
+                                    const Tooltip(
+                                      message: 'Verified Lawyer',
+                                      child: Icon(Icons.verified, color: Color(0xFF0A66C2), size: 16),
+                                    ),
+                                  ],
+                                ],
                               ),
                               Text(
                                 p['author_subtitle']?.toString() ?? '',
@@ -1052,14 +1069,27 @@ class _PostCardState extends State<_PostCard> {
                     meId,
                     c['author_avatar_url']?.toString(),
                   );
-                  return ListTile(
+                  final commentIsVl = c['author_is_verified_lawyer'] == true ||
+                    (c['author_user_type']?.toString() == 'lawyer');
+                return ListTile(
                   dense: true,
                   leading: UserAvatar(
                     radius: 16,
                     imageUrl: commentAvatar,
                     name: c['author_name']?.toString() ?? '',
                   ),
-                  title: Text(c['author_name']?.toString() ?? ''),
+                  title: Row(
+                    children: [
+                      Flexible(child: Text(c['author_name']?.toString() ?? '', overflow: TextOverflow.ellipsis)),
+                      if (commentIsVl) ...[
+                        const SizedBox(width: 4),
+                        const Tooltip(
+                          message: 'Verified Lawyer',
+                          child: Icon(Icons.verified, size: 12, color: Color(0xFF0A66C2)),
+                        ),
+                      ],
+                    ],
+                  ),
                   subtitle: Text(c['content']?.toString() ?? ''),
                 );
                 },

@@ -1016,6 +1016,7 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
 
   Future<void> _load() async {
     final auth = context.read<AuthProvider>();
+    final legato = context.read<AppServices>().legato;
     if (auth.user == null) return;
     setState(() {
       _busy = true;
@@ -1023,8 +1024,8 @@ class _TimelineAdminFeatureScreenState extends State<TimelineAdminFeatureScreen>
     });
     try {
       final rows = auth.user!.isAdmin
-          ? await context.read<AppServices>().legato.adminTimelineAll()
-          : await context.read<AppServices>().legato.timelineMe();
+          ? await legato.adminTimelineAll()
+          : await legato.timelineMe();
       if (!mounted) return;
       setState(() => _rows = rows);
     } on ApiException catch (e) {

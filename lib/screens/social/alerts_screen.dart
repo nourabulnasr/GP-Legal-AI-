@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
 import 'package:legato_mobile/app_services.dart';
+import 'package:legato_mobile/providers/auth_provider.dart';
+import 'package:legato_mobile/screens/admin/admin_screen.dart';
+import 'package:legato_mobile/screens/lawyer/lawyer_application_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/user_avatar.dart';
@@ -102,6 +105,10 @@ class AlertsScreenState extends State<AlertsScreen> {
         return Icons.chat_bubble_outline;
       case 'connection_post':
         return Icons.article_outlined;
+      case 'lawyer_application':
+        return Icons.gavel_outlined;
+      case 'lawyer_review':
+        return Icons.verified_outlined;
       default:
         return Icons.notifications_outlined;
     }
@@ -116,6 +123,7 @@ class AlertsScreenState extends State<AlertsScreen> {
 
   Future<void> _onActivityTap(Map<String, dynamic> m) async {
     final id = (m['id'] as num?)?.toInt();
+    final type = m['type']?.toString() ?? '';
     final postId = _postIdFromNotification(m);
     if (id != null) {
       try {
@@ -131,6 +139,23 @@ class AlertsScreenState extends State<AlertsScreen> {
         return copy;
       }).toList();
     });
+    // Lawyer review → lawyer sees the admin's decision.
+    if (type == 'lawyer_review') {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const LawyerApplicationScreen()),
+      );
+      return;
+    }
+    // Lawyer application → admin is taken straight to the Lawyers tab.
+    if (type == 'lawyer_application') {
+      final isAdmin = context.read<AuthProvider>().user?.isAdmin ?? false;
+      if (isAdmin) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const AdminScreen(initialTab: 2)),
+        );
+      }
+      return;
+    }
     if (postId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('This alert is not linked to a post.')),
@@ -270,9 +295,19 @@ class AlertsScreenState extends State<AlertsScreen> {
                             imageUrl: m['actor_avatar_url']?.toString(),
                             name: m['actor_name']?.toString() ?? 'Member',
                           ),
-                          title: Text(
-                            m['message']?.toString() ?? 'Activity',
-                            style: TextStyle(fontWeight: unread ? FontWeight.w600 : FontWeight.normal),
+                          title: Row(
+                            children: [
+                              if (m['actor_is_verified_lawyer'] == true) ...[
+                                const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                                const SizedBox(width: 4),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  m['message']?.toString() ?? 'Activity',
+                                  style: TextStyle(fontWeight: unread ? FontWeight.w600 : FontWeight.normal),
+                                ),
+                              ),
+                            ],
                           ),
                           subtitle: Text(_relativeTime(m['created_at']?.toString() ?? '')),
                           trailing: Row(
@@ -316,7 +351,15 @@ class AlertsScreenState extends State<AlertsScreen> {
                       return Card(
                         child: ListTile(
                           leading: const Icon(Icons.person_add_alt_1_outlined, color: LegatoLinkedInTheme.navActiveGold),
-                          title: Text(m['requester_name']?.toString() ?? 'Member'),
+                          title: Row(
+                            children: [
+                              Flexible(child: Text(m['requester_name']?.toString() ?? 'Member', overflow: TextOverflow.ellipsis)),
+                              if (m['requester_is_verified_lawyer'] == true) ...[
+                                const SizedBox(width: 4),
+                                const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                              ],
+                            ],
+                          ),
                           subtitle: Text(m['created_at']?.toString() ?? ''),
                           trailing: TextButton(
                             onPressed: id == null ? null : () => _acceptInvite(id),

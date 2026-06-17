@@ -332,4 +332,79 @@ class ApiClient {
     if (r.statusCode == 200) return r.body;
     throw ApiException(_extractDetail(r.body), statusCode: r.statusCode);
   }
+
+  Future<Map<String, dynamic>> postMultipartLawyerApply({
+    String barLicenseNumber = '',
+    int? yearsOfExperience,
+    Uint8List? documentBytes,
+    String? documentFilename,
+    Uint8List? cvBytes,
+    String? cvFilename,
+    Uint8List? idCardBytes,
+    String? idCardFilename,
+  }) async {
+    final request = http.MultipartRequest('POST', uri('/lawyer/apply'));
+    final t = await _storage.readToken();
+    if (t != null && t.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $t';
+    }
+    request.fields['bar_license_number'] = barLicenseNumber;
+    if (yearsOfExperience != null) request.fields['years_of_experience'] = yearsOfExperience.toString();
+    if (documentBytes != null && documentFilename != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes('document', documentBytes, filename: documentFilename),
+      );
+    }
+    if (cvBytes != null && cvFilename != null) {
+      request.files.add(http.MultipartFile.fromBytes('cv', cvBytes, filename: cvFilename));
+    }
+    if (idCardBytes != null && idCardFilename != null) {
+      request.files.add(http.MultipartFile.fromBytes('id_card', idCardBytes, filename: idCardFilename));
+    }
+    final streamed = await request.send().timeout(AppConfig.defaultTimeout);
+    final response = await http.Response.fromStream(streamed);
+    await _on401(response);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (response.body.isEmpty) return {};
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw ApiException(_extractDetail(response.body), statusCode: response.statusCode);
+  }
+
+  Future<Map<String, dynamic>> postMultipartRegisterLawyer({
+    required String email,
+    required String password,
+    int? yearsOfExperience,
+    Uint8List? cvBytes,
+    String? cvFilename,
+    Uint8List? idCardBytes,
+    String? idCardFilename,
+  }) async {
+    final request = http.MultipartRequest('POST', uri('/auth/register-lawyer'));
+    request.fields['email'] = email.trim();
+    request.fields['password'] = password;
+    if (yearsOfExperience != null) request.fields['years_of_experience'] = yearsOfExperience.toString();
+    if (cvBytes != null && cvFilename != null) {
+      request.files.add(http.MultipartFile.fromBytes('cv', cvBytes, filename: cvFilename));
+    }
+    if (idCardBytes != null && idCardFilename != null) {
+      request.files.add(http.MultipartFile.fromBytes('id_card', idCardBytes, filename: idCardFilename));
+    }
+    final streamed = await request.send().timeout(AppConfig.defaultTimeout);
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (response.body.isEmpty) return {};
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw ApiException(_extractDetail(response.body), statusCode: response.statusCode);
+  }
+
+  Future<Uint8List> getBytes(String path) async {
+    final r = await _http.get(uri(path), headers: await _headers()).timeout(AppConfig.defaultTimeout);
+    await _on401(r);
+    if (r.statusCode >= 200 && r.statusCode < 300) {
+      return r.bodyBytes;
+    }
+    throw ApiException(_extractDetail(r.body), statusCode: r.statusCode);
+  }
 }

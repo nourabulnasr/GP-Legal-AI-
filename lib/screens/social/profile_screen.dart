@@ -220,12 +220,26 @@ class ProfileScreenState extends State<ProfileScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              displayName,
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.3,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    displayName,
+                                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: -0.3,
+                                        ),
                                   ),
+                                ),
+                                if (auth.user?.isVerifiedLawyer == true) ...[
+                                  const SizedBox(width: 8),
+                                  const Tooltip(
+                                    message: 'Verified Lawyer',
+                                    child: Icon(Icons.verified, color: Color(0xFF0A66C2), size: 24),
+                                  ),
+                                ],
+                              ],
                             ),
                             if (d['title']?.toString().isNotEmpty == true ||
                                 d['company']?.toString().isNotEmpty == true) ...[

@@ -122,7 +122,15 @@ class _GroupMembersSheetState extends State<_GroupMembersSheet> {
                           }
                         });
                       },
-                      title: Text(raw['display_name']?.toString() ?? raw['name']?.toString() ?? raw['email']?.toString() ?? 'Member'),
+                      title: Row(
+                        children: [
+                          Flexible(child: Text(raw['display_name']?.toString() ?? raw['name']?.toString() ?? raw['email']?.toString() ?? 'Member', overflow: TextOverflow.ellipsis)),
+                          if (raw['is_verified_lawyer'] == true) ...[
+                            const SizedBox(width: 4),
+                            const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                          ],
+                        ],
+                      ),
                     ),
               ],
             ),
@@ -203,7 +211,15 @@ class _GroupMembersSheetState extends State<_GroupMembersSheet> {
                               imageUrl: m['avatar_url']?.toString(),
                               name: name,
                             ),
-                            title: Text(name),
+                            title: Row(
+                              children: [
+                                Flexible(child: Text(name, overflow: TextOverflow.ellipsis)),
+                                if (m['is_verified_lawyer'] == true) ...[
+                                  const SizedBox(width: 4),
+                                  const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                                ],
+                              ],
+                            ),
                             subtitle: Text(m['email']?.toString() ?? ''),
                             trailing: isCreator
                                 ? Text(
