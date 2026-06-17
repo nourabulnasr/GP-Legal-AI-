@@ -379,8 +379,26 @@ def _lfm_document_low_quality(content: str, message: str) -> bool:
         return True
     import re
 
+    from app.local_llm import _THINK_CLOSE, _THINK_OPEN
+
+    if any(
+        marker in t
+        for marker in (
+            _THINK_OPEN,
+            _THINK_CLOSE,
+            "</think>",
+            "`</think>`",
+            "<|im_start|>",
+            "<|im_end|>",
+        )
+    ):
+        return True
     letters = re.sub(r"[\s\W_]+", "", t, flags=re.UNICODE)
     if len(letters) < 35:
+        return True
+    arabic = len(re.findall(r"[\u0600-\u06FF]", t))
+    latin = len(re.findall(r"[A-Za-z]", t))
+    if arabic + latin >= 40 and arabic / max(arabic + latin, 1) < 0.55:
         return True
     if t in (").", ".", ")", "(") or t.startswith(")."):
         return True

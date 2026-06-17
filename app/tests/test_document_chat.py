@@ -10,6 +10,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-unit-tests")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-unit-tests")
 
 from app.routers import chat as chat_mod
+from app.local_llm import _THINK_CLOSE, _THINK_OPEN, strip_thinking_output
 
 
 class TestDocumentChatHelpers(unittest.TestCase):
@@ -18,6 +19,19 @@ class TestDocumentChatHelpers(unittest.TestCase):
 
     def test_lfm_document_low_quality_detects_garbage(self):
         self.assertTrue(chat_mod._lfm_document_low_quality(").\n\n\nالرجوع: [لا 182]", "اشرح العقد"))
+
+    def test_lfm_document_low_quality_detects_thinking_tags(self):
+        self.assertTrue(
+            chat_mod._lfm_document_low_quality(
+                f"some text {_THINK_CLOSE}\n### broken", "اشرح المشاكل"
+            )
+        )
+
+    def test_strip_thinking_output(self):
+        raw = f"garbage {_THINK_CLOSE}\n\n### القانون المطبق:\nنص صحيح"
+        out = strip_thinking_output(raw)
+        self.assertNotIn(_THINK_CLOSE, out)
+        self.assertIn("القانون", out)
 
     def test_lfm_document_low_quality_accepts_real_answer(self):
         text = (

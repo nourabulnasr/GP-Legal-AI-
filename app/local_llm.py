@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -44,6 +46,75 @@ _loaded_lora_path: Optional[str] = None
 # generate must both execute in the same thread to avoid the "Tensor on device
 # cpu is not on the expected device meta!" error when called cross-thread.
 _model_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lfm-worker")
+
+_THINK_OPEN = "`" + "think" + "`"
+_THINK_CLOSE = "`" + "/think" + "`"
+_THINKING_END_TAGS = (
+    "`</think>`",
+    "</think>",
+    _THINK_CLOSE,
+)
+_THINKING_START_RE = re.compile(
+    r"<\|im_start\|>assistant\s*",
+    re.IGNORECASE,
+)
+
+
+def strip_thinking_output(text: str) -> str:
+    """Remove LFM-Thinking chain-of-thought blocks and chat control tokens from model output."""
+    if not text:
+        return ""
+    out = text.strip()
+    for tag in _THINKING_END_TAGS:
+        if tag in out:
+            out = out.split(tag, 1)[-1].strip()
+    out = _THINKING_START_RE.sub("", out, count=1).strip()
+    for marker in ("<|im_end|>", "<|endoftext|>"):
+        out = out.replace(marker, "").strip()
+    return out.strip()
+
+
+def _is_thinking_model_path(path: Optional[Path]) -> bool:
+    if not path:
+        return False
+    name = path.name.lower()
+    if "thinking" in name:
+        return True
+    cfg = path / "config.json"
+    if cfg.is_file():
+        try:
+            obj = json.loads(cfg.read_text(encoding="utf-8"))
+            mid = str(obj.get("_name_or_path") or obj.get("name_or_path") or "").lower()
+            return "thinking" in mid
+        except Exception:
+            pass
+    return False
+
+
+def _format_prompt_for_inference(
+    prompt: str,
+    tokenizer: Any,
+    model_dir: Path,
+    *,
+    use_lora: bool,
+) -> str:
+    """
+    Explain-clause LoRA was trained on flat prompts — keep flat when use_lora=True.
+    Document chat on Thinking base uses the chat template to avoid raw CoT garbage.
+    """
+    if use_lora or not _is_thinking_model_path(model_dir):
+        return prompt
+    chat_template = getattr(tokenizer, "chat_template", None)
+    if not chat_template:
+        return prompt
+    try:
+        return tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    except Exception:
+        return prompt
 
 
 def _model_path() -> Optional[Path]:
@@ -231,9 +302,12 @@ def generate(
     max_new_tokens: int = 512,
     temperature: float = 0.1,
     do_sample: bool = False,
+    use_lora: bool = False,
 ) -> str:
     """
-    Generate text from prompt. Used for explanation only (violation + matched text + RAG).
+    Generate text from prompt.
+    use_lora=False (default): base Thinking model — document chat, general Q&A.
+    use_lora=True: apply legal explain-clause LoRA (explain_violation only).
     """
     if not prompt or not prompt.strip():
         return ""
@@ -242,14 +316,19 @@ def generate(
     def _run_in_model_thread():
         import gc
         import torch
+        from peft import PeftModel
 
         try:
             tokenizer, model = load_model()
         except Exception as e:
             return f"[LLM load error: {e!r}]"
 
+        model_dir = _model_path() or Path(".")
         max_input = int(os.getenv("LFM_MAX_INPUT_TOKENS", str(DEFAULT_MAX_INPUT_TOKENS)))
-        fitted_prompt = fit_prompt_to_token_budget(prompt, tokenizer, max_tokens=max_input)
+        formatted = _format_prompt_for_inference(
+            prompt, tokenizer, model_dir, use_lora=use_lora
+        )
+        fitted_prompt = fit_prompt_to_token_budget(formatted, tokenizer, max_tokens=max_input)
         inputs = tokenizer(
             fitted_prompt,
             return_tensors="pt",
@@ -265,12 +344,14 @@ def generate(
         }
         if do_sample:
             gen_kwargs["temperature"] = temperature
+        adapter_ctx = nullcontext()
+        if isinstance(model, PeftModel) and not use_lora:
+            adapter_ctx = model.disable_adapter()
         try:
             with torch.no_grad():
-                out = model.generate(**inputs, **gen_kwargs)
+                with adapter_ctx:
+                    out = model.generate(**inputs, **gen_kwargs)
         except RuntimeError as e:
-            # Lfm2Cache conv_state can get corrupted between calls (mark_static_address
-            # interaction). Reset model so next call reloads fresh.
             global _tokenizer, _model, _loaded_path, _loaded_lora_path
             _tokenizer = None
             _model = None
@@ -281,13 +362,14 @@ def generate(
         input_len = int(inputs["input_ids"].shape[1])
         gen_ids = out[0][input_len:]
         raw = tokenizer.decode(gen_ids, skip_special_tokens=True)
-        gc.collect()  # Release Lfm2Cache before next call to prevent conv_state address reuse
+        gc.collect()
         return raw
 
     try:
         text = _model_executor.submit(_run_in_model_thread).result(timeout=600)
     except Exception as e:
         return f"[LLM generate error: {e!r}]"
+    text = strip_thinking_output(text)
     # Fallback: strip prompt if tokenizer left overlap (use original prompt arg from caller)
     prompt_clean = (prompt or "").strip()
     if prompt_clean and prompt_clean in text:
@@ -381,4 +463,4 @@ def explain_violation(
     prompt = build_explanation_prompt(
         rule_id, description, matched_text, law_articles, language=language
     )
-    return generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
+    return generate(prompt, max_new_tokens=max_new_tokens, do_sample=False, use_lora=True)
