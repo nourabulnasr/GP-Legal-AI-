@@ -119,9 +119,14 @@ class NetworkScreenState extends State<NetworkScreen> {
   Future<List<dynamic>> _loadConnections(dynamic api) async {
     try {
       final connRes = await api.getNetworkConnections();
-      return (connRes['items'] as List<dynamic>?) ??
+      final raw = (connRes['items'] as List<dynamic>?) ??
           (connRes['connections'] as List<dynamic>?) ??
           <dynamic>[];
+      final seen = <int>{};
+      return raw.where((item) {
+        final uid = (Map<String, dynamic>.from(item as Map)['user_id'] as num?)?.toInt() ?? 0;
+        return uid > 0 && seen.add(uid);
+      }).toList();
     } on ApiException catch (e) {
       if (e.statusCode != 404) rethrow; // 404 = endpoint not yet deployed, silently ignore
       return <dynamic>[];
@@ -325,7 +330,9 @@ class NetworkScreenState extends State<NetworkScreen> {
                       const SizedBox(height: 12),
                     ],
                     const SizedBox(height: 16),
-                    if (_stats != null) _StatsGrid(stats: _stats!),
+                    if (_stats != null) _StatsGrid(
+                      stats: {..._stats!, 'connections': _connections.length},
+                    ),
                     const SizedBox(height: 16),
                     Card(
                       child: ListTile(
@@ -468,7 +475,7 @@ class NetworkScreenState extends State<NetworkScreen> {
                 const Divider(height: 24),
               ] else if (_stats != null) ...[
                 Text(
-                  '${_stats!['connections_count'] ?? _stats!['total_connections'] ?? _stats!['connections'] ?? 0} connections',
+                  '${_connections.length} connections',
                   style: const TextStyle(fontSize: 14),
                 ),
                 const Divider(height: 24),

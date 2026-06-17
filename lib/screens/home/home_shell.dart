@@ -25,6 +25,8 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   int _alertsUnread = 0;
   Timer? _badgeTimer;
+  AuthProvider? _authProvider;
+  bool? _lastAuthState;
   final _homeKey = GlobalKey<DashboardTabState>();
   final _feedKey = GlobalKey<FeedScreenState>();
   final _networkKey = GlobalKey<NetworkScreenState>();
@@ -48,7 +50,12 @@ class _HomeShellState extends State<HomeShell> {
     super.initState();
     _refreshBadge();
     _badgeTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshBadge());
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadUserProfile());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadUserProfile();
+      _authProvider = context.read<AuthProvider>();
+      _lastAuthState = _authProvider!.isAuthenticated;
+      _authProvider!.addListener(_onAuthStateChanged);
+    });
   }
 
   Future<void> _loadUserProfile() async {
@@ -59,9 +66,21 @@ class _HomeShellState extends State<HomeShell> {
         );
   }
 
+  void _onAuthStateChanged() {
+    if (!mounted) return;
+    final isAuth = _authProvider?.isAuthenticated ?? false;
+    if (_lastAuthState == isAuth) return;
+    _lastAuthState = isAuth;
+    for (var i = 0; i < _tabs.length; i++) {
+      _refreshTab(i);
+    }
+    if (isAuth) _loadUserProfile();
+  }
+
   @override
   void dispose() {
     _badgeTimer?.cancel();
+    _authProvider?.removeListener(_onAuthStateChanged);
     super.dispose();
   }
 

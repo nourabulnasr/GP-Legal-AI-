@@ -140,9 +140,14 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                           ? Row(
                               children: [
                                 Expanded(
-                                  child: OutlinedButton.icon(
+                                  child: FilledButton.icon(
                                     onPressed: null,
-                                    icon: const Icon(Icons.check, size: 16),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFF2E7D32),
+                                      disabledBackgroundColor: const Color(0xFF2E7D32),
+                                      disabledForegroundColor: Colors.white,
+                                    ),
+                                    icon: const Icon(Icons.check, size: 16, color: Colors.white),
                                     label: const Text('Connected'),
                                   ),
                                 ),
@@ -159,8 +164,12 @@ class _MemberProfileScreenState extends State<MemberProfileScreen> {
                           : _inviteSent || (_data?['connection_status']?.toString() == 'pending')
                               ? OutlinedButton.icon(
                                   onPressed: null,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.grey,
+                                    side: const BorderSide(color: Colors.grey),
+                                  ),
                                   icon: const Icon(Icons.check, size: 16),
-                                  label: const Text('Pending'),
+                                  label: const Text('Invitation Sent'),
                                 )
                               : FilledButton(
                                   style: FilledButton.styleFrom(
