@@ -171,12 +171,16 @@ class LegatoApi {
     required String message,
     List<Map<String, dynamic>>? history,
   }) {
-    return _api.postJsonLong('/chat/document', {
-      if (documentContext != null) 'document_context': documentContext,
-      if (analysisId != null) 'analysis_id': analysisId,
-      'message': message,
-      if (history != null) 'history': history,
-    });
+    return _api.postJsonLong(
+      '/chat/document',
+      {
+        if (documentContext != null) 'document_context': documentContext,
+        if (analysisId != null) 'analysis_id': analysisId,
+        'message': message,
+        if (history != null) 'history': history,
+      },
+      timeout: AppConfig.longTimeout,
+    );
   }
 
   Future<Map<String, dynamic>> saveAnalysisToDb({

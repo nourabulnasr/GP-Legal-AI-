@@ -310,7 +310,7 @@ Be concise. Cite sections or rule IDs when relevant. If the answer is not in the
 
 # ----- Document chat with local LFM -----
 _MAX_DOCUMENT_CONTEXT_CHARS = 6000
-_DOCUMENT_CHAT_MAX_NEW_TOKENS = 512
+_DOCUMENT_CHAT_MAX_NEW_TOKENS = int(os.getenv("LFM_DOCUMENT_MAX_NEW_TOKENS", "320"))
 _DOCUMENT_CHAT_RETRY_CONTEXT_CHARS = 3500
 
 

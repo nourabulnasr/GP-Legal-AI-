@@ -310,14 +310,18 @@ class ApiClient {
     throw ApiException(_extractDetail(response.body), statusCode: response.statusCode);
   }
 
-  Future<Map<String, dynamic>> postJsonLong(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> postJsonLong(
+    String path,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
     final r = await _http
         .post(
           uri(path),
           headers: await _headers(jsonBody: true),
           body: jsonEncode(body),
         )
-        .timeout(AppConfig.chatTimeout);
+        .timeout(timeout ?? AppConfig.chatTimeout);
     await _on401(r);
     if (r.statusCode >= 200 && r.statusCode < 300) {
       if (r.body.isEmpty) return {};

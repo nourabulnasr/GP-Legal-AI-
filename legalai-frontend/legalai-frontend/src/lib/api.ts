@@ -206,7 +206,7 @@ export async function chatWithDocument(payload: {
   message: string;
   history?: { role: string; content: string }[];
 }): Promise<{ content: string }> {
-  const { data } = await api.post<{ content: string }>("/chat/document", payload, { timeout: 300000 });
+  const { data } = await api.post<{ content: string }>("/chat/document", payload, { timeout: 600000 });
   return data;
 }
 
