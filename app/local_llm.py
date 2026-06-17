@@ -209,8 +209,7 @@ def load_model():
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
-    tok_source = lora_str if lora and (lora / "tokenizer.json").is_file() else path_str
-    _tokenizer = AutoTokenizer.from_pretrained(tok_source, local_files_only=True, trust_remote_code=True)
+    _tokenizer = AutoTokenizer.from_pretrained(path_str, local_files_only=True, trust_remote_code=True)
     _model = AutoModelForCausalLM.from_pretrained(
         path_str,
         local_files_only=True,
