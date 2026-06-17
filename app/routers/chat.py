@@ -155,8 +155,43 @@ def _contract_ocr_text(result: Dict[str, Any], *, max_chars: int = 10000) -> str
     return body[:max_chars] if body else ""
 
 
+def _is_violation_focus_question(message: str) -> bool:
+    """User asks about detected problems/violations — must include rule_hits, not LFM-only OCR."""
+    m = (message or "").strip().lower()
+    if not m:
+        return False
+    markers_ar = (
+        "مخالف",
+        "مشكل",
+        "مشكلة",
+        "مخاطر",
+        "انتهاك",
+        "يخالف",
+        "غير قانون",
+        "يعارض",
+        "التحليل",
+        "رصد",
+        "اكتشف",
+        "المخالفات",
+        "المشاكل",
+    )
+    markers_en = (
+        "violation",
+        "non-compliant",
+        "noncompliant",
+        "illegal",
+        "risk",
+        "issues",
+        "problems",
+        "detected",
+    )
+    return any(x in m for x in markers_ar) or any(x in m for x in markers_en)
+
+
 def _is_general_contract_question(message: str) -> bool:
     """Broad 'explain/summarize the contract' questions — omit rule IDs from context."""
+    if _is_violation_focus_question(message):
+        return False
     m = (message or "").strip().lower()
     if not m:
         return False
@@ -178,6 +213,63 @@ def _is_general_contract_question(message: str) -> bool:
     return len(m.split()) <= 8 and ("عقد" in m or "contract" in m)
 
 
+def build_detected_violations_reply_ar(
+    rule_hits: List[Dict[str, Any]],
+    *,
+    labor_summary: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Deterministic summary of analyzer rule_hits — avoids LFM hallucination on violation questions.
+    """
+    hits = [
+        h
+        for h in (rule_hits or [])
+        if (h.get("description") or h.get("matched_text") or h.get("rule_id"))
+    ]
+    if not hits:
+        labor = labor_summary if isinstance(labor_summary, dict) else {}
+        if labor.get("violations_detected") is False:
+            return "لم يُرصد تحليل العقد أي مخالفات قانونية وفق قواعد قانون العمل المطبقة."
+        return "لم يُرصد تحليل العقد مخالفات محددة يمكن عرضها. جرّب إعادة تحليل العقد أو اسأل عن بند معيّن."
+
+    # Prefer error/high severity first.
+    sev_rank = {"error": 0, "high": 1, "warning": 2, "warn": 2, "medium": 3, "info": 4}
+    hits = sorted(
+        hits,
+        key=lambda h: sev_rank.get(str(h.get("severity") or "").lower(), 5),
+    )
+
+    lines = [
+        "وفقاً لنتيجة تحليل العقد المحفوظة (محرك القواعد)، هذه المخالفات المكتشفة:",
+        "",
+    ]
+    labor = labor_summary if isinstance(labor_summary, dict) else {}
+    risk = (labor.get("risk_level") or labor.get("risk") or "").strip()
+    if risk:
+        lines.append(f"مستوى المخاطرة الإجمالي: {risk}")
+        lines.append("")
+
+    for i, h in enumerate(hits[:12], 1):
+        rid = str(h.get("rule_id") or h.get("id") or "RULE").strip()
+        sev = str(h.get("severity") or "?").strip()
+        desc = (h.get("description") or "").strip()
+        matched = (h.get("matched_text") or "").strip()
+        lines.append(f"{i}. **{rid}** ({sev})")
+        if desc:
+            lines.append(f"   - **الوصف:** {desc}")
+        if matched:
+            excerpt = matched[:350] + ("…" if len(matched) > 350 else "")
+            lines.append(f"   - **النص من العقد:** «{excerpt}»")
+        lines.append("")
+
+    if len(hits) > 12:
+        lines.append(f"... و{len(hits) - 12} مخالفة إضافية في التحليل.")
+    lines.append(
+        "لشرح قانوني أعمق لبند واحد، استخدم «شرح البند» (explain-clause) على النص المعني."
+    )
+    return "\n".join(lines).strip()
+
+
 def _build_context(result: Dict[str, Any], *, for_general_qa: bool = False) -> str:
     """Build readable context for LFM — contract OCR first; violations only when needed."""
     parts: List[str] = []
@@ -192,11 +284,16 @@ def _build_context(result: Dict[str, Any], *, for_general_qa: bool = False) -> s
             hits_lines = []
             for h in rule_hits[:12]:
                 sev = h.get("severity") or "?"
+                rid = h.get("rule_id") or h.get("id") or "?"
                 desc = (h.get("description") or "").strip()
-                if desc:
-                    hits_lines.append(f"- ({sev}) {desc[:200]}")
+                matched = (h.get("matched_text") or "").strip()
+                if desc or matched:
+                    line = f"- ({sev}) [{rid}] {desc[:200]}"
+                    if matched:
+                        line += f" | نص: {matched[:180]}"
+                    hits_lines.append(line)
             if hits_lines:
-                parts.append("## ملخص المخالفات (وصف فقط)\n" + "\n".join(hits_lines))
+                parts.append("## المخالفات المكتشفة (من التحليل)\n" + "\n".join(hits_lines))
 
     labor = result.get("labor_summary") or {}
     if isinstance(labor, dict) and not for_general_qa:
@@ -351,10 +448,23 @@ def _build_document_chat_prompt(
     history: Optional[List[ChatMessage]] = None,
     *,
     context_limit: int = _MAX_DOCUMENT_CONTEXT_CHARS,
+    violation_focus: bool = False,
 ) -> str:
     """Build prompt for Arabic contract Q&A; structured answer, no rule-ID echo."""
     hist = _format_document_chat_history(history)
     ctx_slice = context[:context_limit]
+    if violation_focus or "## المخالفات المكتشفة" in ctx_slice:
+        return f"""أنت مساعد قانوني. أجب بالعربية فقط بناءً على قسم «المخالفات المكتشفة» أدناه.
+- اشرح **فقط** المخالفات المدرجة في التحليل؛ لا تخترع مخالفات جديدة.
+- لكل مخالفة: اذكر الوصف والنص من العقد كما وردا في التحليل.
+- لا تذكر مواضيع غير موجودة في التحليل (مثل ضرائب، بنية تحتية، سرية) إلا إذا كانت مدرجة صراحة.
+- إذا لم توجد مخالفات في التحليل، قل ذلك بوضوح.
+
+{hist}{ctx_slice}
+
+سؤال المستخدم: {message}
+
+الشرح:"""
     return f"""أنت مساعد قانوني. اقرأ نص العقد أدناه وأجب على سؤال المستخدم بالعربية فقط.
 - اكتب شرحاً واضحاً ومنظماً يتضمن ما يتوفر في النص: نوع العقد، الأطراف، المدة، الأجر، الواجبات، وشروط الإنهاء إن وُجدت.
 - لا تكتب كلمة "الرجوع" ولا أرقام قواعد بين أقواس مثل [لا 182].
@@ -435,6 +545,7 @@ def _get_lfm_document_reply(
     history: Optional[List[ChatMessage]] = None,
     max_new_tokens: int = _DOCUMENT_CHAT_MAX_NEW_TOKENS,
     context_limit: int = _MAX_DOCUMENT_CONTEXT_CHARS,
+    violation_focus: bool = False,
 ) -> str:
     """Call local LFM (app/local_llm first, then llm/generate) for document Q&A."""
     context = (document_context or "").strip()
@@ -446,7 +557,8 @@ def _get_lfm_document_reply(
         from app.local_llm import is_available as app_avail, generate as app_generate
         if app_avail():
             prompt = _build_document_chat_prompt(
-                context, message, history=history, context_limit=context_limit
+                context, message, history=history, context_limit=context_limit,
+                violation_focus=violation_focus,
             )
             return app_generate(prompt, max_new_tokens=max_new_tokens, do_sample=False)
     except Exception as e_app:
@@ -552,6 +664,9 @@ def chat_document(
 ):
     """Chat with the document using the local LFM model. Provide document_context or analysis_id."""
     context: Optional[str] = None
+    analysis_result: Optional[Dict[str, Any]] = None
+    violation_focus = _is_violation_focus_question(payload.message)
+
     if payload.analysis_id is not None:
         row = db.query(Analysis).filter(Analysis.id == payload.analysis_id).first()
         if not row:
@@ -560,11 +675,20 @@ def chat_document(
         if row.user_id != current_user.id and not is_admin:
             raise HTTPException(status_code=403, detail="Forbidden")
         try:
-            result = json.loads(row.result_json) if isinstance(row.result_json, str) else row.result_json
+            analysis_result = json.loads(row.result_json) if isinstance(row.result_json, str) else row.result_json
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid analysis data")
+
+        # Violation questions: return deterministic rule_hits summary (no LFM hallucination).
+        if violation_focus:
+            content = build_detected_violations_reply_ar(
+                analysis_result.get("rule_hits") or [],
+                labor_summary=analysis_result.get("labor_summary"),
+            )
+            return DocumentChatResponse(content=content, used_fallback=False)
+
         context = _build_context(
-            result,
+            analysis_result,
             for_general_qa=_is_general_contract_question(payload.message),
         )
     else:
@@ -574,8 +698,12 @@ def chat_document(
         raise HTTPException(status_code=400, detail="Provide document_context or analysis_id")
 
     used_fallback = False
-    content = _get_lfm_document_reply(context, payload.message, history=payload.history)
+    content = _get_lfm_document_reply(
+        context, payload.message, history=payload.history, violation_focus=violation_focus,
+    )
     if not _local_document_failed(content) and _lfm_document_low_quality(content, payload.message):
+        if violation_focus:
+            raise HTTPException(status_code=503, detail=_lfm_document_quality_error_ar())
         retry_ctx = _strip_context_to_contract_body(context)
         retry = _get_lfm_document_reply(
             retry_ctx,

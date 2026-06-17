@@ -17,6 +17,24 @@ class TestDocumentChatHelpers(unittest.TestCase):
     def test_is_general_contract_question_ar(self):
         self.assertTrue(chat_mod._is_general_contract_question("اشرح العقد"))
 
+    def test_violation_question_not_general(self):
+        self.assertTrue(chat_mod._is_violation_focus_question("اشرح المشاكل التي وردت في العقد"))
+        self.assertFalse(chat_mod._is_general_contract_question("اشرح المشاكل التي وردت في العقد"))
+
+    def test_build_detected_violations_reply(self):
+        hits = [
+            {
+                "rule_id": "LABOR25_WORKING_HOURS",
+                "severity": "error",
+                "description": "ساعات العمل تتجاوز الحد القانوني",
+                "matched_text": "10 ساعات يومياً",
+            }
+        ]
+        out = chat_mod.build_detected_violations_reply_ar(hits)
+        self.assertIn("LABOR25_WORKING_HOURS", out)
+        self.assertIn("10 ساعات", out)
+        self.assertNotIn("ضرائب", out)
+
     def test_lfm_document_low_quality_detects_garbage(self):
         self.assertTrue(chat_mod._lfm_document_low_quality(").\n\n\nالرجوع: [لا 182]", "اشرح العقد"))
 
