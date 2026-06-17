@@ -1,0 +1,117 @@
+# =========================
+# Secrets and env
+# =========================
+.env
+.env.local
+.env.*.local
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# =========================
+# Databases and local state
+# =========================
+*.db
+*.sqlite3
+legalai.db
+legalai_backup.db
+
+# =========================
+# User-uploaded files (runtime content, not source)
+# =========================
+static/post_images/*
+!static/post_images/.gitkeep
+
+# =========================
+# Chroma / vector stores
+# =========================
+chroma_legal/
+chroma_db/
+Legal Rag/chroma_db/
+
+# =========================
+# IDE and editor
+# =========================
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs and temp
+# =========================
+*.log
+logs/
+*.tmp
+*.temp
+
+# =========================
+# Large binaries and wheels
+# =========================
+wheels/
+*.whl
+
+# Law auto-update state (poll ETag, temp download, backups)
+laws/meta/backups/
+laws/meta/sync_state.json
+laws/meta/incoming_poll.pdf
+laws/raw/incoming/
+
+# =========================
+# Large model (download separately; remove these lines to track the model)
+# =========================
+LFM2.5-1.2B-Instruct/
+models/LFM2.5-1.2B-Instruct/
+
+# =========================
+# Jupyter and testing
+# =========================
+.ipynb_checkpoints/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Nested repo copy (not needed in git history)
+# =========================
+GP-Legal-AI-/
+
+# =========================
+# Claude Code session files
+# =========================
+.claude/
+
+# =========================
+# Optional: raw data (uncomment to avoid pushing large PDFs)
+# =========================
+# data/raw/
+# data/contracts_raw/

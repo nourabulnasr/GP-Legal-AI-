@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "purpose": "Manual or automated MT quality checks (BLEU/chrF secondary; expert review primary). Not used at inference.",
+  "samples": [
+    {
+      "id": "en_salary_01",
+      "source_lang": "en",
+      "source": "The probation period shall not exceed three months.",
+      "reference_ar": "لا تزيد فترة التجربة عن ثلاثة أشهر."
+    },
+    {
+      "id": "fr_notice_01",
+      "source_lang": "fr",
+      "source": "Le préavis de rupture du contrat est fixé à un mois.",
+      "reference_ar": "يُحدَّد إشعار إنهاء العقد بمدة شهر."
+    },
+    {
+      "id": "de_hours_01",
+      "source_lang": "de",
+      "source": "Die reguläre Arbeitszeit beträgt höchstens acht Stunden täglich.",
+      "reference_ar": "لا تتجاوز ساعات العمل المعتادة ثماني ساعات يومياً."
+    }
+  ]
+}

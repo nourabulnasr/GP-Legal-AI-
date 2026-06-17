@@ -1,0 +1,54 @@
+# LegalAI – backend + frontend
+# Usage: docker compose up --build
+# Backend API: http://localhost:8000
+# Frontend:    http://localhost:5173
+
+services:
+  backend:
+    build: .
+    container_name: legalai-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist SQLite DB without overriding application code
+      - legalai_db:/data
+      # Uploaded post/profile images (survive container restarts)
+      - ./static:/app/static
+      # Persist Chroma legal RAG (legal_rag_bridge + rag_chromadb when CHROMA_LEGAL_DIR is set)
+      - legalai_chroma:/data/chroma_legal
+      # Mount local LFM model files from host into container (read-only)
+      # Use ./ prefix so Compose treats this as a bind mount, not a named volume
+      - ${LOCAL_LLM_HOST_PATH:-./models/LFM2.5-1.2B-Instruct}:/models/lfm:ro
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=sqlite:////data/legalai.db
+      - LOCAL_LLM_PATH=/models/lfm
+      - CHROMA_LEGAL_DIR=/data/chroma_legal
+      # Build in-memory chunk retriever + warm Chroma at startup (legal RAG)
+      - ENABLE_STARTUP_RAG=1
+      # Document chat: set to 0 to never hide local LLM errors behind Gemini quota messages
+      - DOCUMENT_CHAT_GEMINI_FALLBACK=0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./legalai-frontend/legalai-frontend
+      dockerfile: Dockerfile
+    container_name: legalai-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  legalai_db:
+  legalai_chroma:

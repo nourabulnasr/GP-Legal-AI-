@@ -1,0 +1,14 @@
+﻿- id: LABOR_68_UNLAWFUL_TERMINATION
+  scope: "labor"
+  law: "Labor Law 12/2003"
+  article: "69"
+  description: "حالة فصل العامل دون سبب مشروع"
+  language: "ar"
+  severity: "high"
+  match:
+    any:
+      - pattern: 'فصل\s+العامل.*(?:دون|بدون)\s+(?:سبب|مبرر)'
+      - pattern: 'فصل\s+تعسف(?:ي|يًا)'
+    flags: "iu"
+  suggestion_ref: "seyagh/employment/termination_fair_cause.txt"
+  rationale: "الفصل دون سبب مشروع يعد باطلاً."

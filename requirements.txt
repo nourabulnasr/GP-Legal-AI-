@@ -1,0 +1,45 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+python-multipart==0.0.9
+Pillow==10.4.0
+pillow-heif>=0.18.0
+pytesseract==0.3.13
+PyMuPDF==1.24.9
+google-auth>=2.29.0
+google-cloud-documentai>=2.20.0
+PyYAML==6.0.2
+python-dotenv>=1.0.0
+numpy>=1.24.0,<3.0.0
+python-docx==1.1.2
+joblib>=1.3.0
+# 1.8.x requires Python 3.10+; keep 1.6.x for Python 3.9 (macOS CLT Python)
+scikit-learn>=1.4.0,<1.7.0
+scipy>=1.10.0
+
+# RAG (multilingual embeddings) - pinned for reproducibility
+sentence-transformers==2.7.0
+# 1.7.4 has no cp312 wheels; 1.10.0 caps Python at <3.12 — use 1.8.x–1.9.x for 3.9–3.12.
+faiss-cpu>=1.8.0,<1.10.0
+chromadb==0.4.22
+# Local LLM (LFM2.5-1.2B-Instruct from disk) — needs model_type "lfm2" (Transformers >= 4.57)
+transformers==4.57.2
+torch==2.2.0
+accelerate==0.33.0
+
+# =========================
+# Backend enhancements
+# =========================
+passlib[bcrypt]==1.7.4   # password hashing
+sqlalchemy==2.0.32       # SQLite ORM
+slowapi==0.1.9           # rate limiting
+structlog==24.4.0        # structured logging
+python-jose[cryptography]==3.3.0
+email-validator==2.2.0
+httpx>=0.27.0  # Google OAuth token exchange
+google-genai>=1.0.0  # Gemini chat (current SDK; use GEMINI_MODEL=gemini-2.0-flash)
+langdetect>=1.0.9  # offline ISO 639-1 language ID (broader Python support than Lingua 2.x)
+fasttext-wheel>=0.9.2  # optional: set FASTTEXT_LID_MODEL=/path/to/lid.176.ftz for stronger noisy-text LID
+google-cloud-translate>=3.16.0  # optional MT to Arabic (requires GCP credentials)
+# 1.10+ pulls spacy, which needs Python 3.10+; keep <1.10 for Python 3.9 (macOS CLT Python).
+argostranslate>=1.9.0,<1.10.0  # optional free offline MT to Arabic (no API key; first model install needs network)

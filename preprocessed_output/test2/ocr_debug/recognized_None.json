@@ -1,0 +1,266 @@
+[
+  {
+    "polygon": [
+      [
+        43.0,
+        97.0
+      ],
+      [
+        1519.0,
+        90.0
+      ],
+      [
+        1520.0,
+        403.0
+      ],
+      [
+        44.0,
+        409.0
+      ]
+    ],
+    "bbox": [
+      43,
+      90,
+      1520,
+      409
+    ],
+    "width": 1477,
+    "height": 319,
+    "area": 461256.5,
+    "region_index": 0,
+    "text": "Selbst der",
+    "score": 0.9934157133102417,
+    "crop_path": "preprocessed_output\\test2\\ocr_debug\\crops_None\\crop_0000.png"
+  },
+  {
+    "polygon": [
+      [
+        18.0,
+        394.0
+      ],
+      [
+        1797.0,
+        408.0
+      ],
+      [
+        1795.0,
+        784.0
+      ],
+      [
+        16.0,
+        770.0
+      ]
+    ],
+    "bbox": [
+      16,
+      394,
+      1797,
+      784
+    ],
+    "width": 1781,
+    "height": 390,
+    "area": 668932.0,
+    "region_index": 1,
+    "text": "langste Weg",
+    "score": 0.9508617520332336,
+    "crop_path": "preprocessed_output\\test2\\ocr_debug\\crops_None\\crop_0001.png"
+  },
+  {
+    "polygon": [
+      [
+        12.0,
+        723.0
+      ],
+      [
+        1769.0,
+        703.0
+      ],
+      [
+        1774.0,
+        1077.0
+      ],
+      [
+        16.0,
+        1097.0
+      ]
+    ],
+    "bbox": [
+      12,
+      703,
+      1774,
+      1097
+    ],
+    "width": 1762,
+    "height": 394,
+    "area": 657395.0,
+    "region_index": 2,
+    "text": "beginnt mit",
+    "score": 0.9699946045875549,
+    "crop_path": "preprocessed_output\\test2\\ocr_debug\\crops_None\\crop_0002.png"
+  },
+  {
+    "polygon": [
+      [
+        43.0,
+        1060.0
+      ],
+      [
+        1659.0,
+        1068.0
+      ],
+      [
+        1657.0,
+        1372.0
+      ],
+      [
+        42.0,
+        1364.0
+      ]
+    ],
+    "bbox": [
+      42,
+      1060,
+      1659,
+      1372
+    ],
+    "width": 1617,
+    "height": 312,
+    "area": 491124.0,
+    "region_index": 3,
+    "text": "dem ersten",
+    "score": 0.9869931936264038,
+    "crop_path": "preprocessed_output\\test2\\ocr_debug\\crops_None\\crop_0003.png"
+  },
+  {
+    "polygon": [
+      [
+        59.0,
+        1395.0
+      ],
+      [
+        1199.0,
+        1402.0
+      ],
+      [
+        1198.0,
+        1683.0
+      ],
+      [
+        57.0,
+        1676.0
+      ]
+    ],
+    "bbox": [
+      57,
+      1395,
+      1199,
+      1683
+    ],
+    "width": 1142,
+    "height": 288,
+    "area": 320491.0,
+    "region_index": 4,
+    "text": "Schritt.",
+    "score": 0.9964507818222046,
+    "crop_path": "preprocessed_output\\test2\\ocr_debug\\crops_None\\crop_0004.png"
+  },
+  {
+    "polygon": [
+      [
+        1229.0,
+        1588.0
+      ],
+      [
+        1777.0,
+        1588.0
+      ],
+      [
+        1777.0,
+        1705.0
+      ],
+      [
+        1229.0,
+        1705.0
+      ]
+    ],
+    "bbox": [
+      1229,
+      1588,
+      1777,
+      1705
+    ],
+    "width": 548,
+    "height": 117,
+    "area": 64116.0,
+    "region_index": 5,
+    "text": "Oktoberjest",
+    "score": 0.9611836075782776,
+    "crop_path": "preprocessed_output\\test2\\ocr_debug\\crops_None\\crop_0005.png"
+  },
+  {
+    "polygon": [
+      [
+        1754.0,
+        1601.0
+      ],
+      [
+        1778.0,
+        1601.0
+      ],
+      [
+        1778.0,
+        1618.0
+      ],
+      [
+        1754.0,
+        1618.0
+      ]
+    ],
+    "bbox": [
+      1754,
+      1601,
+      1778,
+      1618
+    ],
+    "width": 24,
+    "height": 17,
+    "area": 408.0,
+    "region_index": 6,
+    "text": "",
+    "score": 0.0,
+    "crop_path": "preprocessed_output\\test2\\ocr_debug\\crops_None\\crop_0006.png"
+  },
+  {
+    "polygon": [
+      [
+        1316.0,
+        1719.0
+      ],
+      [
+        1696.0,
+        1719.0
+      ],
+      [
+        1696.0,
+        1767.0
+      ],
+      [
+        1316.0,
+        1767.0
+      ]
+    ],
+    "bbox": [
+      1316,
+      1719,
+      1696,
+      1767
+    ],
+    "width": 380,
+    "height": 48,
+    "area": 18240.0,
+    "region_index": 7,
+    "text": "BRISBANE",
+    "score": 0.9898778200149536,
+    "crop_path": "preprocessed_output\\test2\\ocr_debug\\crops_None\\crop_0007.png"
+  }
+]

@@ -1,0 +1,218 @@
+[
+  {
+    "polygon": [
+      [
+        180.0,
+        201.0
+      ],
+      [
+        1615.0,
+        201.0
+      ],
+      [
+        1615.0,
+        252.0
+      ],
+      [
+        180.0,
+        252.0
+      ]
+    ],
+    "bbox": [
+      180,
+      201,
+      1615,
+      252
+    ],
+    "width": 1435,
+    "height": 51,
+    "area": 73185.0,
+    "region_index": 0,
+    "text": "I NEW:YORKTIMES DESTSELSINC.AUTHOR",
+    "score": 0.8686043620109558,
+    "crop_path": "preprocessed_output\\t3\\ocr_debug\\crops_None\\crop_0000.png",
+    "rec_model": "arabic",
+    "variant_used": "base",
+    "script_hint": "latin"
+  },
+  {
+    "polygon": [
+      [
+        114.0,
+        365.0
+      ],
+      [
+        1651.0,
+        365.0
+      ],
+      [
+        1651.0,
+        606.0
+      ],
+      [
+        114.0,
+        606.0
+      ]
+    ],
+    "bbox": [
+      114,
+      365,
+      1651,
+      606
+    ],
+    "width": 1537,
+    "height": 241,
+    "area": 370417.0,
+    "region_index": 1,
+    "text": "NICHOLAS",
+    "score": 0.9946813583374023,
+    "crop_path": "preprocessed_output\\t3\\ocr_debug\\crops_None\\crop_0001.png",
+    "rec_model": "arabic",
+    "variant_used": "otsu",
+    "script_hint": "latin"
+  },
+  {
+    "polygon": [
+      [
+        318.0,
+        656.0
+      ],
+      [
+        1437.0,
+        660.0
+      ],
+      [
+        1436.0,
+        915.0
+      ],
+      [
+        317.0,
+        911.0
+      ]
+    ],
+    "bbox": [
+      317,
+      656,
+      1437,
+      915
+    ],
+    "width": 1120,
+    "height": 259,
+    "area": 285349.0,
+    "region_index": 2,
+    "text": "SPARKS",
+    "score": 0.9991651177406311,
+    "crop_path": "preprocessed_output\\t3\\ocr_debug\\crops_None\\crop_0002.png",
+    "rec_model": "latin",
+    "variant_used": "otsu",
+    "script_hint": "latin"
+  },
+  {
+    "polygon": [
+      [
+        266.0,
+        1053.0
+      ],
+      [
+        867.0,
+        1063.0
+      ],
+      [
+        862.0,
+        1351.0
+      ],
+      [
+        261.0,
+        1341.0
+      ]
+    ],
+    "bbox": [
+      261,
+      1053,
+      867,
+      1351
+    ],
+    "width": 606,
+    "height": 298,
+    "area": 173138.0,
+    "region_index": 3,
+    "text": "Every",
+    "score": 0.9998898506164551,
+    "crop_path": "preprocessed_output\\t3\\ocr_debug\\crops_None\\crop_0003.png",
+    "rec_model": "latin",
+    "variant_used": "otsu",
+    "script_hint": "latin"
+  },
+  {
+    "polygon": [
+      [
+        831.0,
+        1056.0
+      ],
+      [
+        1489.0,
+        1063.0
+      ],
+      [
+        1486.0,
+        1309.0
+      ],
+      [
+        828.0,
+        1302.0
+      ]
+    ],
+    "bbox": [
+      828,
+      1056,
+      1489,
+      1309
+    ],
+    "width": 661,
+    "height": 253,
+    "area": 161889.0,
+    "region_index": 4,
+    "text": "Breath",
+    "score": 0.9995773434638977,
+    "crop_path": "preprocessed_output\\t3\\ocr_debug\\crops_None\\crop_0004.png",
+    "rec_model": "latin",
+    "variant_used": "otsu",
+    "script_hint": "latin"
+  },
+  {
+    "polygon": [
+      [
+        643.0,
+        2150.0
+      ],
+      [
+        768.0,
+        2090.0
+      ],
+      [
+        887.0,
+        2334.0
+      ],
+      [
+        762.0,
+        2394.0
+      ]
+    ],
+    "bbox": [
+      643,
+      2090,
+      887,
+      2394
+    ],
+    "width": 244,
+    "height": 304,
+    "area": 37640.0,
+    "region_index": 5,
+    "text": "A",
+    "score": 0.583938717842102,
+    "crop_path": "preprocessed_output\\t3\\ocr_debug\\crops_None\\crop_0005.png",
+    "rec_model": "arabic",
+    "variant_used": "sharp",
+    "script_hint": "latin"
+  }
+]
