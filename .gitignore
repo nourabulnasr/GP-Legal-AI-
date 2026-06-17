@@ -115,3 +115,12 @@ GP-Legal-AI-/
 # =========================
 # data/raw/
 # data/contracts_raw/
+
+# =========================
+# Flutter / Dart build artifacts
+# =========================
+.dart_tool/
+build/
+*.dart.js
+*.dart.js.map
+*.dart.js.deps
