@@ -11,13 +11,15 @@ services:
     volumes:
       - legalai_db:/data
       - legalai_chroma:/data/chroma_legal
-      - ${LOCAL_LLM_HOST_PATH:-./models/LFM2.5-1.2B-Instruct}:/models/lfm:ro
+      - ${LOCAL_LLM_HOST_PATH:-./models/LFM2.5-1.2B-Thinking}:/models/lfm:ro
+      - ${LOCAL_LORA_HOST_PATH:-./models/out_adapter}:/models/lora:ro
     env_file:
       - ../../.env
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=sqlite:////data/legalai.db
       - LOCAL_LLM_PATH=/models/lfm
+      - LOCAL_LORA_PATH=/models/lora
       - CHROMA_LEGAL_DIR=/data/chroma_legal
       - ENABLE_STARTUP_RAG=1
       - DOCUMENT_CHAT_GEMINI_FALLBACK=0

@@ -7,8 +7,9 @@ APP_DIR="${APP_DIR:-/opt/gp-legal-ai}"
 BUNDLE_DIR="${BUNDLE_DIR:-/root/deploy-bundle}"
 REPO_URL="${REPO_URL:-https://github.com/nourabulnasr/GP-Legal-AI-.git}"
 GIT_BRANCH="${GIT_BRANCH:-final_80%}"
-MODEL_DIR="${APP_DIR}/models/LFM2.5-1.2B-Instruct"
-HF_MODEL_ID="${HF_MODEL_ID:-LiquidAI/LFM2.5-1.2B-Instruct}"
+MODEL_DIR="${APP_DIR}/models/LFM2.5-1.2B-Thinking"
+HF_MODEL_ID="${HF_MODEL_ID:-LiquidAI/LFM2.5-1.2B-Thinking}"
+LORA_DIR="${APP_DIR}/models/out_adapter"
 SWAP_GB="${SWAP_GB:-4}"
 
 log() { echo "[deploy] $*"; }
@@ -106,7 +107,9 @@ if [ -n "${DEPLOY_HF_TOKEN:-}" ]; then
 fi
 
 export LOCAL_LLM_HOST_PATH="$MODEL_DIR"
+export LOCAL_LORA_HOST_PATH="$LORA_DIR"
 grep -q '^LOCAL_LLM_HOST_PATH=' "$APP_DIR/.env" || echo "LOCAL_LLM_HOST_PATH=${MODEL_DIR}" >> "$APP_DIR/.env"
+grep -q '^LOCAL_LORA_HOST_PATH=' "$APP_DIR/.env" || echo "LOCAL_LORA_HOST_PATH=${LORA_DIR}" >> "$APP_DIR/.env"
 
 log "=== 6/9 Download LFM model (if missing) ==="
 mkdir -p "$(dirname "$MODEL_DIR")"
@@ -117,9 +120,11 @@ _has_model() {
 }
 if ! _has_model; then
   log "Downloading ${HF_MODEL_ID} (~2.2GB) — may take 10–30 min..."
+  MODEL_BASENAME="$(basename "$MODEL_DIR")"
   docker run --rm \
     -v "$(dirname "$MODEL_DIR"):/models" \
     -e HF_TOKEN="${DEPLOY_HF_TOKEN:-}" \
+    -e MODEL_BASENAME="${MODEL_BASENAME}" \
     python:3.11-slim bash -c "
       pip install -q huggingface_hub &&
       python -c \"
@@ -127,7 +132,7 @@ from huggingface_hub import snapshot_download
 import os
 snapshot_download(
     repo_id='${HF_MODEL_ID}',
-    local_dir='/models/LFM2.5-1.2B-Instruct',
+    local_dir='/models/' + os.environ['MODEL_BASENAME'],
     token=os.environ.get('HF_TOKEN') or None,
 )
 print('Model download complete')
@@ -136,9 +141,16 @@ else
   log "LFM model already present at ${MODEL_DIR}"
 fi
 
+if [ ! -f "$LORA_DIR/adapter_config.json" ]; then
+  log "WARN: LoRA adapter not found at ${LORA_DIR}/adapter_config.json"
+  log "      Upload out_adapter (adapter_config.json + adapter_model.safetensors + tokenizer files)"
+  log "      then restart backend. Until then, base Thinking model runs without fine-tune."
+fi
+
 log "=== 7/9 Build and start backend (Docker) ==="
 cd "$APP_DIR"
 export LOCAL_LLM_HOST_PATH="$MODEL_DIR"
+export LOCAL_LORA_HOST_PATH="$LORA_DIR"
 docker compose -f docker-compose.yml -f deploy/hostinger/docker-compose.prod.yml build backend
 docker compose -f docker-compose.yml -f deploy/hostinger/docker-compose.prod.yml up -d backend
 

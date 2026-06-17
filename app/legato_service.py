@@ -149,7 +149,7 @@ def run_explain_clause(
         raise RuntimeError(f"local_llm import failed: {e}") from e
 
     if not getattr(llm, "is_available", lambda: False)():
-        raise RuntimeError("Local LFM not available (set LOCAL_LLM_PATH or add LFM2.5-1.2B-Instruct).")
+        raise RuntimeError("Local LFM not available (set LOCAL_LLM_PATH or add models/LFM2.5-1.2B-Thinking).")
 
     explain_fn = getattr(llm, "explain_violation", None)
     if not explain_fn:

@@ -26,6 +26,7 @@ chromadb==0.4.22
 transformers==4.57.2
 torch==2.2.0
 accelerate==0.33.0
+peft==0.18.1
 
 # =========================
 # Backend enhancements

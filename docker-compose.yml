@@ -16,15 +16,16 @@ services:
       - ./static:/app/static
       # Persist Chroma legal RAG (legal_rag_bridge + rag_chromadb when CHROMA_LEGAL_DIR is set)
       - legalai_chroma:/data/chroma_legal
-      # Mount local LFM model files from host into container (read-only)
-      # Use ./ prefix so Compose treats this as a bind mount, not a named volume
-      - ${LOCAL_LLM_HOST_PATH:-./models/LFM2.5-1.2B-Instruct}:/models/lfm:ro
+      # Mount local LFM base model + optional LoRA adapter (read-only bind mounts)
+      - ${LOCAL_LLM_HOST_PATH:-./models/LFM2.5-1.2B-Thinking}:/models/lfm:ro
+      - ${LOCAL_LORA_HOST_PATH:-./models/out_adapter}:/models/lora:ro
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=sqlite:////data/legalai.db
       - LOCAL_LLM_PATH=/models/lfm
+      - LOCAL_LORA_PATH=/models/lora
       - CHROMA_LEGAL_DIR=/data/chroma_legal
       # Build in-memory chunk retriever + warm Chroma at startup (legal RAG)
       - ENABLE_STARTUP_RAG=1

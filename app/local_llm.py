@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Local LFM2.5-1.2B-Instruct for explanation-only (no violation detection, no invented law).
-Loads from disk (LOCAL_LLM_PATH or project LFM2.5-1.2B-Instruct). No HuggingFace API.
+Local LFM2.5-1.2B (Thinking or Instruct) for explanation-only (no violation detection, no invented law).
+Loads from disk (LOCAL_LLM_PATH). Optional PEFT LoRA via LOCAL_LORA_PATH. No HuggingFace API.
 """
 
 from __future__ import annotations
@@ -13,8 +13,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 _BASE = Path(__file__).resolve().parent.parent
-DEFAULT_MODEL_PATH = _BASE / "LFM2.5-1.2B-Instruct"
-MODEL_UNDER_MODELS = _BASE / "models" / "LFM2.5-1.2B-Instruct"
+DEFAULT_MODEL_PATH = _BASE / "LFM2.5-1.2B-Thinking"
+DEFAULT_MODEL_PATH_INSTRUCT = _BASE / "LFM2.5-1.2B-Instruct"
+MODEL_UNDER_MODELS = _BASE / "models" / "LFM2.5-1.2B-Thinking"
+MODEL_UNDER_MODELS_INSTRUCT = _BASE / "models" / "LFM2.5-1.2B-Instruct"
+DEFAULT_LORA_PATH = _BASE / "models" / "out_adapter"
 MAX_PROMPT_CHARS = 6000
 # Leave room for generation; HF truncation=True keeps the *start* and drops the question/suffix.
 DEFAULT_MAX_INPUT_TOKENS = int(os.getenv("LFM_MAX_INPUT_TOKENS", "1800"))
@@ -35,6 +38,7 @@ _PROMPT_SUFFIX_MARKERS = (
 _tokenizer = None
 _model = None
 _loaded_path: Optional[str] = None
+_loaded_lora_path: Optional[str] = None
 
 # Single-thread executor: Lfm2ForCausalLM has thread-local state — load and
 # generate must both execute in the same thread to avoid the "Tensor on device
@@ -48,15 +52,52 @@ def _model_path() -> Optional[Path]:
         p = Path(path_env).expanduser().resolve()
         if p.exists():
             return p
-    for candidate in (DEFAULT_MODEL_PATH, MODEL_UNDER_MODELS):
+    for candidate in (
+        DEFAULT_MODEL_PATH,
+        MODEL_UNDER_MODELS,
+        DEFAULT_MODEL_PATH_INSTRUCT,
+        MODEL_UNDER_MODELS_INSTRUCT,
+    ):
         if candidate.exists():
             return candidate
+    return None
+
+
+def _lora_path() -> Optional[Path]:
+    path_env = os.environ.get("LOCAL_LORA_PATH", "").strip()
+    if path_env:
+        p = Path(path_env).expanduser().resolve()
+        if (p / "adapter_config.json").is_file():
+            return p
+    if DEFAULT_LORA_PATH.exists() and (DEFAULT_LORA_PATH / "adapter_config.json").is_file():
+        return DEFAULT_LORA_PATH
     return None
 
 
 def is_available() -> bool:
     """True if local model path exists and can be loaded."""
     return _model_path() is not None
+
+
+def _verify_lora_adapter(adapter_dir: Path, base_dir: Path) -> None:
+    cfg_path = adapter_dir / "adapter_config.json"
+    if not cfg_path.is_file():
+        raise FileNotFoundError(f"Missing adapter_config.json under {adapter_dir}")
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in {cfg_path}: {e}") from e
+    expected_base = str(cfg.get("base_model_name_or_path") or "").strip().lower()
+    if not expected_base:
+        return
+    base_name = base_dir.name.lower()
+    # Adapter was trained on LFM2.5-1.2B-Thinking; base folder may be renamed on disk.
+    if "thinking" in expected_base and "instruct" in base_name and "thinking" not in base_name:
+        raise ValueError(
+            f"LOCAL_LORA_PATH expects base model {cfg.get('base_model_name_or_path')!r}, "
+            f"but LOCAL_LLM_PATH points at {base_dir.name!r}. "
+            "Download LiquidAI/LFM2.5-1.2B-Thinking and set LOCAL_LLM_PATH to that folder."
+        )
 
 
 def _verify_local_hf_snapshot(model_dir: Path) -> None:
@@ -149,28 +190,40 @@ def fit_prompt_to_token_budget(
 
 def load_model():
     """Load tokenizer and model from local path. Idempotent."""
-    global _tokenizer, _model, _loaded_path
+    global _tokenizer, _model, _loaded_path, _loaded_lora_path
     path = _model_path()
     if not path:
-        raise FileNotFoundError("Local LLM path not set or missing. Set LOCAL_LLM_PATH or add LFM2.5-1.2B-Instruct/.")
+        raise FileNotFoundError(
+            "Local LLM path not set or missing. Set LOCAL_LLM_PATH or add models/LFM2.5-1.2B-Thinking/."
+        )
     path_str = str(path)
-    if _model is not None and _loaded_path == path_str:
+    lora = _lora_path()
+    lora_str = str(lora) if lora else None
+    if _model is not None and _loaded_path == path_str and _loaded_lora_path == lora_str:
         return _tokenizer, _model
 
     _verify_local_hf_snapshot(path)
+    if lora:
+        _verify_lora_adapter(lora, path)
 
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
-    _tokenizer = AutoTokenizer.from_pretrained(path_str, local_files_only=True, trust_remote_code=True)
+    tok_source = lora_str if lora and (lora / "tokenizer.json").is_file() else path_str
+    _tokenizer = AutoTokenizer.from_pretrained(tok_source, local_files_only=True, trust_remote_code=True)
     _model = AutoModelForCausalLM.from_pretrained(
         path_str,
         local_files_only=True,
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
     )
+    if lora:
+        from peft import PeftModel
+
+        _model = PeftModel.from_pretrained(_model, lora_str)
     _model.eval()
     _loaded_path = path_str
+    _loaded_lora_path = lora_str
     return _tokenizer, _model
 
 
@@ -219,10 +272,11 @@ def generate(
         except RuntimeError as e:
             # Lfm2Cache conv_state can get corrupted between calls (mark_static_address
             # interaction). Reset model so next call reloads fresh.
-            global _tokenizer, _model, _loaded_path
+            global _tokenizer, _model, _loaded_path, _loaded_lora_path
             _tokenizer = None
             _model = None
             _loaded_path = None
+            _loaded_lora_path = None
             gc.collect()
             return f"[LLM generate error: {e!r}]"
         input_len = int(inputs["input_ids"].shape[1])
@@ -292,7 +346,7 @@ def build_explanation_prompt(
         art = meta.get("article", "")
         law = meta.get("law", "")
         if text:
-            law_block.append(f"المادة {art} - {law}:\n{text[:200]}")
+            law_block.append(f"المادة {art} - {law}:\n{text[:1500]}")
     law_str = "\n\n---\n\n".join(law_block) if law_block else "لم تُقدّم مواد قانونية."
 
     sys_prompt = EXPLANATION_SYSTEM if language == "ar" else EXPLANATION_SYSTEM_EN
@@ -302,7 +356,7 @@ def build_explanation_prompt(
 الوصف: {description}
 
 نص العقد المعني:
-{matched_text[:300]}
+{matched_text[:1500]}
 
 النصوص القانونية المقدمة:
 {law_str}

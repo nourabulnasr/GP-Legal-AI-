@@ -3,7 +3,8 @@ set -euo pipefail
 exec > /root/deploy2.log 2>&1
 
 APP_DIR=/opt/gp-legal-ai
-MODEL_DIR="$APP_DIR/models/LFM2.5-1.2B-Instruct"
+MODEL_DIR="$APP_DIR/models/LFM2.5-1.2B-Thinking"
+LORA_DIR="$APP_DIR/models/out_adapter"
 
 echo "[continue] model download if needed"
 mkdir -p "$(dirname "$MODEL_DIR")"
@@ -15,8 +16,8 @@ if [ ! -f "$MODEL_DIR/config.json" ]; then
       python -c \"
 from huggingface_hub import snapshot_download
 snapshot_download(
-    repo_id='LiquidAI/LFM2.5-1.2B-Instruct',
-    local_dir='/models/LFM2.5-1.2B-Instruct',
+    repo_id='LiquidAI/LFM2.5-1.2B-Thinking',
+    local_dir='/models/LFM2.5-1.2B-Thinking',
 )
 print('model ok')
 \""
@@ -25,6 +26,7 @@ fi
 echo "[continue] docker build + start"
 cd "$APP_DIR"
 export LOCAL_LLM_HOST_PATH="$MODEL_DIR"
+export LOCAL_LORA_HOST_PATH="$LORA_DIR"
 docker compose -f docker-compose.yml -f deploy/hostinger/docker-compose.prod.yml build backend
 docker compose -f docker-compose.yml -f deploy/hostinger/docker-compose.prod.yml up -d backend
 
