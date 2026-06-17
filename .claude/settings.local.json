@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd /c \"set TEMP=D:\\\\flutter_temp && set TMP=D:\\\\flutter_temp && cd /d d:\\\\GP-Legal-AI--final_80- && flutter run -d chrome\")",
+      "PowerShell(Start-Process cmd.exe -ArgumentList '/c','D:\\\\run_flutter.bat' -WindowStyle Normal)",
+      "Bash(flutter analyze *)"
+    ]
+  }
+}
