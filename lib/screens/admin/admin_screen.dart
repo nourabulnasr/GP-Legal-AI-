@@ -239,6 +239,69 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     triggerFileDownload(bytes, filename, _mimeFromFilename(filename));
   }
 
+  Future<void> _negotiateLawyerRate(int appId, String userEmail, double? currentRate) async {
+    final rateCtrl = TextEditingController(
+      text: currentRate != null ? currentRate.toStringAsFixed(0) : '',
+    );
+    final noteCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Negotiate rate — $userEmail'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: rateCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Proposed hourly rate',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: noteCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Note to lawyer (optional)',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send proposal')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final rate = double.tryParse(rateCtrl.text.trim());
+    if (rate == null || rate <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid hourly rate.')),
+      );
+      return;
+    }
+    try {
+      await context.read<AppServices>().legato.adminReviewLawyerApplication(
+            appId,
+            action: 'negotiate',
+            adminNote: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+            negotiatedHourlyRate: rate,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rate proposal sent to lawyer.')),
+        );
+        await _loadLawyerApps();
+      }
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   Future<void> _reviewLawyerApp(int appId, int? userId, String userEmail, String action) async {
     String? note;
     if (action == 'reject') {
@@ -717,6 +780,16 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                                         appId, app['user_id'] as int?, email, 'reject'),
                                                     icon: const Icon(Icons.close, size: 16),
                                                     label: const Text('Reject'),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  OutlinedButton.icon(
+                                                    onPressed: () => _negotiateLawyerRate(
+                                                      appId,
+                                                      email,
+                                                      (app['hourly_rate'] as num?)?.toDouble(),
+                                                    ),
+                                                    icon: const Icon(Icons.payments_outlined, size: 16),
+                                                    label: const Text('Negotiate'),
                                                   ),
                                                   const SizedBox(width: 8),
                                                   FilledButton.icon(

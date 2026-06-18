@@ -24,6 +24,7 @@ class NetworkScreenState extends State<NetworkScreen> {
   List<dynamic> _suggestions = [];
   List<dynamic> _pending = [];
   List<dynamic> _connections = [];
+  List<dynamic> _lawyers = [];
   bool _searching = false;
   List<dynamic> _results = [];
   final Set<int> _sentInvites = {};
@@ -55,15 +56,16 @@ class NetworkScreenState extends State<NetworkScreen> {
         api.getNetworkSuggestions(),
         api.getPendingInvites(),
         _loadConnections(api),
+        api.getVerifiedLawyers(),
       ]);
       if (!mounted) return;
       final st = results[0] as Map<String, dynamic>;
       final sug = results[1] as Map<String, dynamic>;
       final pend = results[2] as Map<String, dynamic>;
       final conn = results[3] as List<dynamic>;
+      final lawyers = results[4] as List<dynamic>;
       setState(() {
         _stats = st;
-        // Handle both 'items' and 'suggestions' response keys.
         _suggestions = (sug['items'] as List<dynamic>?) ??
             (sug['suggestions'] as List<dynamic>?) ??
             <dynamic>[];
@@ -71,6 +73,7 @@ class NetworkScreenState extends State<NetworkScreen> {
             (pend['invitations'] as List<dynamic>?) ??
             <dynamic>[];
         _connections = conn;
+        _lawyers = lawyers;
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -132,6 +135,73 @@ class NetworkScreenState extends State<NetworkScreen> {
       return <dynamic>[];
     } catch (_) {
       return <dynamic>[];
+    }
+  }
+
+  Future<void> _requestConsultation(int lawyerId, String lawyerName, double? hourlyRate) async {
+    final durationCtrl = TextEditingController(text: '30');
+    final notesCtrl = TextEditingController();
+    final rateLabel = hourlyRate != null ? '${hourlyRate.toStringAsFixed(0)}/hr' : '—';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Consultation with $lawyerName'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Rate: $rateLabel', style: Theme.of(ctx).textTheme.bodyMedium),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: durationCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Duration (minutes)',
+                  hintText: 'Minimum 15',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'What do you need help with? (optional)',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send request')),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+    final mins = int.tryParse(durationCtrl.text.trim()) ?? 0;
+    if (mins < 15) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Minimum consultation duration is 15 minutes.')),
+      );
+      return;
+    }
+    try {
+      await context.read<AppServices>().legato.requestConsultation(
+            lawyerId: lawyerId,
+            durationMinutes: mins,
+            notes: notesCtrl.text.trim(),
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Consultation request sent. The lawyer will respond in Alerts.')),
+      );
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -339,6 +409,64 @@ class NetworkScreenState extends State<NetworkScreen> {
                     if (_stats != null) _StatsGrid(
                       stats: {..._stats!, 'connections': _connections.length},
                     ),
+                    if (_lawyers.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Verified lawyers',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          Text('${_lawyers.length}', style: Theme.of(context).textTheme.labelLarge),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ..._lawyers.map((raw) {
+                        final m = Map<String, dynamic>.from(raw as Map);
+                        final uid = (m['user_id'] as num?)?.toInt() ?? 0;
+                        final name = m['name']?.toString() ?? 'Lawyer';
+                        final rate = (m['hourly_rate'] as num?)?.toDouble();
+                        return Card(
+                          child: ListTile(
+                            leading: UserAvatar(
+                              radius: 22,
+                              imageUrl: m['avatar_url']?.toString(),
+                              name: name,
+                            ),
+                            title: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                ),
+                                const SizedBox(width: 4),
+                                const Tooltip(
+                                  message: 'Verified Lawyer',
+                                  child: Icon(Icons.verified, size: 16, color: Color(0xFF0A66C2)),
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              [
+                                if (m['subtitle']?.toString().isNotEmpty == true) m['subtitle'].toString(),
+                                if (rate != null) '${rate.toStringAsFixed(0)}/hr',
+                                if (m['location']?.toString().isNotEmpty == true) m['location'].toString(),
+                              ].where((s) => s.isNotEmpty).join(' · '),
+                              maxLines: 2,
+                            ),
+                            trailing: FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: LegatoLinkedInTheme.navActiveGold,
+                                foregroundColor: const Color(0xFF1B1F23),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: uid > 0 ? () => _requestConsultation(uid, name, rate) : null,
+                              child: const Text('Request'),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
                     const SizedBox(height: 16),
                     Card(
                       child: ListTile(

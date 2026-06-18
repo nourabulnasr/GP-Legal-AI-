@@ -43,6 +43,7 @@ def _serialize(
         "type": n.type,
         "message": n.message,
         "post_id": n.post_id,
+        "reference_id": getattr(n, "reference_id", None),
         "actor_id": n.actor_id,
         "actor_name": actor_display_name(db, n.actor_id),
         "actor_avatar_url": _actor_avatar_url(db, n.actor_id),

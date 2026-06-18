@@ -81,6 +81,7 @@ def init_db() -> None:
                 ("id_card_back_filename", "VARCHAR(512)"),
                 ("years_of_experience", "INTEGER"),
                 ("hourly_rate", "REAL"),
+                ("negotiated_hourly_rate", "REAL"),
             ]:
                 if col_name not in col_names:
                     conn.execute(text(f"ALTER TABLE lawyer_applications ADD COLUMN {col_name} {col_type};"))
@@ -166,6 +167,15 @@ def init_db() -> None:
             col_names = {c[1] for c in cols}
             if "last_read_message_id" not in col_names:
                 conn.execute(text("ALTER TABLE user_conversation_members ADD COLUMN last_read_message_id INTEGER;"))
+    except Exception:
+        pass
+
+    try:
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(user_notifications);")).fetchall()
+            col_names = {c[1] for c in cols}
+            if "reference_id" not in col_names:
+                conn.execute(text("ALTER TABLE user_notifications ADD COLUMN reference_id INTEGER;"))
     except Exception:
         pass
 

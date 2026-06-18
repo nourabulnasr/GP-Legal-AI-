@@ -713,10 +713,44 @@ class LegatoApi {
     int applicationId, {
     required String action,
     String? adminNote,
+    double? negotiatedHourlyRate,
   }) {
     return _api.patchJson('/admin/lawyers/$applicationId/review', {
       'action': action,
       if (adminNote != null && adminNote.isNotEmpty) 'admin_note': adminNote,
+      if (negotiatedHourlyRate != null) 'negotiated_hourly_rate': negotiatedHourlyRate,
     });
   }
+
+  Future<List<dynamic>> getVerifiedLawyers() async {
+    final r = await _api.getJson('/api/network/lawyers');
+    return (r['items'] as List<dynamic>?) ?? [];
+  }
+
+  Future<Map<String, dynamic>> requestConsultation({
+    required int lawyerId,
+    required int durationMinutes,
+    String? notes,
+  }) {
+    return _api.postJson('/api/consultations', {
+      'lawyer_id': lawyerId,
+      'duration_minutes': durationMinutes,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+    });
+  }
+
+  Future<Map<String, dynamic>> getConsultation(int id) =>
+      _api.getJson('/api/consultations/$id');
+
+  Future<Map<String, dynamic>> respondConsultation(int id, {required bool accept}) {
+    return _api.postJson('/api/consultations/$id/respond', {
+      'action': accept ? 'accept' : 'reject',
+    });
+  }
+
+  Future<Map<String, dynamic>> getConsultationSession(int conversationId) =>
+      _api.getJson('/api/consultations/session/conversation/$conversationId');
+
+  Future<Map<String, dynamic>> respondLawyerRate({required bool accept}) =>
+      _api.postJson('/lawyer/rate-response', {'accept': accept});
 }

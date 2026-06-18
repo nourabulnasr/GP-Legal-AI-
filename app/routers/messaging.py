@@ -22,6 +22,7 @@ from app.db.models import (
     UserMessage,
 )
 from app.db.session import get_db
+from app.services.consultation_helpers import can_message_users, consultation_for_conversation, ensure_consultation_session_valid
 
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
@@ -118,7 +119,7 @@ def _conversation_payload(
     title = conv.title
     if conv.kind == "direct" and peers:
         title = peers[0].get("name") or peers[0].get("email") or "Chat"
-    return {
+    payload: Dict[str, Any] = {
         "id": conv.id,
         "kind": conv.kind,
         "title": title or ("Group chat" if conv.kind == "group" else "Chat"),
@@ -130,6 +131,19 @@ def _conversation_payload(
         "last_message": last.body if last else None,
         "last_message_at": last.created_at.isoformat() + "Z" if last else None,
     }
+    consult = consultation_for_conversation(db, conv.id)
+    if consult and consult.status == "active" and consult.session_ends_at:
+        ends = consult.session_ends_at
+        if ends.tzinfo is None:
+            ends = ends.replace(tzinfo=timezone.utc)
+        remaining = max(0, int((ends - datetime.now(timezone.utc)).total_seconds()))
+        payload["consultation"] = {
+            "id": consult.id,
+            "duration_minutes": consult.duration_minutes,
+            "session_ends_at": consult.session_ends_at.isoformat() + "Z",
+            "remaining_seconds": remaining,
+        }
+    return payload
 
 
 def _find_direct_conversation(db: Session, user_id: int, peer_id: int) -> Optional[UserConversation]:
@@ -227,8 +241,8 @@ def create_or_get_direct(
     peer = db.query(User).filter(User.id == peer_id).first()
     if not peer:
         raise HTTPException(status_code=404, detail="User not found")
-    if not _users_connected(db, current_user.id, peer_id):
-        raise HTTPException(status_code=403, detail="You must be connected to message this user")
+    if not can_message_users(db, current_user.id, peer_id):
+        raise HTTPException(status_code=403, detail="You must be connected or have an active consultation to message this user")
     existing = _find_direct_conversation(db, current_user.id, peer_id)
     if existing:
         return _conversation_payload(db, existing, current_user.id)
@@ -462,6 +476,9 @@ def post_message(
     current_user: User = Depends(get_current_user),
 ):
     _require_member(db, conversation_id, current_user.id)
+    _, session_err = ensure_consultation_session_valid(db, conversation_id)
+    if session_err:
+        raise HTTPException(status_code=403, detail=session_err)
     msg = UserMessage(
         conversation_id=conversation_id,
         author_id=current_user.id,

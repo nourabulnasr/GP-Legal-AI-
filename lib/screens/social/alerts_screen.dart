@@ -6,6 +6,7 @@ import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/admin/admin_screen.dart';
 import 'package:legato_mobile/screens/lawyer/lawyer_application_screen.dart';
+import 'package:legato_mobile/screens/messaging/conversation_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/user_avatar.dart';
@@ -109,6 +110,12 @@ class AlertsScreenState extends State<AlertsScreen> {
         return Icons.gavel_outlined;
       case 'lawyer_review':
         return Icons.verified_outlined;
+      case 'consultation_request':
+        return Icons.schedule_outlined;
+      case 'consultation_response':
+        return Icons.chat_outlined;
+      case 'lawyer_rate_negotiation':
+        return Icons.payments_outlined;
       default:
         return Icons.notifications_outlined;
     }
@@ -119,6 +126,88 @@ class AlertsScreenState extends State<AlertsScreen> {
     if (raw is num) return raw.toInt();
     if (raw is String) return int.tryParse(raw.trim());
     return null;
+  }
+
+  int? _referenceIdFromNotification(Map<String, dynamic> m) {
+    final raw = m['reference_id'] ?? m['referenceId'];
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim());
+    return null;
+  }
+
+  Future<void> _handleConsultationRequest(int consultationId) async {
+    final legato = context.read<AppServices>().legato;
+    Map<String, dynamic> data;
+    try {
+      data = await legato.getConsultation(consultationId);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+    if (!mounted) return;
+    final accept = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Consultation request'),
+        content: Text(
+          '${data['requester_name']} requested ${data['duration_minutes']} min'
+          '${data['hourly_rate'] != null ? ' at ${data['hourly_rate']}/hr' : ''}.'
+          '${(data['notes']?.toString().isNotEmpty == true) ? '\n\n${data['notes']}' : ''}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Decline')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Accept')),
+        ],
+      ),
+    );
+    if (accept == null || !mounted) return;
+    try {
+      final res = await legato.respondConsultation(consultationId, accept: accept);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(accept ? 'Consultation accepted.' : 'Consultation declined.')),
+      );
+      if (accept && res['conversation_id'] != null) {
+        final convId = (res['conversation_id'] as num).toInt();
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ConversationScreen(
+              conversationId: convId,
+              title: data['requester_name']?.toString() ?? 'Chat',
+            ),
+          ),
+        );
+      }
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _handleRateNegotiation() async {
+    final accept = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Proposed hourly rate'),
+        content: const Text('Admin proposed a new hourly rate. Do you accept it?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Reject')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Accept')),
+        ],
+      ),
+    );
+    if (accept == null || !mounted) return;
+    try {
+      final res = await context.read<AppServices>().legato.respondLawyerRate(accept: accept);
+      await context.read<AuthProvider>().refreshUser();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['message']?.toString() ?? (accept ? 'Rate accepted' : 'Rate rejected'))),
+      );
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> _onActivityTap(Map<String, dynamic> m) async {
@@ -146,6 +235,37 @@ class AlertsScreenState extends State<AlertsScreen> {
       );
       return;
     }
+    if (type == 'lawyer_rate_negotiation') {
+      await _handleRateNegotiation();
+      return;
+    }
+    if (type == 'consultation_request') {
+      final ref = _referenceIdFromNotification(m);
+      if (ref != null) await _handleConsultationRequest(ref);
+      return;
+    }
+    if (type == 'consultation_response') {
+      final ref = _referenceIdFromNotification(m);
+      if (ref != null) {
+        try {
+          final data = await context.read<AppServices>().legato.getConsultation(ref);
+          final convId = (data['conversation_id'] as num?)?.toInt();
+          if (convId != null && mounted) {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ConversationScreen(
+                  conversationId: convId,
+                  title: data['lawyer_name']?.toString() ?? 'Chat',
+                ),
+              ),
+            );
+          }
+        } on ApiException catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        }
+      }
+      return;
+    }
     // Lawyer application → admin is taken straight to the Lawyers tab.
     if (type == 'lawyer_application') {
       final isAdmin = context.read<AuthProvider>().user?.isAdmin ?? false;
@@ -157,6 +277,9 @@ class AlertsScreenState extends State<AlertsScreen> {
       return;
     }
     if (postId == null) {
+      if (type == 'consultation_request' || type == 'consultation_response' || type == 'lawyer_rate_negotiation') {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('This alert is not linked to a post.')),
       );

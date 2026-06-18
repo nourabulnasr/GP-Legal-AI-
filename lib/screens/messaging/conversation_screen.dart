@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -36,6 +38,9 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
   bool _sending = false;
   String? _err;
   int _lastMessageCount = 0;
+  int? _sessionRemainingSec;
+  Timer? _sessionTimer;
+  bool _sessionExpired = false;
 
   bool get _canRenameGroup {
     if (!widget.isGroup) return false;
@@ -49,11 +54,45 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
     _title = widget.title;
     _load(showSpinner: true).then((_) {
       startMessagePolling(() => _load(showSpinner: false));
+      _loadSession();
     });
+  }
+
+  Future<void> _loadSession() async {
+    try {
+      final s = await context.read<AppServices>().legato.getConsultationSession(widget.conversationId);
+      if (!mounted) return;
+      if (s['active'] == true) {
+        final rem = (s['remaining_seconds'] as num?)?.toInt() ?? 0;
+        setState(() {
+          _sessionRemainingSec = rem;
+          _sessionExpired = rem <= 0;
+        });
+        _sessionTimer?.cancel();
+        _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) return;
+          setState(() {
+            if (_sessionRemainingSec != null && _sessionRemainingSec! > 0) {
+              _sessionRemainingSec = _sessionRemainingSec! - 1;
+            } else {
+              _sessionExpired = true;
+              _sessionTimer?.cancel();
+            }
+          });
+        });
+      }
+    } catch (_) {}
+  }
+
+  String _formatRemaining(int sec) {
+    final m = sec ~/ 60;
+    final s = sec % 60;
+    return '${m}m ${s.toString().padLeft(2, '0')}s';
   }
 
   @override
   void dispose() {
+    _sessionTimer?.cancel();
     _body.dispose();
     _scroll.dispose();
     super.dispose();
@@ -165,118 +204,6 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
     }
   }
 
-  Future<void> _showOfferDialog() async {
-    final titleCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    final currencyCtrl = TextEditingController(text: 'USD');
-    final formKey = GlobalKey<FormState>();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.gavel, color: Color(0xFF0A66C2), size: 20),
-            SizedBox(width: 8),
-            Text('Send Legal Offer'),
-          ],
-        ),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(labelText: 'Service title', hintText: 'e.g. Contract Review'),
-                  maxLength: 256,
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: descCtrl,
-                  decoration: const InputDecoration(labelText: 'Description'),
-                  maxLines: 3,
-                  maxLength: 2000,
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextFormField(
-                        controller: priceCtrl,
-                        decoration: const InputDecoration(labelText: 'Price'),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Required';
-                          if (double.tryParse(v.trim()) == null) return 'Invalid';
-                          if (double.parse(v.trim()) <= 0) return 'Must be > 0';
-                          return null;
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextFormField(
-                        controller: currencyCtrl,
-                        decoration: const InputDecoration(labelText: 'Currency'),
-                        maxLength: 8,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() == true) Navigator.pop(ctx, true);
-            },
-            child: const Text('Send Offer'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) {
-      titleCtrl.dispose();
-      descCtrl.dispose();
-      priceCtrl.dispose();
-      currencyCtrl.dispose();
-      return;
-    }
-
-    setState(() => _sending = true);
-    try {
-      await context.read<AppServices>().legato.postLawyerOffer(
-            widget.conversationId,
-            serviceTitle: titleCtrl.text.trim(),
-            description: descCtrl.text.trim(),
-            price: double.parse(priceCtrl.text.trim()),
-            currency: currencyCtrl.text.trim().isEmpty ? 'USD' : currencyCtrl.text.trim(),
-          );
-      if (!mounted) return;
-      await _load(showSpinner: false);
-      _scrollToBottomIfNeeded(force: true);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    } finally {
-      if (mounted) setState(() => _sending = false);
-      titleCtrl.dispose();
-      descCtrl.dispose();
-      priceCtrl.dispose();
-      currencyCtrl.dispose();
-    }
-  }
-
   Future<void> _payOffer(int messageId, Map<String, dynamic> offerData) async {
     final title = offerData['service_title']?.toString() ?? 'Legal Service';
     final price = offerData['price'];
@@ -330,7 +257,7 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
 
   @override
   Widget build(BuildContext context) {
-    final isVerifiedLawyer = context.watch<AuthProvider>().user?.isVerifiedLawyer == true;
+    final chatLocked = _sessionExpired;
     return Scaffold(
       appBar: LegatoAppBar(
         title: widget.isGroup
@@ -369,6 +296,32 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
       ),
       body: Column(
         children: [
+          if (_sessionRemainingSec != null && !_sessionExpired)
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.timer_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Consultation time remaining: ${_formatRemaining(_sessionRemainingSec!)}'),
+                ],
+              ),
+            ),
+          if (_sessionExpired)
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.lock_clock, size: 18, color: Theme.of(context).colorScheme.error),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('Consultation session has ended.')),
+                ],
+              ),
+            ),
           if (_err != null)
             Padding(
               padding: const EdgeInsets.all(8),
@@ -424,31 +377,22 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
               padding: const EdgeInsets.all(8),
               child: Row(
                 children: [
-                  if (isVerifiedLawyer && !widget.isGroup) ...[
-                    Tooltip(
-                      message: 'Send legal offer',
-                      child: IconButton(
-                        onPressed: _sending ? null : _showOfferDialog,
-                        icon: const Icon(Icons.gavel_outlined, color: Color(0xFF0A66C2)),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                  ],
                   Expanded(
                     child: TextField(
                       controller: _body,
+                      enabled: !chatLocked,
                       minLines: 1,
                       maxLines: 4,
-                      decoration: const InputDecoration(
-                        hintText: 'Type a message…',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        hintText: chatLocked ? 'Session ended' : 'Type a message…',
+                        border: const OutlineInputBorder(),
                       ),
-                      onSubmitted: (_) => _send(),
+                      onSubmitted: chatLocked ? null : (_) => _send(),
                     ),
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    onPressed: _sending ? null : _send,
+                    onPressed: (_sending || chatLocked) ? null : _send,
                     icon: _sending
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.send),

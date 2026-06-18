@@ -16,8 +16,9 @@ router = APIRouter(prefix="/admin/lawyers", tags=["admin-lawyers"])
 
 
 class AdminReviewRequest(BaseModel):
-    action: str = Field(..., pattern="^(approve|reject)$")
+    action: str = Field(..., pattern="^(approve|reject|negotiate)$")
     admin_note: Optional[str] = None
+    negotiated_hourly_rate: Optional[float] = Field(None, gt=0)
 
 
 @router.get("")
@@ -41,6 +42,7 @@ def list_lawyer_applications(
             "bar_license_number": app_record.bar_license_number,
             "years_of_experience": getattr(app_record, "years_of_experience", None),
             "hourly_rate": getattr(app_record, "hourly_rate", None),
+            "negotiated_hourly_rate": getattr(app_record, "negotiated_hourly_rate", None),
             "document_filename": app_record.document_filename,
             "has_document": bool(app_record.document_bytes),
             "cv_filename": getattr(app_record, "cv_filename", None),
@@ -74,9 +76,38 @@ def review_lawyer_application(
     if not applicant:
         raise HTTPException(status_code=404, detail="Applicant user not found")
 
+    if payload.action == "negotiate":
+        if payload.negotiated_hourly_rate is None:
+            raise HTTPException(status_code=400, detail="negotiated_hourly_rate is required for negotiate action")
+        app_record.negotiated_hourly_rate = payload.negotiated_hourly_rate
+        app_record.status = "rate_pending"
+        app_record.admin_note = payload.admin_note
+        db.add(app_record)
+        db.commit()
+        db.add(UserNotification(
+            recipient_id=applicant.id,
+            actor_id=admin_user.id,
+            type="lawyer_rate_negotiation",
+            reference_id=app_record.id,
+            message=(
+                f"Admin proposed hourly rate: {payload.negotiated_hourly_rate}."
+                f"{f' Note: {payload.admin_note}' if payload.admin_note else ''}"
+            ),
+            read=False,
+        ))
+        db.commit()
+        return {
+            "status": "ok",
+            "application_status": app_record.status,
+            "negotiated_hourly_rate": app_record.negotiated_hourly_rate,
+            "user_email": applicant.email,
+        }
+
     if payload.action == "approve":
         app_record.status = "approved"
         applicant.user_type = "lawyer"
+        if app_record.negotiated_hourly_rate is not None:
+            app_record.hourly_rate = app_record.negotiated_hourly_rate
     else:
         app_record.status = "rejected"
         applicant.user_type = "user"
@@ -94,6 +125,7 @@ def review_lawyer_application(
         recipient_id=applicant.id,
         actor_id=admin_user.id,
         type="lawyer_review",
+        reference_id=app_record.id,
         message=f"Your lawyer application has been {action_text}.{note_part}",
         read=False,
     ))

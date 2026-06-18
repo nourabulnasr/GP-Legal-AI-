@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
@@ -171,7 +172,8 @@ def my_lawyer_status(
         "status": app_record.status,
         "bar_license_number": app_record.bar_license_number,
         "years_of_experience": app_record.years_of_experience,
-        "hourly_rate": getattr(app_record, "hourly_rate", None),
+        "hourly_rate": app_record.hourly_rate,
+        "negotiated_hourly_rate": getattr(app_record, "negotiated_hourly_rate", None),
         "document_filename": app_record.document_filename,
         "has_document": bool(app_record.document_bytes),
         "cv_filename": app_record.cv_filename,
@@ -208,3 +210,42 @@ def download_own_lawyer_document(
             "Content-Disposition": f'attachment; filename="{app_record.document_filename or "license_document"}"'
         },
     )
+
+
+class RateResponseBody(BaseModel):
+    accept: bool
+
+
+@router.post("/rate-response")
+def respond_to_negotiated_rate(
+    body: RateResponseBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lawyer accepts or rejects admin's proposed hourly rate."""
+    app_record = db.query(LawyerApplication).filter(LawyerApplication.user_id == current_user.id).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="No application found")
+    if app_record.status != "rate_pending":
+        raise HTTPException(status_code=400, detail="No pending rate negotiation")
+
+    now = datetime.now(timezone.utc)
+    app_record.reviewed_at = now
+
+    if body.accept:
+        if app_record.negotiated_hourly_rate is None:
+            raise HTTPException(status_code=400, detail="No negotiated rate on file")
+        app_record.hourly_rate = app_record.negotiated_hourly_rate
+        app_record.status = "approved"
+        current_user.user_type = "lawyer"
+        db.add(current_user)
+        msg = f"You accepted the proposed rate of {app_record.hourly_rate}/hr. Your lawyer account is now verified."
+    else:
+        app_record.status = "rejected"
+        current_user.user_type = "user"
+        db.add(current_user)
+        msg = "You declined the proposed hourly rate. Your application was rejected."
+
+    db.add(app_record)
+    db.commit()
+    return {"status": "ok", "application_status": app_record.status, "hourly_rate": app_record.hourly_rate, "message": msg}
