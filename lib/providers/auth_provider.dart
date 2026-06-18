@@ -157,6 +157,7 @@ class AuthProvider extends ChangeNotifier {
     String password, {
     String userType = 'user',
     int? yearsOfExperience,
+    double? hourlyRate,
     Uint8List? cvBytes,
     String? cvFilename,
     Uint8List? idCardBytes,
@@ -170,6 +171,7 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
         yearsOfExperience: yearsOfExperience,
+        hourlyRate: hourlyRate,
         cvBytes: cvBytes,
         cvFilename: cvFilename,
         idCardBytes: idCardBytes,

@@ -19,6 +19,7 @@ _MAX_DOC_BYTES = 10 * 1024 * 1024  # 10 MB
 async def apply_as_lawyer(
     bar_license_number: str = Form(""),
     years_of_experience: int = Form(None),
+    hourly_rate: float = Form(None),
     document: UploadFile = File(None),
     cv: UploadFile = File(None),
     id_card: UploadFile = File(None),
@@ -92,6 +93,8 @@ async def apply_as_lawyer(
         existing.bar_license_number = (bar_license_number.strip() or existing.bar_license_number) or None
         if years_of_experience is not None:
             existing.years_of_experience = years_of_experience
+        if hourly_rate is not None:
+            existing.hourly_rate = hourly_rate
         if doc_bytes:
             existing.document_bytes = doc_bytes
             existing.document_mime_type = doc_mime
@@ -117,6 +120,7 @@ async def apply_as_lawyer(
             user_id=current_user.id,
             bar_license_number=bar_license_number.strip() or None,
             years_of_experience=years_of_experience,
+            hourly_rate=hourly_rate,
             document_bytes=doc_bytes,
             document_mime_type=doc_mime,
             document_filename=doc_filename,
@@ -167,6 +171,7 @@ def my_lawyer_status(
         "status": app_record.status,
         "bar_license_number": app_record.bar_license_number,
         "years_of_experience": app_record.years_of_experience,
+        "hourly_rate": getattr(app_record, "hourly_rate", None),
         "document_filename": app_record.document_filename,
         "has_document": bool(app_record.document_bytes),
         "cv_filename": app_record.cv_filename,

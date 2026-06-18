@@ -40,6 +40,7 @@ def list_lawyer_applications(
             "user_email": user.email,
             "bar_license_number": app_record.bar_license_number,
             "years_of_experience": getattr(app_record, "years_of_experience", None),
+            "hourly_rate": getattr(app_record, "hourly_rate", None),
             "document_filename": app_record.document_filename,
             "has_document": bool(app_record.document_bytes),
             "cv_filename": getattr(app_record, "cv_filename", None),

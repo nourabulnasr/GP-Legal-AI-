@@ -577,6 +577,13 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                                 style: Theme.of(context).textTheme.bodySmall,
                                               ),
                                             ],
+                                            if (app['hourly_rate'] != null) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Rate: ${app['hourly_rate']}/hr',
+                                                style: Theme.of(context).textTheme.bodySmall,
+                                              ),
+                                            ],
                                             if (hasDoc) ...[
                                               const SizedBox(height: 4),
                                               Row(

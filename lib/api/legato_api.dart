@@ -665,6 +665,7 @@ class LegatoApi {
   Future<Map<String, dynamic>> lawyerApply({
     String barLicenseNumber = '',
     int? yearsOfExperience,
+    double? hourlyRate,
     Uint8List? documentBytes,
     String? documentFilename,
     Uint8List? cvBytes,
@@ -677,6 +678,7 @@ class LegatoApi {
     return _api.postMultipartLawyerApply(
       barLicenseNumber: barLicenseNumber,
       yearsOfExperience: yearsOfExperience,
+      hourlyRate: hourlyRate,
       documentBytes: documentBytes,
       documentFilename: documentFilename,
       cvBytes: cvBytes,

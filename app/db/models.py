@@ -63,6 +63,7 @@ class LawyerApplication(Base):
     id_card_back_mime_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     id_card_back_filename: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     years_of_experience: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    hourly_rate: Mapped[Optional[float]] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
     admin_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

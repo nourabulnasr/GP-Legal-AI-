@@ -340,6 +340,7 @@ class ApiClient {
   Future<Map<String, dynamic>> postMultipartLawyerApply({
     String barLicenseNumber = '',
     int? yearsOfExperience,
+    double? hourlyRate,
     Uint8List? documentBytes,
     String? documentFilename,
     Uint8List? cvBytes,
@@ -356,6 +357,7 @@ class ApiClient {
     }
     request.fields['bar_license_number'] = barLicenseNumber;
     if (yearsOfExperience != null) request.fields['years_of_experience'] = yearsOfExperience.toString();
+    if (hourlyRate != null) request.fields['hourly_rate'] = hourlyRate.toString();
     if (documentBytes != null && documentFilename != null) {
       request.files.add(
         http.MultipartFile.fromBytes('document', documentBytes, filename: documentFilename),
@@ -384,6 +386,7 @@ class ApiClient {
     required String email,
     required String password,
     int? yearsOfExperience,
+    double? hourlyRate,
     Uint8List? cvBytes,
     String? cvFilename,
     Uint8List? idCardBytes,
@@ -395,6 +398,7 @@ class ApiClient {
     request.fields['email'] = email.trim();
     request.fields['password'] = password;
     if (yearsOfExperience != null) request.fields['years_of_experience'] = yearsOfExperience.toString();
+    if (hourlyRate != null) request.fields['hourly_rate'] = hourlyRate.toString();
     if (cvBytes != null && cvFilename != null) {
       request.files.add(http.MultipartFile.fromBytes('cv', cvBytes, filename: cvFilename));
     }

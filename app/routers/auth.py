@@ -265,6 +265,7 @@ async def register_as_lawyer(
     email: str = Form(...),
     password: str = Form(...),
     years_of_experience: _Optional[int] = Form(None),
+    hourly_rate: _Optional[float] = Form(None),
     cv: _Optional[UploadFile] = File(None),
     id_card: _Optional[UploadFile] = File(None),
     id_card_back: _Optional[UploadFile] = File(None),
@@ -319,6 +320,7 @@ async def register_as_lawyer(
     app_record = LawyerApplication(
         user_id=u.id,
         years_of_experience=years_of_experience,
+        hourly_rate=hourly_rate,
         cv_bytes=cv_bytes_data,
         cv_mime_type=cv_mime_data,
         cv_filename=cv_fn_data,

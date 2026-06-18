@@ -80,6 +80,7 @@ def init_db() -> None:
                 ("id_card_back_mime_type", "VARCHAR(255)"),
                 ("id_card_back_filename", "VARCHAR(512)"),
                 ("years_of_experience", "INTEGER"),
+                ("hourly_rate", "REAL"),
             ]:
                 if col_name not in col_names:
                     conn.execute(text(f"ALTER TABLE lawyer_applications ADD COLUMN {col_name} {col_type};"))

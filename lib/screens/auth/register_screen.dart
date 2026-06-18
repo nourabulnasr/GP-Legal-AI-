@@ -34,12 +34,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Uint8List? _idCardBackBytes;
   String? _idCardBackFilename;
   final _years = TextEditingController();
+  final _hourlyRate = TextEditingController();
 
   @override
   void dispose() {
     _email.dispose();
     _password.dispose();
     _years.dispose();
+    _hourlyRate.dispose();
     super.dispose();
   }
 
@@ -134,6 +136,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             idCardBackBytes: _idCardBackBytes,
             idCardBackFilename: _idCardBackFilename,
             yearsOfExperience: int.tryParse(_years.text.trim()),
+            hourlyRate: double.tryParse(_hourlyRate.text.trim()),
           );
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(
@@ -255,6 +258,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           labelText: 'Years of Experience (optional)',
                           border: OutlineInputBorder(),
                           prefixIcon: Icon(Icons.work_history_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _hourlyRate,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Pricing per hour (optional)',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.payments_outlined),
+                          hintText: 'e.g. 500',
                         ),
                       ),
                       const SizedBox(height: 8),
