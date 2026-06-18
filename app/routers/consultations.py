@@ -32,11 +32,28 @@ MIN_CONSULTATION_MINUTES = 15
 class ConsultationRequestBody(BaseModel):
     lawyer_id: int
     duration_minutes: int = Field(..., ge=MIN_CONSULTATION_MINUTES)
+    scheduled_at: str = Field(..., min_length=10, description="ISO-8601 date/time for the session")
     notes: Optional[str] = Field(None, max_length=2000)
 
 
 class ConsultationRespondBody(BaseModel):
     action: str = Field(..., pattern="^(accept|reject)$")
+
+
+def _parse_scheduled_at(raw: str) -> datetime:
+    value = (raw or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Scheduled date and time are required")
+    try:
+        if value.endswith("Z"):
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        else:
+            dt = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid scheduled date/time") from exc
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _serialize_consultation(db: Session, row: ConsultationRequest) -> Dict[str, Any]:
@@ -63,6 +80,8 @@ def _serialize_consultation(db: Session, row: ConsultationRequest) -> Dict[str, 
         "hourly_rate": row.hourly_rate,
         "estimated_total": total,
         "notes": row.notes or "",
+        "scheduled_at": row.scheduled_at.isoformat() + "Z" if row.scheduled_at else None,
+        "payment_status": row.payment_status,
         "status": row.status,
         "conversation_id": row.conversation_id,
         "session_started_at": row.session_started_at.isoformat() + "Z" if row.session_started_at else None,
@@ -142,16 +161,22 @@ def create_consultation_request(
     if pending:
         raise HTTPException(status_code=400, detail="You already have a pending request with this lawyer")
 
+    scheduled_at = _parse_scheduled_at(body.scheduled_at)
+    if scheduled_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Scheduled date and time must be in the future")
+
     row = ConsultationRequest(
         requester_id=current_user.id,
         lawyer_id=body.lawyer_id,
         duration_minutes=body.duration_minutes,
         hourly_rate=rate,
         notes=(body.notes or "").strip() or None,
+        scheduled_at=scheduled_at,
         status="pending",
     )
     db.add(row)
     db.flush()
+    sched_label = scheduled_at.strftime("%Y-%m-%d %H:%M UTC")
     db.add(
         UserNotification(
             recipient_id=body.lawyer_id,
@@ -159,8 +184,8 @@ def create_consultation_request(
             type="consultation_request",
             reference_id=row.id,
             message=(
-                f"New consultation request: {body.duration_minutes} min"
-                f"{f' — {body.notes.strip()[:80]}' if body.notes and body.notes.strip() else ''}"
+                f"New consultation request: {body.duration_minutes} min on {sched_label}"
+                f"{f' — {body.notes.strip()[:60]}' if body.notes and body.notes.strip() else ''}"
             ),
             read=False,
         )
@@ -218,27 +243,69 @@ def respond_consultation(
         db.commit()
         return _serialize_consultation(db, row)
 
-    conv = create_or_get_direct_for_consultation(db, row.requester_id, row.lawyer_id)
-    row.conversation_id = conv.id
-    row.status = "active"
-    row.session_started_at = now
-    row.session_ends_at = now + timedelta(minutes=row.duration_minutes)
+    row.status = "awaiting_payment"
+    row.payment_status = "pending"
+    row.responded_at = now
     db.add(row)
+    total = round((row.hourly_rate or 0) * (row.duration_minutes / 60.0), 2)
+    sched_label = row.scheduled_at.strftime("%Y-%m-%d %H:%M UTC") if row.scheduled_at else "scheduled time"
     db.add(
         UserNotification(
             recipient_id=row.requester_id,
             actor_id=current_user.id,
-            type="consultation_response",
+            type="consultation_payment_due",
             reference_id=row.id,
-            message=f"Consultation accepted — {row.duration_minutes} min session started.",
+            message=(
+                f"Consultation accepted — pay {total:.0f} EGP for {row.duration_minutes} min on {sched_label}."
+            ),
             read=False,
         )
     )
     db.commit()
     db.refresh(row)
-    payload = _serialize_consultation(db, row)
-    payload["conversation_id"] = conv.id
-    return payload
+    return _serialize_consultation(db, row)
+
+
+@router.post("/consultations/{consultation_id}/payment/checkout")
+def consultation_payment_checkout(
+    consultation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Prepare payment for an accepted consultation. Paymob gateway hooks in next step."""
+    row = db.query(ConsultationRequest).filter(ConsultationRequest.id == consultation_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Consultation not found")
+    if row.requester_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the requester can pay for this consultation")
+    if row.status != "awaiting_payment":
+        raise HTTPException(status_code=400, detail="This consultation is not awaiting payment")
+    if row.payment_status == "paid":
+        raise HTTPException(status_code=400, detail="Consultation is already paid")
+
+    total = round((row.hourly_rate or 0) * (row.duration_minutes / 60.0), 2)
+    return {
+        "consultation_id": row.id,
+        "amount": total,
+        "currency": "EGP",
+        "provider": "paymob",
+        "checkout_ready": False,
+        "message": "Paymob payment gateway will be connected in the next step.",
+        "consultation": _serialize_consultation(db, row),
+    }
+
+
+def _activate_consultation_after_payment(db: Session, row: ConsultationRequest) -> UserConversation:
+    """Start timed session once payment is confirmed (Paymob webhook / future step)."""
+    now = datetime.now(timezone.utc)
+    conv = create_or_get_direct_for_consultation(db, row.requester_id, row.lawyer_id)
+    row.conversation_id = conv.id
+    row.status = "active"
+    row.payment_status = "paid"
+    row.session_started_at = now
+    row.session_ends_at = now + timedelta(minutes=row.duration_minutes)
+    db.add(row)
+    return conv
 
 
 @router.get("/consultations/session/conversation/{conversation_id}")

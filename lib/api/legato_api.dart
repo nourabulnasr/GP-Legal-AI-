@@ -755,14 +755,19 @@ class LegatoApi {
   Future<Map<String, dynamic>> requestConsultation({
     required int lawyerId,
     required int durationMinutes,
+    required String scheduledAt,
     String? notes,
   }) {
     return _api.postJson('/api/consultations', {
       'lawyer_id': lawyerId,
       'duration_minutes': durationMinutes,
+      'scheduled_at': scheduledAt,
       if (notes != null && notes.isNotEmpty) 'notes': notes,
     });
   }
+
+  Future<Map<String, dynamic>> checkoutConsultationPayment(int consultationId) =>
+      _api.postJson('/api/consultations/$consultationId/payment/checkout', {});
 
   Future<Map<String, dynamic>> getConsultation(int id) =>
       _api.getJson('/api/consultations/$id');

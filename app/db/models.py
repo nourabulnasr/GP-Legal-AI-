@@ -232,6 +232,8 @@ class ConsultationRequest(Base):
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     hourly_rate: Mapped[Optional[float]] = mapped_column(nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scheduled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    payment_status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
     conversation_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("user_conversations.id"), index=True, nullable=True

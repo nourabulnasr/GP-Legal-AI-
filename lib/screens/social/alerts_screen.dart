@@ -7,6 +7,7 @@ import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/admin/admin_screen.dart';
 import 'package:legato_mobile/screens/lawyer/lawyer_application_screen.dart';
 import 'package:legato_mobile/screens/messaging/conversation_screen.dart';
+import 'package:legato_mobile/screens/payments/consultation_payment_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/user_avatar.dart';
@@ -114,6 +115,8 @@ class AlertsScreenState extends State<AlertsScreen> {
         return Icons.schedule_outlined;
       case 'consultation_response':
         return Icons.chat_outlined;
+      case 'consultation_payment_due':
+        return Icons.payment_outlined;
       case 'lawyer_rate_negotiation':
         return Icons.payments_outlined;
       default:
@@ -145,13 +148,23 @@ class AlertsScreenState extends State<AlertsScreen> {
       return;
     }
     if (!mounted) return;
+    final sched = data['scheduled_at']?.toString();
+    var schedText = '';
+    if (sched != null && sched.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(sched).toLocal();
+        schedText = '\nWhen: ${dt.day}/${dt.month}/${dt.year} · ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      } catch (_) {
+        schedText = '\nWhen: $sched';
+      }
+    }
     final accept = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Consultation request'),
         content: Text(
           '${data['requester_name']} requested ${data['duration_minutes']} min'
-          '${data['hourly_rate'] != null ? ' at ${data['hourly_rate']}/hr' : ''}.'
+          '${data['hourly_rate'] != null ? ' at ${data['hourly_rate']}/hr' : ''}.$schedText'
           '${(data['notes']?.toString().isNotEmpty == true) ? '\n\n${data['notes']}' : ''}',
         ),
         actions: [
@@ -162,26 +175,24 @@ class AlertsScreenState extends State<AlertsScreen> {
     );
     if (accept == null || !mounted) return;
     try {
-      final res = await legato.respondConsultation(consultationId, accept: accept);
+      await legato.respondConsultation(consultationId, accept: accept);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(accept ? 'Consultation accepted.' : 'Consultation declined.')),
+        SnackBar(content: Text(accept ? 'Consultation accepted. User will be notified to pay.' : 'Consultation declined.')),
       );
-      if (accept && res['conversation_id'] != null) {
-        final convId = (res['conversation_id'] as num).toInt();
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => ConversationScreen(
-              conversationId: convId,
-              title: data['requester_name']?.toString() ?? 'Chat',
-            ),
-          ),
-        );
-      }
       await _load();
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
+  }
+
+  Future<void> _openConsultationPayment(int consultationId) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConsultationPaymentScreen(consultationId: consultationId),
+      ),
+    );
+    if (mounted) await _load();
   }
 
   Future<void> _handleRateNegotiation() async {
@@ -244,11 +255,20 @@ class AlertsScreenState extends State<AlertsScreen> {
       if (ref != null) await _handleConsultationRequest(ref);
       return;
     }
+    if (type == 'consultation_payment_due') {
+      final ref = _referenceIdFromNotification(m);
+      if (ref != null) await _openConsultationPayment(ref);
+      return;
+    }
     if (type == 'consultation_response') {
       final ref = _referenceIdFromNotification(m);
       if (ref != null) {
         try {
           final data = await context.read<AppServices>().legato.getConsultation(ref);
+          if (data['status']?.toString() == 'awaiting_payment') {
+            await _openConsultationPayment(ref);
+            return;
+          }
           final convId = (data['conversation_id'] as num?)?.toInt();
           if (convId != null && mounted) {
             await Navigator.of(context).push(
@@ -277,7 +297,7 @@ class AlertsScreenState extends State<AlertsScreen> {
       return;
     }
     if (postId == null) {
-      if (type == 'consultation_request' || type == 'consultation_response' || type == 'lawyer_rate_negotiation') {
+      if (type == 'consultation_request' || type == 'consultation_response' || type == 'consultation_payment_due' || type == 'lawyer_rate_negotiation') {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
@@ -408,6 +428,8 @@ class AlertsScreenState extends State<AlertsScreen> {
                       final m = Map<String, dynamic>.from(raw as Map);
                       final id = (m['id'] as num?)?.toInt();
                       final unread = m['read'] != true;
+                      final type = m['type']?.toString() ?? '';
+                      final paymentRef = type == 'consultation_payment_due' ? _referenceIdFromNotification(m) : null;
                       return Card(
                         color: unread
                             ? LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.08)
@@ -436,8 +458,17 @@ class AlertsScreenState extends State<AlertsScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              if (paymentRef != null)
+                                FilledButton(
+                                  onPressed: () => _openConsultationPayment(paymentRef),
+                                  style: FilledButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  ),
+                                  child: const Text('Pay'),
+                                ),
                               Icon(
-                                _iconForType(m['type']?.toString() ?? ''),
+                                _iconForType(type),
                                 size: 18,
                                 color: LegatoLinkedInTheme.navActiveGold,
                               ),

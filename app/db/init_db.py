@@ -193,6 +193,17 @@ def init_db() -> None:
     except Exception:
         pass
 
+    try:
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(consultation_requests);")).fetchall()
+            col_names = {c[1] for c in cols}
+            if "scheduled_at" not in col_names:
+                conn.execute(text("ALTER TABLE consultation_requests ADD COLUMN scheduled_at DATETIME;"))
+            if "payment_status" not in col_names:
+                conn.execute(text("ALTER TABLE consultation_requests ADD COLUMN payment_status VARCHAR(32);"))
+    except Exception:
+        pass
+
     _backfill_social_images_from_disk()
 
 

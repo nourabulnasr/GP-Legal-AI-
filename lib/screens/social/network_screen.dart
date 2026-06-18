@@ -142,43 +142,80 @@ class NetworkScreenState extends State<NetworkScreen> {
     final durationCtrl = TextEditingController(text: '30');
     final notesCtrl = TextEditingController();
     final rateLabel = hourlyRate != null ? '${hourlyRate.toStringAsFixed(0)}/hr' : '—';
+    var selectedDate = DateTime.now().add(const Duration(days: 1));
+    var selectedTime = const TimeOfDay(hour: 10, minute: 0);
+
+    String formatDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
+    String formatTime(TimeOfDay t) =>
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Consultation with $lawyerName'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Rate: $rateLabel', style: Theme.of(ctx).textTheme.bodyMedium),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: durationCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Duration (minutes)',
-                  hintText: 'Minimum 15',
-                  border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Consultation with $lawyerName'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Rate: $rateLabel', style: Theme.of(ctx).textTheme.bodyMedium),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: durationCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Duration (minutes) *',
+                    hintText: 'Minimum 15',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: notesCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'What do you need help with? (optional)',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: selectedDate,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) setDialogState(() => selectedDate = picked);
+                  },
+                  icon: const Icon(Icons.calendar_today_outlined, size: 18),
+                  label: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Day: ${formatDate(selectedDate)}'),
+                  ),
                 ),
-                maxLines: 3,
-              ),
-            ],
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showTimePicker(context: ctx, initialTime: selectedTime);
+                    if (picked != null) setDialogState(() => selectedTime = picked);
+                  },
+                  icon: const Icon(Icons.access_time, size: 18),
+                  label: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Time: ${formatTime(selectedTime)}'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: notesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'What do you need help with? (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send request')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send request')),
-        ],
       ),
     );
 
@@ -190,10 +227,25 @@ class NetworkScreenState extends State<NetworkScreen> {
       );
       return;
     }
+    final scheduledLocal = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      selectedTime.hour,
+      selectedTime.minute,
+    );
+    if (scheduledLocal.isBefore(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please choose a future date and time.')),
+      );
+      return;
+    }
+    final scheduledAt = scheduledLocal.toUtc().toIso8601String();
     try {
       await context.read<AppServices>().legato.requestConsultation(
             lawyerId: lawyerId,
             durationMinutes: mins,
+            scheduledAt: scheduledAt,
             notes: notesCtrl.text.trim(),
           );
       if (!mounted) return;
