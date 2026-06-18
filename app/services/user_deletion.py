@@ -22,6 +22,7 @@ from app.db.models import (
     SocialPostComment,
     SocialPostLike,
     SocialPostShare,
+    PostServiceProposal,
     User,
     UserConversation,
     UserConversationMember,
@@ -137,6 +138,16 @@ def delete_user_account(db: Session, user_id: int) -> User:
             ConsultationRequest.lawyer_id == user_id,
         )
     ).delete(synchronize_session=False)
+    owned_post_ids = [
+        row[0] for row in db.query(SocialPost.id).filter(SocialPost.author_id == user_id).all()
+    ]
+    if owned_post_ids:
+        db.query(PostServiceProposal).filter(PostServiceProposal.post_id.in_(owned_post_ids)).delete(
+            synchronize_session=False
+        )
+    db.query(PostServiceProposal).filter(PostServiceProposal.lawyer_id == user_id).delete(
+        synchronize_session=False
+    )
     db.query(LawyerApplication).filter(LawyerApplication.user_id == user_id).delete(
         synchronize_session=False
     )

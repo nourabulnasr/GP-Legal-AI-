@@ -49,14 +49,22 @@ class UserProfileProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void reset() {
+    _avatarUrl = null;
+    _displayName = '';
+    _avatarVersion = DateTime.now().millisecondsSinceEpoch;
+    notifyListeners();
+  }
+
   Future<void> refresh({required int? userId, required String email}) async {
     if (userId == null) {
-      _avatarUrl = null;
-      _displayName = '';
-      _avatarVersion = 0;
-      notifyListeners();
+      reset();
       return;
     }
+    _avatarUrl = null;
+    _displayName = '';
+    _avatarVersion = DateTime.now().millisecondsSinceEpoch;
+    notifyListeners();
     final fallbackName = email.contains('@') ? email.split('@').first : email;
     try {
       final d = await _legato.getSocialProfileResilient(userId, email);

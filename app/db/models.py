@@ -192,6 +192,21 @@ class SocialPostShare(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class PostServiceProposal(Base):
+    __tablename__ = "post_service_proposals"
+    __table_args__ = (UniqueConstraint("post_id", "lawyer_id", name="uq_post_service_proposal_lawyer"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    post_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_posts.id"), index=True, nullable=False)
+    lawyer_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    hourly_rate: Mapped[Optional[float]] = mapped_column(nullable=True)
+    counter_rate: Mapped[Optional[float]] = mapped_column(nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class UserNotification(Base):
     __tablename__ = "user_notifications"
 

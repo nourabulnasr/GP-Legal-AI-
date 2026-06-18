@@ -598,6 +598,31 @@ class LegatoApi {
   Future<Map<String, dynamic>> sendNetworkInvite(int toUserId) =>
       _api.postJson('/api/network/invites', {'to_user_id': toUserId});
 
+  Future<Map<String, dynamic>> submitPostProposal({
+    required int postId,
+    required String message,
+    required double hourlyRate,
+  }) =>
+      _api.postJson('/api/posts/$postId/proposals', {
+        'message': message,
+        'hourly_rate': hourlyRate,
+      });
+
+  Future<List<dynamic>> getPostProposals(int postId) async {
+    final r = await _api.getJson('/api/posts/$postId/proposals');
+    return (r['items'] as List<dynamic>?) ?? [];
+  }
+
+  Future<Map<String, dynamic>> respondToPostProposal({
+    required int proposalId,
+    required String action,
+    double? counterRate,
+  }) =>
+      _api.patchJson('/api/posts/proposals/$proposalId', {
+        'action': action,
+        if (counterRate != null) 'counter_rate': counterRate,
+      });
+
   Future<Map<String, dynamic>> getPendingInvites() => _api.getJson('/api/network/invites');
 
   Future<Map<String, dynamic>> getNetworkConnections() =>

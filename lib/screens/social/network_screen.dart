@@ -411,61 +411,18 @@ class NetworkScreenState extends State<NetworkScreen> {
                     ),
                     if (_lawyers.isNotEmpty) ...[
                       const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Verified lawyers',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                      Card(
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.gavel_outlined,
+                            color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95),
                           ),
-                          Text('${_lawyers.length}', style: Theme.of(context).textTheme.labelLarge),
-                        ],
+                          title: const Text('Verified lawyers'),
+                          subtitle: Text('${_lawyers.length} available · Browse and request'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _showLawyersSheet(context),
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      ..._lawyers.map((raw) {
-                        final m = Map<String, dynamic>.from(raw as Map);
-                        final uid = (m['user_id'] as num?)?.toInt() ?? 0;
-                        final name = m['name']?.toString() ?? 'Lawyer';
-                        final rate = (m['hourly_rate'] as num?)?.toDouble();
-                        return Card(
-                          child: ListTile(
-                            leading: UserAvatar(
-                              radius: 22,
-                              imageUrl: m['avatar_url']?.toString(),
-                              name: name,
-                            ),
-                            title: Row(
-                              children: [
-                                Flexible(
-                                  child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                ),
-                                const SizedBox(width: 4),
-                                const Tooltip(
-                                  message: 'Verified Lawyer',
-                                  child: Icon(Icons.verified, size: 16, color: Color(0xFF0A66C2)),
-                                ),
-                              ],
-                            ),
-                            subtitle: Text(
-                              [
-                                if (m['subtitle']?.toString().isNotEmpty == true) m['subtitle'].toString(),
-                                if (rate != null) '${rate.toStringAsFixed(0)}/hr',
-                                if (m['location']?.toString().isNotEmpty == true) m['location'].toString(),
-                              ].where((s) => s.isNotEmpty).join(' · '),
-                              maxLines: 2,
-                            ),
-                            trailing: FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: LegatoLinkedInTheme.navActiveGold,
-                                foregroundColor: const Color(0xFF1B1F23),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: uid > 0 ? () => _requestConsultation(uid, name, rate) : null,
-                              child: const Text('Request'),
-                            ),
-                          ),
-                        );
-                      }),
                     ],
                     const SizedBox(height: 16),
                     Card(
@@ -540,6 +497,93 @@ class NetworkScreenState extends State<NetworkScreen> {
                     }),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+
+  void _showLawyersSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.45,
+        maxChildSize: 0.95,
+        builder: (ctx, scrollCtrl) => Material(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: ListView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.all(16),
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: LegatoLinkedInTheme.textSecondaryAdaptive(context).withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Text('Verified lawyers', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+              const SizedBox(height: 16),
+              for (final raw in _lawyers)
+                Builder(builder: (ctx2) {
+                  final m = Map<String, dynamic>.from(raw as Map);
+                  final uid = (m['user_id'] as num?)?.toInt() ?? 0;
+                  final name = m['name']?.toString() ?? 'Lawyer';
+                  final rate = (m['hourly_rate'] as num?)?.toDouble();
+                  return ListTile(
+                    leading: UserAvatar(
+                      radius: 20,
+                      imageUrl: m['avatar_url']?.toString(),
+                      name: name,
+                    ),
+                    title: Row(children: [
+                      Flexible(child: Text(name, overflow: TextOverflow.ellipsis)),
+                      const SizedBox(width: 4),
+                      const Tooltip(
+                        message: 'Verified Lawyer',
+                        child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2)),
+                      ),
+                    ]),
+                    subtitle: Text(
+                      [
+                        if (m['subtitle']?.toString().isNotEmpty == true) m['subtitle'].toString(),
+                        if (rate != null) '${rate.toStringAsFixed(0)}/hr',
+                        if (m['location']?.toString().isNotEmpty == true) m['location'].toString(),
+                      ].where((s) => s.isNotEmpty).join(' · '),
+                      maxLines: 2,
+                    ),
+                    trailing: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: LegatoLinkedInTheme.navActiveGold,
+                        foregroundColor: const Color(0xFF1B1F23),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: uid > 0
+                          ? () {
+                              Navigator.pop(ctx2);
+                              _requestConsultation(uid, name, rate);
+                            }
+                          : null,
+                      child: const Text('Request'),
+                    ),
+                    onTap: uid > 0
+                        ? () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => MemberProfileScreen(userId: uid),
+                              ),
+                            )
+                        : null,
+                  );
+                }),
+            ],
+          ),
         ),
       ),
     );

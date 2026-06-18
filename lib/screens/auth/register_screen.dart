@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:provider/provider.dart';
@@ -60,35 +61,71 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
   }
 
-  Future<void> _pickIdCardFront() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-      withData: true,
+  Future<void> _pickIdImage({required bool isFront}) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!kIsWeb)
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Take a photo'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_outlined),
+              title: const Text('Choose from files'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
     );
-    if (result == null || result.files.isEmpty) return;
-    final file = result.files.first;
-    if (file.bytes == null) return;
+    if (source == null || !mounted) return;
+
+    if (source == ImageSource.gallery) {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.first;
+      if (file.bytes == null) return;
+      setState(() {
+        if (isFront) {
+          _idCardFrontBytes = file.bytes;
+          _idCardFrontFilename = file.name;
+        } else {
+          _idCardBackBytes = file.bytes;
+          _idCardBackFilename = file.name;
+        }
+      });
+      return;
+    }
+
+    final picker = ImagePicker();
+    final photo = await picker.pickImage(source: source, imageQuality: 85);
+    if (photo == null) return;
+    final bytes = await photo.readAsBytes();
+    if (!mounted) return;
     setState(() {
-      _idCardFrontBytes = file.bytes;
-      _idCardFrontFilename = file.name;
+      final name = photo.name.isNotEmpty ? photo.name : 'id_${isFront ? 'front' : 'back'}.jpg';
+      if (isFront) {
+        _idCardFrontBytes = bytes;
+        _idCardFrontFilename = name;
+      } else {
+        _idCardBackBytes = bytes;
+        _idCardBackFilename = name;
+      }
     });
   }
 
-  Future<void> _pickIdCardBack() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final file = result.files.first;
-    if (file.bytes == null) return;
-    setState(() {
-      _idCardBackBytes = file.bytes;
-      _idCardBackFilename = file.name;
-    });
-  }
+  Future<void> _pickIdCardFront() => _pickIdImage(isFront: true);
+
+  Future<void> _pickIdCardBack() => _pickIdImage(isFront: false);
 
   Future<void> _signInWithGoogle() async {
     setState(() { _busy = true; _err = null; });
@@ -407,7 +444,7 @@ class _DocPickerTile extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              picked ? filename! : '$label${required ? ' *' : ''} (PDF / image)',
+              picked ? filename! : '$label${required ? ' *' : ''} (photo or file)',
               overflow: TextOverflow.ellipsis,
             ),
           ),

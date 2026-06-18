@@ -57,6 +57,8 @@ class _HomeShellState extends State<HomeShell> {
   int _alertsIndexFor(bool lawyerMode) =>
       _tabsFor(lawyerMode).indexWhere((t) => t.id == _ShellTab.alerts);
 
+  int? _lastUserId;
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +69,7 @@ class _HomeShellState extends State<HomeShell> {
       _authProvider = context.read<AuthProvider>();
       _lastAuthState = _authProvider!.isAuthenticated;
       _lastLawyerMode = _authProvider!.user?.isVerifiedLawyer ?? false;
+      _lastUserId = _authProvider!.user?.id;
       _authProvider!.addListener(_onAuthStateChanged);
     });
   }
@@ -81,13 +84,23 @@ class _HomeShellState extends State<HomeShell> {
 
   void _onAuthStateChanged() {
     if (!mounted) return;
+    final user = _authProvider?.user;
     final isAuth = _authProvider?.isAuthenticated ?? false;
-    final lawyerMode = _authProvider?.user?.isVerifiedLawyer ?? false;
-    if (_lastAuthState == isAuth && _lastLawyerMode == lawyerMode) return;
+    final lawyerMode = user?.isVerifiedLawyer ?? false;
+    final userId = user?.id;
+    final userChanged = _lastUserId != userId;
+    if (_lastAuthState == isAuth && _lastLawyerMode == lawyerMode && !userChanged) return;
     _lastAuthState = isAuth;
     _lastLawyerMode = lawyerMode;
+    _lastUserId = userId;
     if (lawyerMode && _index >= _lawyerTabs.length) {
       _index = 0;
+    }
+    if (userChanged) {
+      context.read<UserProfileProvider>().reset();
+      for (final t in _tabsFor(lawyerMode)) {
+        _refreshTab(t.id);
+      }
     }
     setState(() {});
     if (isAuth) _loadUserProfile();

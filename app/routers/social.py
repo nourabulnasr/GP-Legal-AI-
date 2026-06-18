@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Request
@@ -23,6 +23,7 @@ from app.db.models import (
     SocialPostLike,
     SocialPostComment,
     SocialPostShare,
+    PostServiceProposal,
     NetworkInvite,
     SkillEndorsement,
     ProfileRecommendation,
@@ -203,6 +204,39 @@ def _verified_lawyer_ids_batch(db: Session, user_ids: List[int]) -> set:
     return {r.user_id for r in rows}
 
 
+def _batch_proposal_meta(
+    db: Session,
+    post_ids: List[int],
+    post_author_by_id: Dict[int, int],
+    viewer_id: int,
+    viewer_is_lawyer: bool,
+) -> tuple[Dict[int, str], Dict[int, int]]:
+    """Returns (lawyer_proposal_status_by_post_id, proposal_count_for_viewer_posts)."""
+    lawyer_status: Dict[int, str] = {}
+    if viewer_is_lawyer and post_ids:
+        rows = (
+            db.query(PostServiceProposal)
+            .filter(
+                PostServiceProposal.post_id.in_(post_ids),
+                PostServiceProposal.lawyer_id == viewer_id,
+            )
+            .all()
+        )
+        lawyer_status = {r.post_id: r.status for r in rows}
+
+    owned_post_ids = [pid for pid in post_ids if post_author_by_id.get(pid) == viewer_id]
+    counts: Dict[int, int] = {}
+    if owned_post_ids:
+        rows = (
+            db.query(PostServiceProposal.post_id, func.count(PostServiceProposal.id))
+            .filter(PostServiceProposal.post_id.in_(owned_post_ids))
+            .group_by(PostServiceProposal.post_id)
+            .all()
+        )
+        counts = {int(pid): int(cnt) for pid, cnt in rows}
+    return lawyer_status, counts
+
+
 def _serialize_post(
     post: SocialPost,
     db: Session,
@@ -218,6 +252,8 @@ def _serialize_post(
     image_base: Optional[str] = None,
     connection_status: Optional[str] = None,
     verified_lawyer_ids: Optional[set] = None,
+    my_proposal_status: Optional[str] = None,
+    proposals_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     # Use pre-fetched data when available (batch path), else fall back to single queries.
     if authors_map is not None:
@@ -289,6 +325,8 @@ def _serialize_post(
         "liked": liked,
         "connection_status": conn,
         "image_url": _normalize_image_url(post.image_url, image_base or _public_base_url()),
+        "my_proposal_status": my_proposal_status,
+        "proposals_count": proposals_count or 0,
     }
 
 
@@ -334,6 +372,11 @@ def list_posts(
     connection_map = _batch_connection_status(db, current_user.id, author_ids)
     verified_ids = _verified_lawyer_ids_batch(db, author_ids)
     image_base = _public_base_url(request)
+    viewer_is_lawyer = getattr(current_user, "user_type", "user") == "lawyer"
+    post_author_by_id = {p.id: p.author_id for p in rows}
+    proposal_status_map, proposal_counts = _batch_proposal_meta(
+        db, post_ids, post_author_by_id, current_user.id, viewer_is_lawyer
+    )
 
     return {
         "items": [
@@ -349,6 +392,8 @@ def list_posts(
                 image_base=image_base,
                 connection_status=connection_map.get(p.author_id),
                 verified_lawyer_ids=verified_ids,
+                my_proposal_status=proposal_status_map.get(p.id),
+                proposals_count=proposal_counts.get(p.id, 0) if p.author_id == current_user.id else 0,
             )
             for p in rows
         ],
@@ -1527,3 +1572,195 @@ def list_connections(
     for item in out:
         item["is_verified_lawyer"] = item["user_id"] in vl_ids
     return {"items": out}
+
+
+class PostProposalCreateBody(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    hourly_rate: float = Field(..., gt=0)
+
+
+class PostProposalRespondBody(BaseModel):
+    action: str = Field(..., pattern="^(accept|reject|negotiate|accept_counter|reject_counter)$")
+    counter_rate: Optional[float] = Field(None, gt=0)
+
+
+def _serialize_proposal(row: PostServiceProposal, db: Session, image_base: str) -> Dict[str, Any]:
+    lawyer = db.query(User).filter(User.id == row.lawyer_id).first()
+    prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == row.lawyer_id).first()
+    prof = _parse_profile_row(prow)
+    name = _display_name(lawyer, prof) if lawyer else f"Lawyer {row.lawyer_id}"
+    return {
+        "id": row.id,
+        "post_id": row.post_id,
+        "lawyer_id": row.lawyer_id,
+        "lawyer_name": name,
+        "lawyer_avatar_url": _avatar_url_for_user(row.lawyer_id, prof, image_base, profile_row=prow),
+        "message": row.message,
+        "hourly_rate": row.hourly_rate,
+        "counter_rate": row.counter_rate,
+        "status": row.status,
+        "created_at": row.created_at.isoformat() + "Z",
+        "responded_at": row.responded_at.isoformat() + "Z" if row.responded_at else None,
+    }
+
+
+@router.post("/posts/{post_id}/proposals")
+def submit_post_proposal(
+    post_id: int,
+    body: PostProposalCreateBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lawyer sends a service proposal in reply to a user's post."""
+    if getattr(current_user, "user_type", "user") != "lawyer":
+        raise HTTPException(status_code=403, detail="Only lawyer accounts can send proposals")
+    post = db.query(SocialPost).filter(SocialPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.author_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot propose on your own post")
+    author = db.query(User).filter(User.id == post.author_id).first()
+    if author and getattr(author, "user_type", "user") == "lawyer":
+        raise HTTPException(status_code=400, detail="Cannot propose on another lawyer's post")
+
+    existing = (
+        db.query(PostServiceProposal)
+        .filter(PostServiceProposal.post_id == post_id, PostServiceProposal.lawyer_id == current_user.id)
+        .first()
+    )
+    if existing and existing.status not in ("rejected",):
+        raise HTTPException(status_code=400, detail="You already sent a proposal on this post")
+
+    if existing and existing.status == "rejected":
+        existing.message = body.message.strip()
+        existing.hourly_rate = body.hourly_rate
+        existing.counter_rate = None
+        existing.status = "pending"
+        existing.responded_at = None
+        row = existing
+    else:
+        row = PostServiceProposal(
+            post_id=post_id,
+            lawyer_id=current_user.id,
+            message=body.message.strip(),
+            hourly_rate=body.hourly_rate,
+            status="pending",
+        )
+        db.add(row)
+    db.flush()
+
+    from app.services.social_notifications import actor_display_name
+
+    actor = actor_display_name(db, current_user.id)
+    db.add(
+        UserNotification(
+            recipient_id=post.author_id,
+            actor_id=current_user.id,
+            type="post_proposal",
+            post_id=post_id,
+            reference_id=row.id,
+            message=f"{actor} sent a service proposal on your post.",
+            read=False,
+        )
+    )
+    db.commit()
+    db.refresh(row)
+    return _serialize_proposal(row, db, _public_base_url())
+
+
+@router.get("/posts/{post_id}/proposals")
+def list_post_proposals(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = db.query(SocialPost).filter(SocialPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    is_author = post.author_id == current_user.id
+    is_lawyer = getattr(current_user, "user_type", "user") == "lawyer"
+    if not is_author and not is_lawyer:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    q = db.query(PostServiceProposal).filter(PostServiceProposal.post_id == post_id)
+    if not is_author:
+        q = q.filter(PostServiceProposal.lawyer_id == current_user.id)
+    rows = q.order_by(PostServiceProposal.created_at.desc()).all()
+    base = _public_base_url()
+    return {"items": [_serialize_proposal(r, db, base) for r in rows]}
+
+
+@router.patch("/posts/proposals/{proposal_id}")
+def respond_to_post_proposal(
+    proposal_id: int,
+    body: PostProposalRespondBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(PostServiceProposal).filter(PostServiceProposal.id == proposal_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    post = db.query(SocialPost).filter(SocialPost.id == row.post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    now = datetime.now(timezone.utc)
+    action = body.action.strip().lower()
+    from app.services.social_notifications import actor_display_name
+
+    if post.author_id == current_user.id:
+        if action == "accept":
+            if row.status not in ("pending", "negotiating"):
+                raise HTTPException(status_code=400, detail="Proposal cannot be accepted")
+            row.status = "accepted"
+            row.responded_at = now
+            msg = f"{actor_display_name(db, current_user.id)} accepted your service proposal."
+        elif action == "reject":
+            row.status = "rejected"
+            row.responded_at = now
+            msg = f"{actor_display_name(db, current_user.id)} rejected your service proposal."
+        elif action == "negotiate":
+            if body.counter_rate is None or body.counter_rate <= 0:
+                raise HTTPException(status_code=400, detail="Counter rate is required")
+            row.counter_rate = body.counter_rate
+            row.status = "negotiating"
+            row.responded_at = now
+            msg = (
+                f"{actor_display_name(db, current_user.id)} countered at "
+                f"{body.counter_rate:.0f}/hr on your proposal."
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Invalid action for post author")
+        recipient = row.lawyer_id
+    elif row.lawyer_id == current_user.id and action in ("accept_counter", "reject_counter"):
+        if row.status != "negotiating":
+            raise HTTPException(status_code=400, detail="No counter offer to respond to")
+        if action == "accept_counter":
+            row.status = "accepted"
+            if row.counter_rate is not None:
+                row.hourly_rate = row.counter_rate
+            row.responded_at = now
+            msg = f"{actor_display_name(db, current_user.id)} accepted the counter offer."
+        else:
+            row.status = "rejected"
+            row.responded_at = now
+            msg = f"{actor_display_name(db, current_user.id)} declined the counter offer."
+        recipient = post.author_id
+    else:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    db.add(row)
+    db.add(
+        UserNotification(
+            recipient_id=recipient,
+            actor_id=current_user.id,
+            type="post_proposal_response",
+            post_id=row.post_id,
+            reference_id=row.id,
+            message=msg,
+            read=False,
+        )
+    )
+    db.commit()
+    db.refresh(row)
+    return _serialize_proposal(row, db, _public_base_url())

@@ -653,6 +653,7 @@ class _PostCardState extends State<_PostCard> {
   bool _expanded = false;
   bool _loadingComments = false;
   bool _connecting = false;
+  bool _proposing = false;
   String? _commentsErr;
   List<Map<String, dynamic>> _comments = [];
 
@@ -831,6 +832,216 @@ class _PostCardState extends State<_PostCard> {
     }
   }
 
+  Future<void> _sendProposal() async {
+    final postId = widget.post['id'] as int?;
+    if (postId == null || _proposing) return;
+    final msgCtrl = TextEditingController();
+    final rateCtrl = TextEditingController(text: '500');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Send service proposal'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: msgCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Your offer *',
+                  hintText: 'Describe how you can help with this post',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 4,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: rateCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Hourly rate *',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final message = msgCtrl.text.trim();
+    final rate = double.tryParse(rateCtrl.text.trim());
+    if (message.isEmpty || rate == null || rate <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your offer and hourly rate.')),
+      );
+      return;
+    }
+    setState(() => _proposing = true);
+    try {
+      await context.read<AppServices>().legato.submitPostProposal(
+            postId: postId,
+            message: message,
+            hourlyRate: rate,
+          );
+      if (!mounted) return;
+      setState(() => widget.post['my_proposal_status'] = 'pending');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Proposal sent. The post author will respond in Alerts.')),
+      );
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _proposing = false);
+    }
+  }
+
+  Future<void> _showProposalsSheet() async {
+    final postId = widget.post['id'] as int?;
+    if (postId == null) return;
+    final legato = context.read<AppServices>().legato;
+    List<Map<String, dynamic>> items = [];
+    try {
+      final raw = await legato.getPostProposals(postId);
+      items = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (_, scrollCtrl) => Material(
+          child: ListView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text('Service proposals (${items.length})', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              if (items.isEmpty)
+                const Text('No proposals yet.')
+              else
+                ...items.map((p) {
+                  final id = (p['id'] as num?)?.toInt() ?? 0;
+                  final status = p['status']?.toString() ?? 'pending';
+                  final rate = (p['hourly_rate'] as num?)?.toDouble();
+                  final counter = (p['counter_rate'] as num?)?.toDouble();
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(p['lawyer_name']?.toString() ?? 'Lawyer', style: const TextStyle(fontWeight: FontWeight.w700)),
+                          if (rate != null) Text('Offer: ${rate.toStringAsFixed(0)}/hr'),
+                          if (counter != null) Text('Counter: ${counter.toStringAsFixed(0)}/hr'),
+                          Text('Status: $status'),
+                          const SizedBox(height: 6),
+                          Text(p['message']?.toString() ?? ''),
+                          if (status == 'pending' && id > 0) ...[
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                FilledButton(
+                                  onPressed: () async {
+                                    try {
+                                      await legato.respondToPostProposal(proposalId: id, action: 'accept');
+                                      if (ctx.mounted) Navigator.pop(ctx);
+                                      widget.onChanged();
+                                    } on ApiException catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                                      }
+                                    }
+                                  },
+                                  child: const Text('Accept'),
+                                ),
+                                OutlinedButton(
+                                  onPressed: () async {
+                                    final counterCtrl = TextEditingController(
+                                      text: rate?.toStringAsFixed(0) ?? '',
+                                    );
+                                    final negotiate = await showDialog<bool>(
+                                      context: ctx,
+                                      builder: (dCtx) => AlertDialog(
+                                        title: const Text('Negotiate rate'),
+                                        content: TextField(
+                                          controller: counterCtrl,
+                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Counter hourly rate',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+                                          FilledButton(onPressed: () => Navigator.pop(dCtx, true), child: const Text('Send')),
+                                        ],
+                                      ),
+                                    );
+                                    if (negotiate != true) return;
+                                    final cRate = double.tryParse(counterCtrl.text.trim());
+                                    if (cRate == null || cRate <= 0) return;
+                                    try {
+                                      await legato.respondToPostProposal(
+                                        proposalId: id,
+                                        action: 'negotiate',
+                                        counterRate: cRate,
+                                      );
+                                      if (ctx.mounted) Navigator.pop(ctx);
+                                      widget.onChanged();
+                                    } on ApiException catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                                      }
+                                    }
+                                  },
+                                  child: const Text('Negotiate'),
+                                ),
+                                TextButton(
+                                  onPressed: () async {
+                                    try {
+                                      await legato.respondToPostProposal(proposalId: id, action: 'reject');
+                                      if (ctx.mounted) Navigator.pop(ctx);
+                                      widget.onChanged();
+                                    } on ApiException catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                                      }
+                                    }
+                                  },
+                                  child: const Text('Reject'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _deletePost() async {
     final id = widget.post['id'] as int?;
     if (id == null) return;
@@ -866,15 +1077,20 @@ class _PostCardState extends State<_PostCard> {
     final sc = (p['shares_count'] as num?)?.toInt() ?? 0;
     final liked = p['liked'] == true;
     final meId = context.watch<AuthProvider>().user?.id;
+    final me = context.watch<AuthProvider>().user;
+    final isLawyerViewer = me?.isLawyerAccount ?? false;
     final profile = context.watch<UserProfileProvider>();
     final authorId = (p['author_id'] as num?)?.toInt() ?? (p['user_id'] as num?)?.toInt();
     final isOwn = meId != null && authorId != null && meId == authorId;
+    final authorIsLawyer = p['author_user_type']?.toString().toLowerCase() == 'lawyer';
     final authorAvatar = profile.avatarForUser(
       authorId,
       meId,
       p['author_avatar_url']?.toString(),
     );
     final connectionStatus = p['connection_status']?.toString() ?? (isOwn ? 'self' : 'none');
+    final myProposalStatus = p['my_proposal_status']?.toString();
+    final proposalsCount = (p['proposals_count'] as num?)?.toInt() ?? 0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -947,7 +1163,105 @@ class _PostCardState extends State<_PostCard> {
                     ),
                   ),
                 ),
-                if (!isOwn && connectionStatus == 'none')
+                if (isOwn && proposalsCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: OutlinedButton(
+                      onPressed: _showProposalsSheet,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: LegatoLinkedInTheme.navActiveGold,
+                        side: BorderSide(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.85)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        minimumSize: const Size(0, 34),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text('Proposals ($proposalsCount)', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  )
+                else if (isLawyerViewer && !isOwn && !authorIsLawyer)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: myProposalStatus == null || myProposalStatus.isEmpty
+                        ? OutlinedButton(
+                            onPressed: _proposing ? null : _sendProposal,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: LegatoLinkedInTheme.navActiveGold,
+                              side: BorderSide(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.85)),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              minimumSize: const Size(0, 34),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: _proposing
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Text('Propose', style: TextStyle(fontWeight: FontWeight.w600)),
+                          )
+                        : myProposalStatus == 'negotiating'
+                            ? TextButton(
+                                onPressed: () async {
+                                  final postId = widget.post['id'] as int?;
+                                  if (postId == null) return;
+                                  final raw = await context.read<AppServices>().legato.getPostProposals(postId);
+                                  final mine = raw.cast<Map>().map((e) => Map<String, dynamic>.from(e)).firstWhere(
+                                        (p) => p['status'] == 'negotiating',
+                                        orElse: () => <String, dynamic>{},
+                                      );
+                                  final id = (mine['id'] as num?)?.toInt();
+                                  if (id == null) return;
+                                  final counter = (mine['counter_rate'] as num?)?.toDouble();
+                                  final accept = await showDialog<bool>(
+                                    context: context,
+                                    builder: (dCtx) => AlertDialog(
+                                      title: const Text('Counter offer'),
+                                      content: Text(
+                                        counter != null
+                                            ? 'The author countered at ${counter.toStringAsFixed(0)}/hr. Accept?'
+                                            : 'The author sent a counter offer. Accept?',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(dCtx, false),
+                                          child: const Text('Decline'),
+                                        ),
+                                        FilledButton(
+                                          onPressed: () => Navigator.pop(dCtx, true),
+                                          child: const Text('Accept'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (accept == null) return;
+                                  try {
+                                    await context.read<AppServices>().legato.respondToPostProposal(
+                                          proposalId: id,
+                                          action: accept ? 'accept_counter' : 'reject_counter',
+                                        );
+                                    if (mounted) {
+                                      setState(() => widget.post['my_proposal_status'] = accept ? 'accepted' : 'rejected');
+                                    }
+                                  } on ApiException catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                                    }
+                                  }
+                                },
+                                child: const Text('Review counter'),
+                              )
+                            : Text(
+                            myProposalStatus == 'pending'
+                                ? 'Proposal sent'
+                                : myProposalStatus == 'accepted'
+                                    ? 'Accepted'
+                                    : 'Proposal $myProposalStatus',
+                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: LegatoLinkedInTheme.textSecondaryAdaptive(context),
+                                ),
+                          ),
+                  )
+                else if (!isLawyerViewer && !isOwn && connectionStatus == 'none')
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
                     child: OutlinedButton(
