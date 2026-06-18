@@ -835,36 +835,40 @@ class _PostCardState extends State<_PostCard> {
   Future<void> _sendProposal() async {
     final postId = widget.post['id'] as int?;
     if (postId == null || _proposing) return;
+
+    double? profileRate;
+    try {
+      final status = await context.read<AppServices>().legato.lawyerStatus();
+      profileRate = (status['hourly_rate'] as num?)?.toDouble();
+      profileRate ??= (status['negotiated_hourly_rate'] as num?)?.toDouble();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+    if (profileRate == null || profileRate <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Set your hourly rate in your profile before sending proposals.')),
+        );
+      }
+      return;
+    }
+
     final msgCtrl = TextEditingController();
-    final rateCtrl = TextEditingController(text: '500');
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Send service proposal'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: msgCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Your offer *',
-                  hintText: 'Describe how you can help with this post',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 4,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: rateCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Hourly rate *',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
+        content: TextFormField(
+          controller: msgCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Your offer *',
+            hintText: 'Describe how you can help with this post',
+            border: OutlineInputBorder(),
           ),
+          maxLines: 4,
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -874,10 +878,9 @@ class _PostCardState extends State<_PostCard> {
     );
     if (ok != true || !mounted) return;
     final message = msgCtrl.text.trim();
-    final rate = double.tryParse(rateCtrl.text.trim());
-    if (message.isEmpty || rate == null || rate <= 0) {
+    if (message.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your offer and hourly rate.')),
+        const SnackBar(content: Text('Please enter your offer.')),
       );
       return;
     }
@@ -886,7 +889,7 @@ class _PostCardState extends State<_PostCard> {
       await context.read<AppServices>().legato.submitPostProposal(
             postId: postId,
             message: message,
-            hourlyRate: rate,
+            hourlyRate: profileRate,
           );
       if (!mounted) return;
       setState(() => widget.post['my_proposal_status'] = 'pending');

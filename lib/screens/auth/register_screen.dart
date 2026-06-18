@@ -61,53 +61,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
   }
 
-  Future<void> _pickIdImage({required bool isFront}) async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!kIsWeb)
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Take a photo'),
-                onTap: () => Navigator.pop(ctx, ImageSource.camera),
-              ),
-            ListTile(
-              leading: const Icon(Icons.upload_file_outlined),
-              title: const Text('Choose from files'),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
+  Future<void> _pickIdFromFile({required bool isFront}) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
     );
-    if (source == null || !mounted) return;
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+    setState(() {
+      if (isFront) {
+        _idCardFrontBytes = file.bytes;
+        _idCardFrontFilename = file.name;
+      } else {
+        _idCardBackBytes = file.bytes;
+        _idCardBackFilename = file.name;
+      }
+    });
+  }
 
-    if (source == ImageSource.gallery) {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      final file = result.files.first;
-      if (file.bytes == null) return;
-      setState(() {
-        if (isFront) {
-          _idCardFrontBytes = file.bytes;
-          _idCardFrontFilename = file.name;
-        } else {
-          _idCardBackBytes = file.bytes;
-          _idCardBackFilename = file.name;
-        }
-      });
-      return;
-    }
-
+  Future<void> _pickIdFromCamera({required bool isFront}) async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(source: source, imageQuality: 85);
+    final photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
     if (photo == null) return;
     final bytes = await photo.readAsBytes();
     if (!mounted) return;
@@ -123,9 +99,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
   }
 
-  Future<void> _pickIdCardFront() => _pickIdImage(isFront: true);
+  Future<void> _pickIdCardFront() => _pickIdFromFile(isFront: true);
 
-  Future<void> _pickIdCardBack() => _pickIdImage(isFront: false);
+  Future<void> _pickIdCardBack() => _pickIdFromFile(isFront: false);
 
   Future<void> _signInWithGoogle() async {
     setState(() { _busy = true; _err = null; });
@@ -282,6 +258,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         filename: _cvFilename,
                         onPick: _pickCv,
                         required: true,
+                        hint: 'PDF / doc / image',
                       ),
                       const SizedBox(height: 8),
                       _DocPickerTile(
@@ -289,7 +266,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         icon: Icons.badge_outlined,
                         filename: _idCardFrontFilename,
                         onPick: _pickIdCardFront,
+                        onCamera: kIsWeb ? null : () => _pickIdFromCamera(isFront: true),
                         required: true,
+                        hint: 'photo or file',
                       ),
                       const SizedBox(height: 8),
                       _DocPickerTile(
@@ -297,7 +276,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         icon: Icons.badge_outlined,
                         filename: _idCardBackFilename,
                         onPick: _pickIdCardBack,
+                        onCamera: kIsWeb ? null : () => _pickIdFromCamera(isFront: false),
                         required: true,
+                        hint: 'photo or file',
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -416,6 +397,8 @@ class _DocPickerTile extends StatelessWidget {
     required this.filename,
     required this.onPick,
     this.required = false,
+    this.hint = 'file',
+    this.onCamera,
   });
 
   final String label;
@@ -423,33 +406,48 @@ class _DocPickerTile extends StatelessWidget {
   final String? filename;
   final VoidCallback onPick;
   final bool required;
+  final String hint;
+  final VoidCallback? onCamera;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final picked = filename != null;
-    return OutlinedButton(
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        side: BorderSide(
-          color: picked ? cs.primary : (required ? cs.error.withValues(alpha: 0.5) : cs.outlineVariant),
-        ),
-        foregroundColor: picked ? cs.primary : cs.onSurfaceVariant,
-        alignment: Alignment.centerLeft,
-      ),
-      onPressed: onPick,
-      child: Row(
-        children: [
-          Icon(picked ? Icons.check_circle_outline : icon, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              picked ? filename! : '$label${required ? ' *' : ''} (photo or file)',
-              overflow: TextOverflow.ellipsis,
-            ),
+    final borderColor = picked ? cs.primary : (required ? cs.error.withValues(alpha: 0.5) : cs.outlineVariant);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPick,
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: borderColor),
           ),
-          Icon(Icons.upload_file_outlined, size: 16, color: cs.onSurfaceVariant),
-        ],
+          child: Row(
+            children: [
+              Icon(picked ? Icons.check_circle_outline : icon, size: 20, color: picked ? cs.primary : cs.onSurfaceVariant),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  picked ? filename! : '$label${required ? ' *' : ''} ($hint)',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: picked ? cs.primary : cs.onSurfaceVariant),
+                ),
+              ),
+              if (onCamera != null)
+                IconButton(
+                  tooltip: 'Take a photo',
+                  icon: Icon(Icons.photo_camera_outlined, size: 22, color: cs.primary),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  onPressed: onCamera,
+                ),
+              Icon(Icons.upload_file_outlined, size: 16, color: cs.onSurfaceVariant),
+            ],
+          ),
+        ),
       ),
     );
   }
