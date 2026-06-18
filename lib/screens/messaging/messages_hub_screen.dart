@@ -155,7 +155,19 @@ class MessagesHubScreenState extends State<MessagesHubScreen> with SingleTickerP
                       ),
                     )
                   else
-                    Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                    Builder(builder: (context) {
+                      final peers = (c['peers'] as List<dynamic>?) ?? [];
+                      final peerIsVl = peers.isNotEmpty && peers.first is Map && (peers.first as Map)['is_verified_lawyer'] == true;
+                      return Row(
+                        children: [
+                          Flexible(child: Text(title, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600))),
+                          if (peerIsVl) ...[
+                            const SizedBox(width: 4),
+                            const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                          ],
+                        ],
+                      );
+                    }),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,

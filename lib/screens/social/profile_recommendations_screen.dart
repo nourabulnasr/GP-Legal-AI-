@@ -89,9 +89,23 @@ class _ProfileRecommendationsScreenState extends State<ProfileRecommendationsScr
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      m['author_name']?.toString() ?? '',
-                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            m['author_name']?.toString() ?? '',
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                          ),
+                                        ),
+                                        if (m['author_is_verified_lawyer'] == true) ...[
+                                          const SizedBox(width: 4),
+                                          const Tooltip(
+                                            message: 'Verified Lawyer',
+                                            child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2)),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                     const SizedBox(height: 6),
                                     Text(m['content']?.toString() ?? ''),

@@ -192,6 +192,12 @@ class _HeaderCard extends StatelessWidget {
 
   final Map<String, dynamic> data;
 
+  bool get _isVerifiedLawyer {
+    if (data['is_verified_lawyer'] == true) return true;
+    return data['user_type']?.toString().toLowerCase() == 'lawyer' &&
+        data['lawyer_status']?.toString().toLowerCase() == 'approved';
+  }
+
   @override
   Widget build(BuildContext context) {
     final skills = (data['skills'] as List<dynamic>?) ?? [];
@@ -213,9 +219,23 @@ class _HeaderCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        data['display_name']?.toString() ?? 'Member',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              data['display_name']?.toString() ?? 'Member',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          if (_isVerifiedLawyer) ...[
+                            const SizedBox(width: 6),
+                            const Tooltip(
+                              message: 'Verified Lawyer',
+                              child: Icon(Icons.verified, color: Color(0xFF0A66C2), size: 20),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(

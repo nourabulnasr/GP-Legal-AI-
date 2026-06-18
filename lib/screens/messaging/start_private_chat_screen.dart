@@ -108,7 +108,13 @@ class _StartPrivateChatScreenState extends State<StartPrivateChatScreen> {
                             imageUrl: c['avatar_url']?.toString(),
                             name: name,
                           ),
-                          title: Text(name),
+                          title: Row(children: [
+                            Flexible(child: Text(name, overflow: TextOverflow.ellipsis)),
+                            if (c['is_verified_lawyer'] == true) ...[
+                              const SizedBox(width: 4),
+                              const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                            ],
+                          ]),
                           subtitle: Text(c['email']?.toString() ?? ''),
                           trailing: Icon(Icons.chat_bubble_outline, color: LegatoLinkedInTheme.navActiveGold),
                           onTap: _busy ? null : () => _openChat(c),

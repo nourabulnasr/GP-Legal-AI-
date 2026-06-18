@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user
 from app.db.models import (
     User,
+    LawyerApplication,
     LegatoProfile,
     SocialPost,
     SocialPostLike,
@@ -187,6 +188,21 @@ def _batch_connection_status(
     return out
 
 
+def _verified_lawyer_ids_batch(db: Session, user_ids: List[int]) -> set:
+    """One query: returns the set of user_ids whose LawyerApplication is approved."""
+    if not user_ids:
+        return set()
+    rows = (
+        db.query(LawyerApplication.user_id)
+        .filter(
+            LawyerApplication.user_id.in_(user_ids),
+            LawyerApplication.status == "approved",
+        )
+        .all()
+    )
+    return {r.user_id for r in rows}
+
+
 def _serialize_post(
     post: SocialPost,
     db: Session,
@@ -201,6 +217,7 @@ def _serialize_post(
     viewer_liked: Optional[set] = None,
     image_base: Optional[str] = None,
     connection_status: Optional[str] = None,
+    verified_lawyer_ids: Optional[set] = None,
 ) -> Dict[str, Any]:
     # Use pre-fetched data when available (batch path), else fall back to single queries.
     if authors_map is not None:
@@ -240,6 +257,15 @@ def _serialize_post(
     else:
         conn = _connection_status_between(db, viewer_id, post.author_id)
 
+    if verified_lawyer_ids is not None:
+        is_vl = post.author_id in verified_lawyer_ids
+    else:
+        is_vl = bool(
+            db.query(LawyerApplication)
+            .filter(LawyerApplication.user_id == post.author_id, LawyerApplication.status == "approved")
+            .first()
+        )
+
     return {
         "id": post.id,
         "author_id": post.author_id,
@@ -251,6 +277,8 @@ def _serialize_post(
             image_base or _public_base_url(),
             profile_row=prow,
         ),
+        "author_user_type": getattr(author, "user_type", "user"),
+        "author_is_verified_lawyer": is_vl,
         "content": post.content,
         "tags": tags,
         "category": post.category,
@@ -293,7 +321,7 @@ def list_posts(
         .all()
     )
 
-    # Batch-fetch all authors, profiles, and interaction counts in 6 queries total.
+    # Batch-fetch all authors, profiles, and interaction counts in 7 queries total.
     post_ids = [p.id for p in rows]
     author_ids = list({p.author_id for p in rows})
     authors_map = {u.id: u for u in db.query(User).filter(User.id.in_(author_ids)).all()}
@@ -304,6 +332,7 @@ def list_posts(
         db, post_ids, current_user.id
     )
     connection_map = _batch_connection_status(db, current_user.id, author_ids)
+    verified_ids = _verified_lawyer_ids_batch(db, author_ids)
     image_base = _public_base_url(request)
 
     return {
@@ -319,6 +348,7 @@ def list_posts(
                 viewer_liked=viewer_liked,
                 image_base=image_base,
                 connection_status=connection_map.get(p.author_id),
+                verified_lawyer_ids=verified_ids,
             )
             for p in rows
         ],
@@ -539,6 +569,8 @@ def list_comments(
     )
     out: List[Dict[str, Any]] = []
     base = _public_base_url()
+    comment_author_ids = list({c.author_id for c in rows})
+    vl_ids = _verified_lawyer_ids_batch(db, comment_author_ids)
     for c in rows:
         u = db.query(User).filter(User.id == c.author_id).first()
         if not u:
@@ -551,6 +583,8 @@ def list_comments(
                 "author_id": c.author_id,
                 "author_name": _display_name(u, pr),
                 "author_avatar_url": _avatar_url_for_user(c.author_id, pr, base, profile_row=prow),
+                "author_user_type": getattr(u, "user_type", "user"),
+                "author_is_verified_lawyer": c.author_id in vl_ids,
                 "content": c.content,
                 "created_at": c.created_at.isoformat() + "Z",
             }
@@ -690,6 +724,12 @@ def get_profile(
         },
         "is_self": user_id == current_user.id,
         "connection_status": _connection_status_between(db, current_user.id, user_id),
+        "user_type": getattr(u, "user_type", "user"),
+        "is_verified_lawyer": bool(
+            db.query(LawyerApplication)
+            .filter(LawyerApplication.user_id == user_id, LawyerApplication.status == "approved")
+            .first()
+        ),
     }
 
 
@@ -943,6 +983,15 @@ def list_endorsements(
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
     rows = db.query(SkillEndorsement).filter(SkillEndorsement.recipient_id == user_id).all()
+    endorser_ids = [r.endorser_id for r in rows]
+    vl_set: set = set()
+    if endorser_ids:
+        vl_set = {
+            r.user_id
+            for r in db.query(LawyerApplication.user_id)
+            .filter(LawyerApplication.user_id.in_(endorser_ids), LawyerApplication.status == "approved")
+            .all()
+        }
     out = []
     for r in rows:
         eu = db.query(User).filter(User.id == r.endorser_id).first()
@@ -952,6 +1001,7 @@ def list_endorsements(
                 "id": r.id,
                 "endorser_id": r.endorser_id,
                 "endorser_name": _display_name(eu, pr) if eu else "?",
+                "endorser_is_verified_lawyer": r.endorser_id in vl_set,
                 "skill": r.skill,
                 "created_at": r.created_at.isoformat() + "Z",
             }
@@ -1108,6 +1158,8 @@ def list_recommendations(
     )
     out = []
     base = _public_base_url()
+    rec_author_ids = list({r.author_id for r in rows})
+    vl_ids = _verified_lawyer_ids_batch(db, rec_author_ids)
     for r in rows:
         au = db.query(User).filter(User.id == r.author_id).first()
         prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == r.author_id).first()
@@ -1118,6 +1170,7 @@ def list_recommendations(
                 "author_id": r.author_id,
                 "author_name": _display_name(au, pr) if au else "?",
                 "author_avatar_url": _avatar_url_for_user(r.author_id, pr, base, profile_row=prow) if au else "",
+                "author_is_verified_lawyer": r.author_id in vl_ids,
                 "content": r.content,
                 "created_at": r.created_at.isoformat() + "Z",
             }
@@ -1301,6 +1354,11 @@ def network_search(
                         "avatar_url": "",
                     }
                 )
+    # Batch-annotate verified lawyer status in one query.
+    result_ids = [item["user_id"] for item in out]
+    vl_ids = _verified_lawyer_ids_batch(db, result_ids)
+    for item in out:
+        item["is_verified_lawyer"] = item["user_id"] in vl_ids
     return {"items": out}
 
 
@@ -1334,6 +1392,10 @@ def network_suggestions(
                 "avatar_url": _avatar_url_for_user(uid, prof, base, profile_row=r),
             }
         )
+    suggestion_ids = [item["user_id"] for item in out]
+    vl_ids = _verified_lawyer_ids_batch(db, suggestion_ids)
+    for item in out:
+        item["is_verified_lawyer"] = item["user_id"] in vl_ids
     return {"items": out}
 
 
@@ -1398,6 +1460,8 @@ def list_pending_invites(
     )
     out = []
     base = _public_base_url()
+    requester_ids = list({inv.requester_id for inv in rows})
+    vl_ids = _verified_lawyer_ids_batch(db, requester_ids)
     for inv in rows:
         u = db.query(User).filter(User.id == inv.requester_id).first()
         prow = db.query(LegatoProfile).filter(LegatoProfile.user_id == inv.requester_id).first()
@@ -1408,6 +1472,7 @@ def list_pending_invites(
                 "requester_id": inv.requester_id,
                 "requester_name": _display_name(u, pr) if u else "?",
                 "requester_avatar_url": _avatar_url_for_user(inv.requester_id, pr, base, profile_row=prow) if u else "",
+                "requester_is_verified_lawyer": inv.requester_id in vl_ids,
                 "created_at": inv.created_at.isoformat() + "Z",
             }
         )
@@ -1457,4 +1522,8 @@ def list_connections(
                 ),
             }
         )
+    conn_ids = [item["user_id"] for item in out]
+    vl_ids = _verified_lawyer_ids_batch(db, conn_ids)
+    for item in out:
+        item["is_verified_lawyer"] = item["user_id"] in vl_ids
     return {"items": out}

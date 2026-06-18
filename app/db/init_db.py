@@ -27,10 +27,59 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'user';"))
             if "email_verified" not in col_names:
                 conn.execute(text("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 1;"))
+            if "user_type" not in col_names:
+                conn.execute(text("ALTER TABLE users ADD COLUMN user_type VARCHAR DEFAULT 'user' NOT NULL;"))
             # Seed admin account: always treat as verified so it can log in without email verification
             conn.execute(
                 text("UPDATE users SET email_verified = 1 WHERE email = 'admin@test.com';")
             )
+    except Exception:
+        pass
+
+    # Create lawyer_applications table if it doesn't exist yet
+    # (SQLAlchemy create_all handles fresh installs; this is a safety net for upgrades.)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS lawyer_applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    bar_license_number VARCHAR(128),
+                    document_bytes BLOB,
+                    document_mime_type VARCHAR(255),
+                    document_filename VARCHAR(512),
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    admin_note TEXT,
+                    created_at DATETIME NOT NULL,
+                    reviewed_at DATETIME,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_lawyer_applications_user_id ON lawyer_applications (user_id);"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_lawyer_applications_status ON lawyer_applications (status);"
+            ))
+    except Exception:
+        pass
+
+    # Safe schema tweaks: add cv / id_card / years_of_experience columns to lawyer_applications
+    try:
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(lawyer_applications);")).fetchall()
+            col_names = {c[1] for c in cols}
+            for col_name, col_type in [
+                ("cv_bytes", "BLOB"),
+                ("cv_mime_type", "VARCHAR(255)"),
+                ("cv_filename", "VARCHAR(512)"),
+                ("id_card_bytes", "BLOB"),
+                ("id_card_mime_type", "VARCHAR(255)"),
+                ("id_card_filename", "VARCHAR(512)"),
+                ("years_of_experience", "INTEGER"),
+            ]:
+                if col_name not in col_names:
+                    conn.execute(text(f"ALTER TABLE lawyer_applications ADD COLUMN {col_name} {col_type};"))
     except Exception:
         pass
 
@@ -113,6 +162,20 @@ def init_db() -> None:
             col_names = {c[1] for c in cols}
             if "last_read_message_id" not in col_names:
                 conn.execute(text("ALTER TABLE user_conversation_members ADD COLUMN last_read_message_id INTEGER;"))
+    except Exception:
+        pass
+
+    # Add msg_type / offer_json / offer_status to user_messages for lawyer offer cards.
+    try:
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(user_messages);")).fetchall()
+            col_names = {c[1] for c in cols}
+            if "msg_type" not in col_names:
+                conn.execute(text("ALTER TABLE user_messages ADD COLUMN msg_type VARCHAR(32) NOT NULL DEFAULT 'text';"))
+            if "offer_json" not in col_names:
+                conn.execute(text("ALTER TABLE user_messages ADD COLUMN offer_json TEXT;"))
+            if "offer_status" not in col_names:
+                conn.execute(text("ALTER TABLE user_messages ADD COLUMN offer_status VARCHAR(20);"))
     except Exception:
         pass
 

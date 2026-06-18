@@ -84,6 +84,7 @@ class _DealRoomMembersSheetState extends State<_DealRoomMembersSheet> {
         'email': email,
         'avatar_url': d['avatar_url']?.toString() ?? '',
         'is_creator': isCreator,
+        'is_verified_lawyer': d['is_verified_lawyer'] == true,
       };
     } catch (_) {
       final fallback = _nameFromEmail(hint);
@@ -288,7 +289,15 @@ class _DealRoomMembersSheetState extends State<_DealRoomMembersSheet> {
                                   imageUrl: m['avatar_url']?.toString(),
                                   name: displayName,
                                 ),
-                                title: Text(displayName),
+                                title: Row(
+                                  children: [
+                                    Flexible(child: Text(displayName, overflow: TextOverflow.ellipsis)),
+                                    if (m['is_verified_lawyer'] == true) ...[
+                                      const SizedBox(width: 4),
+                                      const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                                    ],
+                                  ],
+                                ),
                                 subtitle: email.isNotEmpty && !isCreator ? Text(email) : null,
                                 trailing: isCreator
                                     ? Container(

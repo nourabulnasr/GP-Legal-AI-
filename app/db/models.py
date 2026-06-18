@@ -15,6 +15,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, default="user", nullable=False)
+    user_type: Mapped[str] = mapped_column(String, default="user", nullable=False)  # "user" or "lawyer"
     email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -41,6 +42,28 @@ class Analysis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user: Mapped["User"] = relationship("User", back_populates="analyses")
+
+
+class LawyerApplication(Base):
+    __tablename__ = "lawyer_applications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    bar_license_number: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    document_bytes: Mapped[Optional[bytes]] = mapped_column(nullable=True)
+    document_mime_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    document_filename: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    cv_bytes: Mapped[Optional[bytes]] = mapped_column(nullable=True)
+    cv_mime_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    cv_filename: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    id_card_bytes: Mapped[Optional[bytes]] = mapped_column(nullable=True)
+    id_card_mime_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    id_card_filename: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    years_of_experience: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    admin_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class LegatoShare(Base):
@@ -258,4 +281,7 @@ class UserMessage(Base):
     )
     author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    msg_type: Mapped[str] = mapped_column(String(32), nullable=False, default="text", server_default="text")
+    offer_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    offer_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)

@@ -7,7 +7,8 @@ from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from typing import Optional as _Optional
 from pydantic import BaseModel, Field
 from fastapi.security import OAuth2PasswordRequestForm
 from app.core.limiter import limiter
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.db.session import get_db
-from app.db.models import User
+from app.db.models import LawyerApplication, User, UserNotification
 from app.core.security import hash_password, verify_password, create_access_token
 from app.schemas.auth import (
     RegisterRequest,
@@ -197,10 +198,15 @@ def register(request: Request, payload: RegisterRequest, db: Session = Depends(g
 
     auto_verify = _allow_dev_auto_verify() and not _smtp_configured()
 
+    user_type = (getattr(payload, "user_type", None) or "user").strip().lower()
+    if user_type not in ("user", "lawyer"):
+        user_type = "user"
+
     u = User(
         email=email,
         password_hash=hash_password(payload.password),
         role="user",
+        user_type=user_type,
         email_verified=bool(auto_verify),
     )
     db.add(u)
@@ -208,7 +214,12 @@ def register(request: Request, payload: RegisterRequest, db: Session = Depends(g
     db.refresh(u)
 
     if auto_verify:
-        return MeResponse(id=u.id, email=u.email, role=getattr(u, "role", "user"))
+        return MeResponse(
+            id=u.id,
+            email=u.email,
+            role=getattr(u, "role", "user"),
+            user_type=getattr(u, "user_type", "user"),
+        )
 
     code = _generate_verification_code()
     code_hash_val = _code_hash(code)
@@ -239,7 +250,115 @@ def register(request: Request, payload: RegisterRequest, db: Session = Depends(g
     if not sent:
         # Code is in DB; user can use "Resend code" on verify step or login page
         pass
-    return MeResponse(id=u.id, email=u.email, role=getattr(u, "role", "user"))
+    return MeResponse(
+        id=u.id,
+        email=u.email,
+        role=getattr(u, "role", "user"),
+        user_type=getattr(u, "user_type", "user"),
+    )
+
+
+@router.post("/register-lawyer", response_model=MeResponse)
+@limiter.limit("5/minute")
+async def register_as_lawyer(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    years_of_experience: _Optional[int] = Form(None),
+    cv: _Optional[UploadFile] = File(None),
+    id_card: _Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+):
+    """Register a new lawyer account and submit their CV and ID card in one request."""
+    email = email.lower().strip()
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    auto_verify = _allow_dev_auto_verify() and not _smtp_configured()
+
+    u = User(
+        email=email,
+        password_hash=hash_password(password),
+        role="user",
+        user_type="lawyer",
+        email_verified=bool(auto_verify),
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+
+    cv_bytes_data = cv_mime_data = cv_fn_data = None
+    id_card_bytes_data = id_card_mime_data = id_card_fn_data = None
+
+    if cv and cv.filename:
+        raw = await cv.read()
+        if raw:
+            cv_bytes_data = raw
+            cv_mime_data = cv.content_type or "application/octet-stream"
+            cv_fn_data = cv.filename
+
+    if id_card and id_card.filename:
+        raw = await id_card.read()
+        if raw:
+            id_card_bytes_data = raw
+            id_card_mime_data = id_card.content_type or "application/octet-stream"
+            id_card_fn_data = id_card.filename
+
+    app_record = LawyerApplication(
+        user_id=u.id,
+        years_of_experience=years_of_experience,
+        cv_bytes=cv_bytes_data,
+        cv_mime_type=cv_mime_data,
+        cv_filename=cv_fn_data,
+        id_card_bytes=id_card_bytes_data,
+        id_card_mime_type=id_card_mime_data,
+        id_card_filename=id_card_fn_data,
+        status="pending",
+    )
+    db.add(app_record)
+    db.commit()
+
+    admins = db.query(User).filter(User.role == "admin").all()
+    for admin in admins:
+        db.add(UserNotification(
+            recipient_id=admin.id,
+            actor_id=u.id,
+            type="lawyer_application",
+            message=f"{u.email} submitted a new lawyer application.",
+            read=False,
+        ))
+    if admins:
+        db.commit()
+
+    if auto_verify:
+        return MeResponse(id=u.id, email=u.email, role="user", user_type="lawyer", lawyer_status="pending")
+
+    code = _generate_verification_code()
+    code_hash_val = _code_hash(code)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=VERIFICATION_CODE_EXPIRE_MINUTES)
+    _ensure_verification_codes_table(db)
+    try:
+        db.execute(
+            text("DELETE FROM verification_codes WHERE email = :email AND purpose = 'signup'"),
+            {"email": email},
+        )
+        db.execute(
+            text("""
+                INSERT INTO verification_codes (email, user_id, code_hash, purpose, expires_at)
+                VALUES (:email, :uid, :ch, 'signup', :exp)
+            """),
+            {"email": email, "uid": u.id, "ch": code_hash_val, "exp": expires_at.isoformat()},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to create verification code")
+
+    _send_verification_email(email, code, "signup")
+    return MeResponse(id=u.id, email=u.email, role="user", user_type="lawyer", lawyer_status="pending")
 
 
 # ✅ JSON login (زي ما انت بتستخدمه في curl حاليا)
@@ -407,6 +526,7 @@ def google_oauth_config_public():
 
 class GoogleIdTokenBody(BaseModel):
     id_token: str = Field(..., min_length=20)
+    user_type: str = Field(default="user", pattern="^(user|lawyer)$")
 
 
 @router.post("/google/id-token", response_model=TokenResponse)
@@ -433,12 +553,14 @@ def google_id_token_login(body: GoogleIdTokenBody, db: Session = Depends(get_db)
     if not email:
         raise HTTPException(status_code=400, detail="Google account has no email")
 
+    requested_type = body.user_type if body.user_type in ("user", "lawyer") else "user"
     user = db.query(User).filter(User.email == email).first()
     if not user:
         user = User(
             email=email,
             password_hash="",
             role="user",
+            user_type=requested_type,
             email_verified=True,
         )
         db.add(user)
@@ -470,8 +592,8 @@ def _google_oauth_config():
 
 
 @router.get("/google")
-def google_oauth_redirect():
-    """Google OAuth - redirect to Google sign-in."""
+def google_oauth_redirect(user_type: str = "user"):
+    """Google OAuth - redirect to Google sign-in. user_type is passed via OAuth state."""
     from fastapi.responses import RedirectResponse
     client_id, _, redirect_uri = _google_oauth_config()
     if not client_id:
@@ -479,6 +601,7 @@ def google_oauth_redirect():
             url=f"{_frontend_url().rstrip('/')}/?error=google_not_configured",
             status_code=302,
         )
+    safe_type = user_type if user_type in ("user", "lawyer") else "user"
     qs = urlencode(
         {
             "client_id": client_id,
@@ -487,6 +610,7 @@ def google_oauth_redirect():
             "scope": "openid email profile",
             "access_type": "offline",
             "prompt": "consent",
+            "state": safe_type,
         }
     )
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{qs}"
@@ -496,9 +620,10 @@ def google_oauth_redirect():
 class GoogleCodeBody(BaseModel):
     code: str = Field(..., min_length=5)
     redirect_uri: str = Field(..., min_length=8)
+    user_type: str = Field(default="user", pattern="^(user|lawyer)$")
 
 
-async def _google_oauth_login_from_code(code: str, redirect_uri: str, db: Session) -> str:
+async def _google_oauth_login_from_code(code: str, redirect_uri: str, db: Session, user_type: str = "user") -> str:
     """Exchange Google auth code for app JWT. Raises HTTPException on failure."""
     client_id, client_secret, _ = _google_oauth_config()
     if not client_id or not client_secret:
@@ -541,12 +666,14 @@ async def _google_oauth_login_from_code(code: str, redirect_uri: str, db: Sessio
     if not email:
         raise HTTPException(status_code=400, detail="Google account has no email")
 
+    resolved_type = user_type if user_type in ("user", "lawyer") else "user"
     user = db.query(User).filter(User.email == email).first()
     if not user:
         user = User(
             email=email,
             password_hash="",
             role="user",
+            user_type=resolved_type,
             email_verified=True,
         )
         db.add(user)
@@ -559,12 +686,14 @@ async def _google_oauth_login_from_code(code: str, redirect_uri: str, db: Sessio
 @router.post("/google/code", response_model=TokenResponse)
 async def google_oauth_code_exchange(body: GoogleCodeBody, db: Session = Depends(get_db)):
     """Exchange Google OAuth code from Flutter web (redirect URI = Firebase hosting)."""
-    token = await _google_oauth_login_from_code(body.code.strip(), body.redirect_uri.strip(), db)
+    token = await _google_oauth_login_from_code(
+        body.code.strip(), body.redirect_uri.strip(), db, user_type=body.user_type
+    )
     return TokenResponse(access_token=token, token_type="bearer")
 
 
 @router.get("/google/callback")
-async def google_oauth_callback(code: str = "", error: str = "", db: Session = Depends(get_db)):
+async def google_oauth_callback(code: str = "", error: str = "", state: str = "user", db: Session = Depends(get_db)):
     """Google OAuth callback - exchange code for token, create/get user, redirect to frontend with JWT."""
     from fastapi.responses import RedirectResponse
 
@@ -577,8 +706,9 @@ async def google_oauth_callback(code: str = "", error: str = "", db: Session = D
             status_code=302,
         )
 
+    user_type = state if state in ("user", "lawyer") else "user"
     try:
-        token = await _google_oauth_login_from_code(code, redirect_uri, db)
+        token = await _google_oauth_login_from_code(code, redirect_uri, db, user_type=user_type)
     except HTTPException as exc:
         err = "google_token_failed"
         if exc.status_code == 503:
@@ -599,11 +729,21 @@ async def google_oauth_callback(code: str = "", error: str = "", db: Session = D
 
 
 @router.get("/me", response_model=MeResponse)
-def me(current_user: User = Depends(get_current_user)):
+def me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    lawyer_status = None
+    if getattr(current_user, "user_type", "user") == "lawyer":
+        app_record = (
+            db.query(LawyerApplication)
+            .filter(LawyerApplication.user_id == current_user.id)
+            .first()
+        )
+        lawyer_status = app_record.status if app_record else "not_applied"
     return MeResponse(
         id=current_user.id,
         email=current_user.email,
         role=getattr(current_user, "role", "user"),
+        user_type=getattr(current_user, "user_type", "user"),
+        lawyer_status=lawyer_status,
     )
 
 

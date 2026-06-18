@@ -308,7 +308,13 @@ class NetworkScreenState extends State<NetworkScreen> {
                               imageUrl: m['avatar_url']?.toString(),
                               name: m['name']?.toString() ?? 'Member',
                             ),
-                            title: Text(m['name']?.toString() ?? 'Member'),
+                            title: Row(children: [
+                              Flexible(child: Text(m['name']?.toString() ?? 'Member', overflow: TextOverflow.ellipsis)),
+                              if (m['is_verified_lawyer'] == true) ...[
+                                const SizedBox(width: 4),
+                                const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                              ],
+                            ]),
                             subtitle: Text(
                               '${m['subtitle'] ?? ''}\n${m['location'] ?? ''}'.trim(),
                               maxLines: 2,
@@ -379,7 +385,13 @@ class NetworkScreenState extends State<NetworkScreen> {
                             imageUrl: m['avatar_url']?.toString(),
                             name: m['name']?.toString() ?? 'Member',
                           ),
-                          title: Text(m['name']?.toString() ?? 'Member'),
+                          title: Row(children: [
+                            Flexible(child: Text(m['name']?.toString() ?? 'Member', overflow: TextOverflow.ellipsis)),
+                            if (m['is_verified_lawyer'] == true) ...[
+                              const SizedBox(width: 4),
+                              const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                            ],
+                          ]),
                           subtitle: Text(
                             '${m['subtitle'] ?? ''}\n${m['location'] ?? ''}'.trim(),
                             maxLines: 2,
@@ -451,7 +463,13 @@ class NetworkScreenState extends State<NetworkScreen> {
                         imageUrl: m['avatar_url']?.toString(),
                         name: m['name']?.toString() ?? m['display_name']?.toString() ?? 'Member',
                       ),
-                      title: Text(m['name']?.toString() ?? m['display_name']?.toString() ?? 'Member'),
+                      title: Row(children: [
+                        Flexible(child: Text(m['name']?.toString() ?? m['display_name']?.toString() ?? 'Member', overflow: TextOverflow.ellipsis)),
+                        if (m['is_verified_lawyer'] == true) ...[
+                          const SizedBox(width: 4),
+                          const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                        ],
+                      ]),
                       subtitle: Text(m['subtitle']?.toString() ?? m['title']?.toString() ?? ''),
                       trailing: IconButton(
                         tooltip: 'Message',
@@ -521,7 +539,13 @@ class NetworkScreenState extends State<NetworkScreen> {
                       imageUrl: m['avatar_url']?.toString(),
                       name: m['name']?.toString() ?? 'Member',
                     ),
-                    title: Text(m['name']?.toString() ?? 'Member'),
+                    title: Row(children: [
+                      Flexible(child: Text(m['name']?.toString() ?? 'Member', overflow: TextOverflow.ellipsis)),
+                      if (m['is_verified_lawyer'] == true) ...[
+                        const SizedBox(width: 4),
+                        const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+                      ],
+                    ]),
                     subtitle: Text(m['subtitle']?.toString() ?? ''),
                     trailing: _connectTrailing(
                       uid: uid,
@@ -590,7 +614,13 @@ class _PendingTile extends StatelessWidget {
         imageUrl: m['requester_avatar_url']?.toString(),
         name: m['requester_name']?.toString() ?? '',
       ),
-      title: Text(m['requester_name']?.toString() ?? ''),
+      title: Row(children: [
+        Flexible(child: Text(m['requester_name']?.toString() ?? '', overflow: TextOverflow.ellipsis)),
+        if (m['requester_is_verified_lawyer'] == true) ...[
+          const SizedBox(width: 4),
+          const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 14, color: Color(0xFF0A66C2))),
+        ],
+      ]),
       trailing: TextButton(
         onPressed: id != null ? () => onAccept(id) : null,
         child: const Text('Accept'),

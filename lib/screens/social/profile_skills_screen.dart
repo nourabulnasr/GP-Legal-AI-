@@ -96,10 +96,21 @@ class _ProfileSkillsScreenState extends State<ProfileSkillsScreen> {
                   else
                     ..._items.map((raw) {
                       final m = raw as Map<String, dynamic>;
+                      final endorserName = m['endorser_name']?.toString() ?? '';
+                      final endorserIsVl = m['endorser_is_verified_lawyer'] == true;
                       return Card(
                         child: ListTile(
                           title: Text(m['skill']?.toString() ?? ''),
-                          subtitle: Text('From ${m['endorser_name'] ?? ''}'),
+                          subtitle: Row(
+                            children: [
+                              Text('From '),
+                              Flexible(child: Text(endorserName, overflow: TextOverflow.ellipsis)),
+                              if (endorserIsVl) ...[
+                                const SizedBox(width: 4),
+                                const Tooltip(message: 'Verified Lawyer', child: Icon(Icons.verified, size: 13, color: Color(0xFF0A66C2))),
+                              ],
+                            ],
+                          ),
                         ),
                       );
                     }),

@@ -10,62 +10,62 @@ class RoadmapScreen extends StatelessWidget {
     _RoadmapItem(
       'E-sign',
       'Sign contracts in-app; usually needs a provider API + audit storage.',
-      'Tier C — backend TBD',
+      'Tier C â€” backend TBD',
     ),
     _RoadmapItem(
       'Contract comparison (A vs B)',
       'Diff two versions; needs compare endpoint or two analysis IDs.',
-      'Tier B — backend TBD',
+      'Tier B â€” backend TBD',
     ),
     _RoadmapItem(
       'Voice assistant',
       'Speech-to-text on device, then existing chat/analyze APIs.',
-      'Tier D — use mic + /chat/*',
+      'Tier D â€” use mic + /chat/*',
     ),
     _RoadmapItem(
       'Tap clause ? legal explanation',
       'Reader UI + /explain/clause (or extend chat with clause context).',
-      'Tier A/B — backend TBD',
+      'Tier A/B â€” backend TBD',
     ),
     _RoadmapItem(
       'Risk scoring + smart notifications',
       'Dashboard score + FCM; needs prefs + worker for pushes.',
-      'Tier B — partial: show risks from analysis JSON today',
+      'Tier B â€” partial: show risks from analysis JSON today',
     ),
     _RoadmapItem(
       'Face ID / biometrics',
       'Use `local_auth` to protect app / step-up (mostly client-side).',
-      'Tier D — Settings: test biometric',
+      'Tier D â€” Settings: test biometric',
     ),
     _RoadmapItem(
       'Clause summarization',
       'Batch summarize clauses; needs /summarize/clauses or LLM prompt mode.',
-      'Tier A — backend TBD',
+      'Tier A â€” backend TBD',
     ),
     _RoadmapItem(
       'AI negotiation assistant',
       'Negotiation chat mode + disclaimers; extend chat router.',
-      'Tier B — backend TBD',
+      'Tier B â€” backend TBD',
     ),
     _RoadmapItem(
       'Share analysis',
       'Share links / invites; needs shares table + auth on GET.',
-      'Tier B — backend TBD',
+      'Tier B â€” backend TBD',
     ),
     _RoadmapItem(
       'Contract timeline (admin)',
       'Milestones from text or manual tags; extend admin APIs.',
-      'Tier B/E — backend TBD',
+      'Tier B/E â€” backend TBD',
     ),
     _RoadmapItem(
       'Chat with other party',
       'Threads per contract; WebSocket or poll + moderation policy.',
-      'Tier B/E — backend TBD',
+      'Tier B/E â€” backend TBD',
     ),
     _RoadmapItem(
       'Legal LinkedIn-style network',
-      'Profiles, orgs, feed — separate product pillar; Postgres-scale.',
-      'Tier E — not started',
+      'Profiles, orgs, feed â€” separate product pillar; Postgres-scale.',
+      'Tier E â€” not started',
     ),
   ];
 

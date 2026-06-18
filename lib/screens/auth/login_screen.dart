@@ -1,14 +1,11 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:legato_mobile/api/api_exception.dart';
-import 'package:legato_mobile/config/runtime_config.dart';
 import 'package:legato_mobile/providers/auth_provider.dart';
 import 'package:legato_mobile/screens/auth/forgot_password_screen.dart';
 import 'package:legato_mobile/screens/auth/register_screen.dart';
-import 'package:legato_mobile/services/auth_service.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
 
@@ -33,47 +30,14 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  /// Web: OAuth redirect on Firebase domain (Google accepts web.app URLs).
-  /// Mobile/desktop: backend redirect flow.
   Future<void> _signInWithGoogle() async {
-    if (kIsWeb) {
-      await _signInWithGoogleWeb();
-      return;
-    }
-    final uri = Uri.parse('${RuntimeConfig.apiBaseUrl}/auth/google');
-    if (!await canLaunchUrl(uri)) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
-  Future<void> _signInWithGoogleWeb() async {
-    setState(() {
-      _busy = true;
-      _err = null;
-    });
+    setState(() { _busy = true; _err = null; });
     try {
-      final cfg = await AuthService().googleSignInConfig();
-      final clientId = cfg['client_id']?.toString().trim() ?? '';
-      if (clientId.isEmpty || cfg['enabled'] != true) {
-        setState(() => _err = 'Google sign-in is not configured on the server.');
-        return;
-      }
-
-      final redirectUri = (cfg['web_redirect_uri'] ?? cfg['web_origin'] ?? Uri.base.origin)
-          .toString()
-          .trim()
-          .replaceAll(RegExp(r'/+$'), '');
-
-      final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
-        'client_id': clientId,
-        'redirect_uri': redirectUri,
-        'response_type': 'code',
-        'scope': 'openid email profile',
-        'access_type': 'online',
-        'prompt': 'select_account',
-      });
-
-      if (!await launchUrl(authUrl, webOnlyWindowName: '_self')) {
-        setState(() => _err = 'Could not open Google sign-in.');
+      if (kIsWeb) {
+        final err = await context.read<AuthProvider>().signInWithGoogleWeb();
+        if (err != null && mounted) setState(() => _err = err);
+      } else {
+        await context.read<AuthProvider>().signInWithGoogleNative();
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _err = e.message);

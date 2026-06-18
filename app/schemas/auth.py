@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
+    user_type: str = Field(default="user", pattern="^(user|lawyer)$")
 
 
 class LoginRequest(BaseModel):
@@ -22,6 +25,8 @@ class MeResponse(BaseModel):
     id: int
     email: str
     role: str = "user"
+    user_type: str = "user"
+    lawyer_status: Optional[str] = None
 
 
 class ForgotPasswordRequest(BaseModel):

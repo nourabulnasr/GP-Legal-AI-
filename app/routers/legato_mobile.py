@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user, require_admin
 from app.db.models import (
     Analysis,
+    LawyerApplication,
     User,
     LegatoShare,
     LegatoDealThread,
@@ -335,6 +336,13 @@ def _deal_thread_member_payload(db: Session, th: LegatoDealThread) -> List[Dict[
         .all()
     )
     base = _public_base_url()
+    member_ids = [row.user_id for row in rows]
+    vl_rows = (
+        db.query(LawyerApplication.user_id)
+        .filter(LawyerApplication.user_id.in_(member_ids), LawyerApplication.status == "approved")
+        .all()
+    ) if member_ids else []
+    vl_ids = {r.user_id for r in vl_rows}
     out: List[Dict[str, Any]] = []
     for row in rows:
         u = db.query(User).filter(User.id == row.user_id).first()
@@ -349,6 +357,7 @@ def _deal_thread_member_payload(db: Session, th: LegatoDealThread) -> List[Dict[
                 "email": u.email,
                 "avatar_url": _avatar_url_for_user(row.user_id, prof, base, profile_row=prow) or "",
                 "is_creator": row.user_id == th.user_id,
+                "is_verified_lawyer": row.user_id in vl_ids,
                 "joined_at": row.joined_at.isoformat() + "Z",
             }
         )
@@ -624,18 +633,27 @@ def deal_messages_list(
         .order_by(LegatoDealMessage.created_at.asc())
         .all()
     )
+    author_ids = list({m.author_id for m in msgs if getattr(m, "author_id", None)})
+    vl_rows = (
+        db.query(LawyerApplication.user_id)
+        .filter(LawyerApplication.user_id.in_(author_ids), LawyerApplication.status == "approved")
+        .all()
+    ) if author_ids else []
+    vl_ids = {r.user_id for r in vl_rows}
     out = []
     for m in msgs:
         email = ""
-        if getattr(m, "author_id", None):
-            u = db.query(User).filter(User.id == m.author_id).first()
+        author_id = getattr(m, "author_id", None)
+        if author_id:
+            u = db.query(User).filter(User.id == author_id).first()
             email = u.email if u else ""
         out.append(
             {
                 "id": m.id,
-                "author_id": getattr(m, "author_id", None),
+                "author_id": author_id,
                 "email": email,
                 "body": m.body,
+                "author_is_verified_lawyer": author_id in vl_ids if author_id else False,
                 "created_at": m.created_at.isoformat() + "Z",
             }
         )
@@ -658,7 +676,19 @@ def deal_message_post(
     db.add(m)
     db.commit()
     db.refresh(m)
-    return {"id": m.id, "author_id": current_user.id, "email": current_user.email, "body": m.body, "created_at": m.created_at.isoformat() + "Z"}
+    is_vl = bool(
+        db.query(LawyerApplication)
+        .filter(LawyerApplication.user_id == current_user.id, LawyerApplication.status == "approved")
+        .first()
+    )
+    return {
+        "id": m.id,
+        "author_id": current_user.id,
+        "email": current_user.email,
+        "body": m.body,
+        "author_is_verified_lawyer": is_vl,
+        "created_at": m.created_at.isoformat() + "Z",
+    }
 
 
 # ---------- timeline ----------

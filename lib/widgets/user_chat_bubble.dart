@@ -13,6 +13,10 @@ class UserChatMessage {
     this.authorName,
     this.createdAt,
     this.status = ChatDeliveryStatus.none,
+    this.msgType = 'text',
+    this.offerData,
+    this.offerStatus,
+    this.authorIsVerified = false,
   });
 
   final String body;
@@ -20,6 +24,10 @@ class UserChatMessage {
   final String? authorName;
   final String? createdAt;
   final ChatDeliveryStatus status;
+  final String msgType;
+  final Map<String, dynamic>? offerData;
+  final String? offerStatus;
+  final bool authorIsVerified;
 }
 
 String formatChatTime(String? iso) {
@@ -42,11 +50,13 @@ class UserChatBubble extends StatelessWidget {
     required this.message,
     this.showAuthor = false,
     this.showMeta = true,
+    this.onOfferPay,
   });
 
   final UserChatMessage message;
   final bool showAuthor;
   final bool showMeta;
+  final VoidCallback? onOfferPay;
 
   @override
   Widget build(BuildContext context) {
@@ -71,15 +81,34 @@ class UserChatBubble extends StatelessWidget {
             if (showAuthor && !isMine && (message.authorName ?? '').isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  message.authorName!,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: LegatoLinkedInTheme.navActiveGold,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message.authorName!,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: LegatoLinkedInTheme.navActiveGold,
+                          ),
+                    ),
+                    if (message.authorIsVerified) ...[
+                      const SizedBox(width: 4),
+                      const Tooltip(
+                        message: 'Verified Lawyer',
+                        child: Icon(Icons.verified, size: 12, color: Color(0xFF0A66C2)),
                       ),
+                    ],
+                  ],
                 ),
               ),
-            if (shareToken != null)
+            if (message.msgType == 'lawyer_offer' && message.offerData != null)
+              _LawyerOfferCard(
+                offerData: message.offerData!,
+                isMine: isMine,
+                offerStatus: message.offerStatus,
+                onPay: onOfferPay,
+              )
+            else if (shareToken != null)
               _ShareLinkCard(token: shareToken)
             else
               SelectableText(message.body, style: Theme.of(context).textTheme.bodyMedium),
@@ -111,6 +140,109 @@ class UserChatBubble extends StatelessWidget {
                   ],
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LawyerOfferCard extends StatelessWidget {
+  const _LawyerOfferCard({
+    required this.offerData,
+    required this.isMine,
+    this.offerStatus,
+    this.onPay,
+  });
+
+  final Map<String, dynamic> offerData;
+  final bool isMine;
+  final String? offerStatus;
+  final VoidCallback? onPay;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = offerData['service_title']?.toString() ?? 'Legal Service';
+    final desc = offerData['description']?.toString() ?? '';
+    final price = offerData['price'];
+    final currency = offerData['currency']?.toString() ?? 'USD';
+    final priceStr = price != null ? '$currency ${(price as num).toStringAsFixed(2)}' : '';
+
+    return Material(
+      color: const Color(0xFF0A66C2).withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.gavel, size: 16, color: Color(0xFF0A66C2)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0A66C2),
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            if (desc.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(desc, style: Theme.of(context).textTheme.bodySmall),
+            ],
+            if (priceStr.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A66C2).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  priceStr,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0A66C2),
+                      ),
+                ),
+              ),
+            ],
+            if (!isMine) ...[
+              const SizedBox(height: 10),
+              if (offerStatus == 'accepted')
+                Row(
+                  children: [
+                    const Icon(Icons.check_circle, size: 14, color: Colors.green),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Payment confirmed',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.green,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF0A66C2),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    onPressed: onPay,
+                    icon: const Icon(Icons.payment, size: 16),
+                    label: const Text('Pay'),
+                  ),
+                ),
+            ],
           ],
         ),
       ),
