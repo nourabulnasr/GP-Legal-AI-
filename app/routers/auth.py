@@ -267,6 +267,7 @@ async def register_as_lawyer(
     years_of_experience: _Optional[int] = Form(None),
     cv: _Optional[UploadFile] = File(None),
     id_card: _Optional[UploadFile] = File(None),
+    id_card_back: _Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
 ):
     """Register a new lawyer account and submit their CV and ID card in one request."""
@@ -292,6 +293,7 @@ async def register_as_lawyer(
 
     cv_bytes_data = cv_mime_data = cv_fn_data = None
     id_card_bytes_data = id_card_mime_data = id_card_fn_data = None
+    id_card_back_bytes_data = id_card_back_mime_data = id_card_back_fn_data = None
 
     if cv and cv.filename:
         raw = await cv.read()
@@ -307,6 +309,13 @@ async def register_as_lawyer(
             id_card_mime_data = id_card.content_type or "application/octet-stream"
             id_card_fn_data = id_card.filename
 
+    if id_card_back and id_card_back.filename:
+        raw = await id_card_back.read()
+        if raw:
+            id_card_back_bytes_data = raw
+            id_card_back_mime_data = id_card_back.content_type or "application/octet-stream"
+            id_card_back_fn_data = id_card_back.filename
+
     app_record = LawyerApplication(
         user_id=u.id,
         years_of_experience=years_of_experience,
@@ -316,6 +325,9 @@ async def register_as_lawyer(
         id_card_bytes=id_card_bytes_data,
         id_card_mime_type=id_card_mime_data,
         id_card_filename=id_card_fn_data,
+        id_card_back_bytes=id_card_back_bytes_data,
+        id_card_back_mime_type=id_card_back_mime_data,
+        id_card_back_filename=id_card_back_fn_data,
         status="pending",
     )
     db.add(app_record)

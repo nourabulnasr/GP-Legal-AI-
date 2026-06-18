@@ -346,6 +346,8 @@ class ApiClient {
     String? cvFilename,
     Uint8List? idCardBytes,
     String? idCardFilename,
+    Uint8List? idCardBackBytes,
+    String? idCardBackFilename,
   }) async {
     final request = http.MultipartRequest('POST', uri('/lawyer/apply'));
     final t = await _storage.readToken();
@@ -365,6 +367,9 @@ class ApiClient {
     if (idCardBytes != null && idCardFilename != null) {
       request.files.add(http.MultipartFile.fromBytes('id_card', idCardBytes, filename: idCardFilename));
     }
+    if (idCardBackBytes != null && idCardBackFilename != null) {
+      request.files.add(http.MultipartFile.fromBytes('id_card_back', idCardBackBytes, filename: idCardBackFilename));
+    }
     final streamed = await request.send().timeout(AppConfig.defaultTimeout);
     final response = await http.Response.fromStream(streamed);
     await _on401(response);
@@ -383,6 +388,8 @@ class ApiClient {
     String? cvFilename,
     Uint8List? idCardBytes,
     String? idCardFilename,
+    Uint8List? idCardBackBytes,
+    String? idCardBackFilename,
   }) async {
     final request = http.MultipartRequest('POST', uri('/auth/register-lawyer'));
     request.fields['email'] = email.trim();
@@ -393,6 +400,9 @@ class ApiClient {
     }
     if (idCardBytes != null && idCardFilename != null) {
       request.files.add(http.MultipartFile.fromBytes('id_card', idCardBytes, filename: idCardFilename));
+    }
+    if (idCardBackBytes != null && idCardBackFilename != null) {
+      request.files.add(http.MultipartFile.fromBytes('id_card_back', idCardBackBytes, filename: idCardBackFilename));
     }
     final streamed = await request.send().timeout(AppConfig.defaultTimeout);
     final response = await http.Response.fromStream(streamed);

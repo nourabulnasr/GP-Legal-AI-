@@ -29,8 +29,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Uint8List? _cvBytes;
   String? _cvFilename;
-  Uint8List? _idCardBytes;
-  String? _idCardFilename;
+  Uint8List? _idCardFrontBytes;
+  String? _idCardFrontFilename;
+  Uint8List? _idCardBackBytes;
+  String? _idCardBackFilename;
   final _years = TextEditingController();
 
   @override
@@ -56,7 +58,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
   }
 
-  Future<void> _pickIdCard() async {
+  Future<void> _pickIdCardFront() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
@@ -66,8 +68,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final file = result.files.first;
     if (file.bytes == null) return;
     setState(() {
-      _idCardBytes = file.bytes;
-      _idCardFilename = file.name;
+      _idCardFrontBytes = file.bytes;
+      _idCardFrontFilename = file.name;
+    });
+  }
+
+  Future<void> _pickIdCardBack() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+    setState(() {
+      _idCardBackBytes = file.bytes;
+      _idCardBackFilename = file.name;
     });
   }
 
@@ -95,8 +112,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final ok = _formCtx != null && (Form.of(_formCtx!).validate());
     if (!ok) return;
 
-    if (_userType == 'lawyer' && (_cvBytes == null || _idCardBytes == null)) {
-      setState(() => _err = 'Please upload both your CV and ID card to register as a lawyer.');
+    if (_userType == 'lawyer' &&
+        (_cvBytes == null || _idCardFrontBytes == null || _idCardBackBytes == null)) {
+      setState(() => _err = 'Please upload your CV and both sides of your ID card to register as a lawyer.');
       return;
     }
 
@@ -111,8 +129,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             userType: _userType,
             cvBytes: _cvBytes,
             cvFilename: _cvFilename,
-            idCardBytes: _idCardBytes,
-            idCardFilename: _idCardFilename,
+            idCardBytes: _idCardFrontBytes,
+            idCardFilename: _idCardFrontFilename,
+            idCardBackBytes: _idCardBackBytes,
+            idCardBackFilename: _idCardBackFilename,
             yearsOfExperience: int.tryParse(_years.text.trim()),
           );
       if (!mounted) return;
@@ -194,7 +214,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       icon: Icons.gavel_outlined,
                       title: 'Lawyer',
                       subtitle:
-                          'Register as a verified lawyer. Upload your CV and ID card for admin approval.',
+                          'Register as a verified lawyer. Upload your CV and both sides of your ID card for admin approval.',
                       onTap: () => setState(() => _userType = 'lawyer'),
                     ),
                     if (_userType == 'lawyer') ...[
@@ -213,10 +233,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 8),
                       _DocPickerTile(
-                        label: 'National ID Card',
+                        label: 'National ID Card (Front)',
                         icon: Icons.badge_outlined,
-                        filename: _idCardFilename,
-                        onPick: _pickIdCard,
+                        filename: _idCardFrontFilename,
+                        onPick: _pickIdCardFront,
+                        required: true,
+                      ),
+                      const SizedBox(height: 8),
+                      _DocPickerTile(
+                        label: 'National ID Card (Back)',
+                        icon: Icons.badge_outlined,
+                        filename: _idCardBackFilename,
+                        onPick: _pickIdCardBack,
                         required: true,
                       ),
                       const SizedBox(height: 8),

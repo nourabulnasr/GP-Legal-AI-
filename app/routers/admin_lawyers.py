@@ -46,6 +46,8 @@ def list_lawyer_applications(
             "has_cv": bool(getattr(app_record, "cv_bytes", None)),
             "id_card_filename": getattr(app_record, "id_card_filename", None),
             "has_id_card": bool(getattr(app_record, "id_card_bytes", None)),
+            "id_card_back_filename": getattr(app_record, "id_card_back_filename", None),
+            "has_id_card_back": bool(getattr(app_record, "id_card_back_bytes", None)),
             "status": app_record.status,
             "admin_note": app_record.admin_note,
             "created_at": app_record.created_at,
@@ -166,4 +168,26 @@ def admin_download_lawyer_id_card(
         content=id_card_bytes,
         media_type=id_card_mime,
         headers={"Content-Disposition": f'attachment; filename="{id_card_filename}"'},
+    )
+
+
+@router.get("/id-card-back/{application_id}")
+def admin_download_lawyer_id_card_back(
+    application_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Download the ID card back for a lawyer application."""
+    app_record = db.query(LawyerApplication).filter(LawyerApplication.id == application_id).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Application not found")
+    id_card_back_bytes = getattr(app_record, "id_card_back_bytes", None)
+    if not id_card_back_bytes:
+        raise HTTPException(status_code=404, detail="No ID card back uploaded for this application")
+    id_card_back_filename = getattr(app_record, "id_card_back_filename", None) or "id_card_back"
+    id_card_back_mime = getattr(app_record, "id_card_back_mime_type", None) or "application/octet-stream"
+    return Response(
+        content=id_card_back_bytes,
+        media_type=id_card_back_mime,
+        headers={"Content-Disposition": f'attachment; filename="{id_card_back_filename}"'},
     )

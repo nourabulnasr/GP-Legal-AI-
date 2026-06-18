@@ -22,6 +22,7 @@ async def apply_as_lawyer(
     document: UploadFile = File(None),
     cv: UploadFile = File(None),
     id_card: UploadFile = File(None),
+    id_card_back: UploadFile = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -64,6 +65,7 @@ async def apply_as_lawyer(
         cv_fn_data = cv.filename
 
     id_card_bytes_data = id_card_mime_data = id_card_fn_data = None
+    id_card_back_bytes_data = id_card_back_mime_data = id_card_back_fn_data = None
     if id_card and id_card.filename:
         raw = await id_card.read()
         if len(raw) > _MAX_DOC_BYTES:
@@ -71,6 +73,14 @@ async def apply_as_lawyer(
         id_card_bytes_data = raw
         id_card_mime_data = id_card.content_type or "application/octet-stream"
         id_card_fn_data = id_card.filename
+
+    if id_card_back and id_card_back.filename:
+        raw = await id_card_back.read()
+        if len(raw) > _MAX_DOC_BYTES:
+            raise HTTPException(status_code=413, detail="ID card back too large (max 10 MB)")
+        id_card_back_bytes_data = raw
+        id_card_back_mime_data = id_card_back.content_type or "application/octet-stream"
+        id_card_back_fn_data = id_card_back.filename
 
     if existing:
         # Re-apply after a rejection — restore the lawyer-account state so the rest
@@ -94,6 +104,10 @@ async def apply_as_lawyer(
             existing.id_card_bytes = id_card_bytes_data
             existing.id_card_mime_type = id_card_mime_data
             existing.id_card_filename = id_card_fn_data
+        if id_card_back_bytes_data:
+            existing.id_card_back_bytes = id_card_back_bytes_data
+            existing.id_card_back_mime_type = id_card_back_mime_data
+            existing.id_card_back_filename = id_card_back_fn_data
         existing.status = "pending"
         existing.admin_note = None
         existing.reviewed_at = None
@@ -112,6 +126,9 @@ async def apply_as_lawyer(
             id_card_bytes=id_card_bytes_data,
             id_card_mime_type=id_card_mime_data,
             id_card_filename=id_card_fn_data,
+            id_card_back_bytes=id_card_back_bytes_data,
+            id_card_back_mime_type=id_card_back_mime_data,
+            id_card_back_filename=id_card_back_fn_data,
             status="pending",
         )
         db.add(app_record)
@@ -156,6 +173,8 @@ def my_lawyer_status(
         "has_cv": bool(app_record.cv_bytes),
         "id_card_filename": app_record.id_card_filename,
         "has_id_card": bool(app_record.id_card_bytes),
+        "id_card_back_filename": getattr(app_record, "id_card_back_filename", None),
+        "has_id_card_back": bool(getattr(app_record, "id_card_back_bytes", None)),
         "admin_note": app_record.admin_note,
         "created_at": app_record.created_at,
         "reviewed_at": app_record.reviewed_at,

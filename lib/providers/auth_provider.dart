@@ -161,9 +161,11 @@ class AuthProvider extends ChangeNotifier {
     String? cvFilename,
     Uint8List? idCardBytes,
     String? idCardFilename,
+    Uint8List? idCardBackBytes,
+    String? idCardBackFilename,
   }) async {
     _error = null;
-    if (userType == 'lawyer' && (cvBytes != null || idCardBytes != null)) {
+    if (userType == 'lawyer' && (cvBytes != null || idCardBytes != null || idCardBackBytes != null)) {
       await _auth.registerAsLawyer(
         email: email,
         password: password,
@@ -172,6 +174,8 @@ class AuthProvider extends ChangeNotifier {
         cvFilename: cvFilename,
         idCardBytes: idCardBytes,
         idCardFilename: idCardFilename,
+        idCardBackBytes: idCardBackBytes,
+        idCardBackFilename: idCardBackFilename,
       );
     } else {
       await _auth.register(email, password, userType: userType);

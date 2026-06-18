@@ -119,6 +119,8 @@ class AuthService {
     String? cvFilename,
     Uint8List? idCardBytes,
     String? idCardFilename,
+    Uint8List? idCardBackBytes,
+    String? idCardBackFilename,
   }) {
     return _api.postMultipartRegisterLawyer(
       email: email,
@@ -128,6 +130,8 @@ class AuthService {
       cvFilename: cvFilename,
       idCardBytes: idCardBytes,
       idCardFilename: idCardFilename,
+      idCardBackBytes: idCardBackBytes,
+      idCardBackFilename: idCardBackFilename,
     );
   }
 

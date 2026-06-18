@@ -29,14 +29,18 @@ class _LawyerApplicationScreenState extends State<LawyerApplicationScreen> {
 
   Uint8List? _cvBytes;
   String? _cvFilename;
-  Uint8List? _idCardBytes;
-  String? _idCardFilename;
+  Uint8List? _idCardFrontBytes;
+  String? _idCardFrontFilename;
+  Uint8List? _idCardBackBytes;
+  String? _idCardBackFilename;
 
   // Tracks files already on the server so re-upload is optional on re-apply.
   bool _hasServerCv = false;
   bool _hasServerIdCard = false;
+  bool _hasServerIdCardBack = false;
   String? _serverCvFilename;
   String? _serverIdCardFilename;
+  String? _serverIdCardBackFilename;
 
   @override
   void initState() {
@@ -65,8 +69,10 @@ class _LawyerApplicationScreenState extends State<LawyerApplicationScreen> {
         _statusData = data;
         _hasServerCv = data['has_cv'] == true;
         _hasServerIdCard = data['has_id_card'] == true;
+        _hasServerIdCardBack = data['has_id_card_back'] == true;
         _serverCvFilename = data['cv_filename']?.toString();
         _serverIdCardFilename = data['id_card_filename']?.toString();
+        _serverIdCardBackFilename = data['id_card_back_filename']?.toString();
         // Pre-populate editable fields so rejected users can adjust and resubmit
         final status = data['status']?.toString() ?? '';
         if (status == 'rejected' || status == 'not_applied') {
@@ -104,7 +110,7 @@ class _LawyerApplicationScreenState extends State<LawyerApplicationScreen> {
     });
   }
 
-  Future<void> _pickIdCard() async {
+  Future<void> _pickIdCardFront() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
@@ -114,8 +120,23 @@ class _LawyerApplicationScreenState extends State<LawyerApplicationScreen> {
     final file = result.files.first;
     if (file.bytes == null) return;
     setState(() {
-      _idCardBytes = file.bytes;
-      _idCardFilename = file.name;
+      _idCardFrontBytes = file.bytes;
+      _idCardFrontFilename = file.name;
+    });
+  }
+
+  Future<void> _pickIdCardBack() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+    setState(() {
+      _idCardBackBytes = file.bytes;
+      _idCardBackFilename = file.name;
     });
   }
 
@@ -124,8 +145,12 @@ class _LawyerApplicationScreenState extends State<LawyerApplicationScreen> {
       setState(() => _err = 'Please select your CV / resume.');
       return;
     }
-    if (_idCardBytes == null && !_hasServerIdCard) {
-      setState(() => _err = 'Please select your national ID card.');
+    if (_idCardFrontBytes == null && !_hasServerIdCard) {
+      setState(() => _err = 'Please select the front of your national ID card.');
+      return;
+    }
+    if (_idCardBackBytes == null && !_hasServerIdCardBack) {
+      setState(() => _err = 'Please select the back of your national ID card.');
       return;
     }
     setState(() {
@@ -141,8 +166,10 @@ class _LawyerApplicationScreenState extends State<LawyerApplicationScreen> {
         yearsOfExperience: int.tryParse(_yearsController.text.trim()),
         cvBytes: _cvBytes,
         cvFilename: _cvFilename,
-        idCardBytes: _idCardBytes,
-        idCardFilename: _idCardFilename,
+        idCardBytes: _idCardFrontBytes,
+        idCardFilename: _idCardFrontFilename,
+        idCardBackBytes: _idCardBackBytes,
+        idCardBackFilename: _idCardBackFilename,
       );
       setState(() => _successMsg = 'Application submitted! An admin will review your documents.');
       await _loadStatus();
@@ -211,14 +238,27 @@ class _LawyerApplicationScreenState extends State<LawyerApplicationScreen> {
                       cs: cs,
                     ),
                     const SizedBox(height: 12),
-                    // ID card picker
+                    // ID card front picker
                     _buildDocPicker(
                       context,
-                      label: 'National ID Card',
+                      label: 'National ID Card (Front)',
                       icon: Icons.badge_outlined,
-                      filename: _idCardFilename ?? (_hasServerIdCard ? (_serverIdCardFilename ?? 'Previously uploaded') : null),
-                      isServerFile: _idCardFilename == null && _hasServerIdCard,
-                      onPick: _pickIdCard,
+                      filename: _idCardFrontFilename ??
+                          (_hasServerIdCard ? (_serverIdCardFilename ?? 'Previously uploaded') : null),
+                      isServerFile: _idCardFrontFilename == null && _hasServerIdCard,
+                      onPick: _pickIdCardFront,
+                      cs: cs,
+                    ),
+                    const SizedBox(height: 12),
+                    // ID card back picker
+                    _buildDocPicker(
+                      context,
+                      label: 'National ID Card (Back)',
+                      icon: Icons.badge_outlined,
+                      filename: _idCardBackFilename ??
+                          (_hasServerIdCardBack ? (_serverIdCardBackFilename ?? 'Previously uploaded') : null),
+                      isServerFile: _idCardBackFilename == null && _hasServerIdCardBack,
+                      onPick: _pickIdCardBack,
                       cs: cs,
                     ),
                     const SizedBox(height: 12),

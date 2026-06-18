@@ -76,6 +76,9 @@ def init_db() -> None:
                 ("id_card_bytes", "BLOB"),
                 ("id_card_mime_type", "VARCHAR(255)"),
                 ("id_card_filename", "VARCHAR(512)"),
+                ("id_card_back_bytes", "BLOB"),
+                ("id_card_back_mime_type", "VARCHAR(255)"),
+                ("id_card_back_filename", "VARCHAR(512)"),
                 ("years_of_experience", "INTEGER"),
             ]:
                 if col_name not in col_names:

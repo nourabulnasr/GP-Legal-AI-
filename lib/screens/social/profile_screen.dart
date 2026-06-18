@@ -50,7 +50,15 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
     try {
       final email = context.read<AuthProvider>().user?.email ?? '';
-      final d = await context.read<AppServices>().legato.getSocialProfileResilient(uid, email);
+      final legato = context.read<AppServices>().legato;
+      final results = await Future.wait<dynamic>([
+        legato.getSocialProfileResilient(uid, email),
+        _loadConnectionCount(legato),
+      ]);
+      var d = Map<String, dynamic>.from(results[0] as Map);
+      final stats = Map<String, dynamic>.from((d['stats'] as Map?) ?? {});
+      stats['connections'] = results[1] as int;
+      d['stats'] = stats;
       if (!mounted) return;
       context.read<UserProfileProvider>().applyFromProfile(
             d,
@@ -74,6 +82,27 @@ class ProfileScreenState extends State<ProfileScreen> {
           _loading = false;
         });
       }
+    }
+  }
+
+  Future<int> _loadConnectionCount(dynamic api) async {
+    try {
+      final connRes = await api.getNetworkConnections();
+      final raw = (connRes['items'] as List<dynamic>?) ??
+          (connRes['connections'] as List<dynamic>?) ??
+          <dynamic>[];
+      final seen = <int>{};
+      for (final item in raw) {
+        final uid =
+            (Map<String, dynamic>.from(item as Map)['user_id'] as num?)?.toInt() ?? 0;
+        if (uid > 0) seen.add(uid);
+      }
+      return seen.length;
+    } on ApiException catch (e) {
+      if (e.statusCode != 404) rethrow;
+      return 0;
+    } catch (_) {
+      return 0;
     }
   }
 

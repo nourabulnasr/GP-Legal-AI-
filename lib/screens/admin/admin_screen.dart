@@ -183,9 +183,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   Future<Uint8List?> _fetchLawyerFileBytes(int appId, String fileType) async {
     final legato = context.read<AppServices>().legato;
     try {
-      return fileType == 'cv'
-          ? await legato.adminDownloadLawyerCv(appId)
-          : await legato.adminDownloadLawyerIdCard(appId);
+      switch (fileType) {
+        case 'cv':
+          return await legato.adminDownloadLawyerCv(appId);
+        case 'id-card-back':
+          return await legato.adminDownloadLawyerIdCardBack(appId);
+        default:
+          return await legato.adminDownloadLawyerIdCard(appId);
+      }
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       return null;
@@ -507,6 +512,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                     final hasCv = app['has_cv'] as bool? ?? false;
                                     final idCardFile = app['id_card_filename']?.toString() ?? '';
                                     final hasIdCard = app['has_id_card'] as bool? ?? false;
+                                    final idCardBackFile = app['id_card_back_filename']?.toString() ?? '';
+                                    final hasIdCardBack = app['has_id_card_back'] as bool? ?? false;
                                     final status = app['status']?.toString() ?? 'pending';
                                     final adminNote = app['admin_note']?.toString() ?? '';
                                     final yearsExp = app['years_of_experience'];
@@ -626,7 +633,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                                   const SizedBox(width: 4),
                                                   Expanded(
                                                     child: Text(
-                                                      idCardFile.isNotEmpty ? 'ID: $idCardFile' : 'ID card uploaded',
+                                                      idCardFile.isNotEmpty ? 'ID front: $idCardFile' : 'ID card front uploaded',
                                                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.primary),
                                                       overflow: TextOverflow.ellipsis,
                                                     ),
@@ -636,7 +643,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                                         visualDensity: VisualDensity.compact,
                                                         padding: EdgeInsets.zero),
                                                     onPressed: () => _viewLawyerFile(
-                                                        appId, 'id-card', idCardFile.isNotEmpty ? idCardFile : 'id_card'),
+                                                        appId, 'id-card', idCardFile.isNotEmpty ? idCardFile : 'id_card_front'),
                                                     child: const Text('View'),
                                                   ),
                                                   TextButton(
@@ -644,7 +651,39 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                                         visualDensity: VisualDensity.compact,
                                                         padding: const EdgeInsets.only(left: 4)),
                                                     onPressed: () => _downloadLawyerFile(
-                                                        appId, 'id-card', idCardFile.isNotEmpty ? idCardFile : 'id_card'),
+                                                        appId, 'id-card', idCardFile.isNotEmpty ? idCardFile : 'id_card_front'),
+                                                    child: const Text('Download'),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                            if (hasIdCardBack) ...[
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  Icon(Icons.badge_outlined, size: 14, color: cs.primary),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      idCardBackFile.isNotEmpty ? 'ID back: $idCardBackFile' : 'ID card back uploaded',
+                                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.primary),
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  TextButton(
+                                                    style: TextButton.styleFrom(
+                                                        visualDensity: VisualDensity.compact,
+                                                        padding: EdgeInsets.zero),
+                                                    onPressed: () => _viewLawyerFile(
+                                                        appId, 'id-card-back', idCardBackFile.isNotEmpty ? idCardBackFile : 'id_card_back'),
+                                                    child: const Text('View'),
+                                                  ),
+                                                  TextButton(
+                                                    style: TextButton.styleFrom(
+                                                        visualDensity: VisualDensity.compact,
+                                                        padding: const EdgeInsets.only(left: 4)),
+                                                    onPressed: () => _downloadLawyerFile(
+                                                        appId, 'id-card-back', idCardBackFile.isNotEmpty ? idCardBackFile : 'id_card_back'),
                                                     child: const Text('Download'),
                                                   ),
                                                 ],

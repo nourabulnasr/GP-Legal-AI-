@@ -671,6 +671,8 @@ class LegatoApi {
     String? cvFilename,
     Uint8List? idCardBytes,
     String? idCardFilename,
+    Uint8List? idCardBackBytes,
+    String? idCardBackFilename,
   }) {
     return _api.postMultipartLawyerApply(
       barLicenseNumber: barLicenseNumber,
@@ -681,6 +683,8 @@ class LegatoApi {
       cvFilename: cvFilename,
       idCardBytes: idCardBytes,
       idCardFilename: idCardFilename,
+      idCardBackBytes: idCardBackBytes,
+      idCardBackFilename: idCardBackFilename,
     );
   }
 
@@ -695,6 +699,9 @@ class LegatoApi {
 
   Future<Uint8List> adminDownloadLawyerIdCard(int applicationId) =>
       _api.getBytes('/admin/lawyers/id-card/$applicationId');
+
+  Future<Uint8List> adminDownloadLawyerIdCardBack(int applicationId) =>
+      _api.getBytes('/admin/lawyers/id-card-back/$applicationId');
 
   Future<List<dynamic>> adminListLawyerApplications({String status = 'pending'}) {
     return _api.getJsonList('/admin/lawyers?status=$status');
