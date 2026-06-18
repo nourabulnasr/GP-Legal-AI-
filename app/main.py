@@ -568,6 +568,14 @@ except Exception as e:
     print("[INFO] Consultations router not mounted:", repr(e))
 
 try:
+    from .routers.payments import router as payments_router
+
+    api.include_router(payments_router)
+    print("[OK] Payments router mounted:", getattr(payments_router, "prefix", None))
+except Exception as e:
+    print("[INFO] Payments router not mounted:", repr(e))
+
+try:
     from .routers.legato_mobile import router as legato_mobile_router
 
     api.include_router(legato_mobile_router)

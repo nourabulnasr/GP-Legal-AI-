@@ -41,6 +41,8 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
   int? _sessionRemainingSec;
   Timer? _sessionTimer;
   bool _sessionExpired = false;
+  bool _sessionWaiting = false;
+  String? _sessionStartsAtLabel;
 
   bool get _canRenameGroup {
     if (!widget.isGroup) return false;
@@ -67,6 +69,8 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
         setState(() {
           _sessionRemainingSec = rem;
           _sessionExpired = rem <= 0;
+          _sessionWaiting = false;
+          _sessionStartsAtLabel = null;
         });
         _sessionTimer?.cancel();
         _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -77,8 +81,31 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
             } else {
               _sessionExpired = true;
               _sessionTimer?.cancel();
+              _loadSession();
             }
           });
+        });
+      } else if (s['waiting'] == true || s['status']?.toString() == 'confirmed') {
+        setState(() {
+          _sessionWaiting = true;
+          _sessionStartsAtLabel = s['starts_at_label']?.toString() ?? s['message']?.toString();
+          _sessionRemainingSec = null;
+          _sessionExpired = false;
+        });
+        _sessionTimer?.cancel();
+        _sessionTimer = Timer.periodic(const Duration(seconds: 15), (_) => _loadSession());
+      } else if (s['expired'] == true || s['status']?.toString() == 'expired') {
+        setState(() {
+          _sessionExpired = true;
+          _sessionWaiting = false;
+          _sessionRemainingSec = null;
+          _sessionStartsAtLabel = null;
+        });
+        _sessionTimer?.cancel();
+      } else {
+        setState(() {
+          _sessionWaiting = false;
+          _sessionStartsAtLabel = null;
         });
       }
     } catch (_) {}
@@ -257,7 +284,7 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
 
   @override
   Widget build(BuildContext context) {
-    final chatLocked = _sessionExpired;
+    final chatLocked = _sessionExpired || _sessionWaiting;
     return Scaffold(
       appBar: LegatoAppBar(
         title: widget.isGroup
@@ -296,6 +323,25 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
       ),
       body: Column(
         children: [
+          if (_sessionWaiting)
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.schedule, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _sessionStartsAtLabel != null
+                          ? 'Consultation starts at $_sessionStartsAtLabel. Messaging opens then.'
+                          : 'Consultation is booked. Messaging opens at the scheduled time.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_sessionRemainingSec != null && !_sessionExpired)
             Container(
               width: double.infinity,
@@ -318,7 +364,7 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
                 children: [
                   Icon(Icons.lock_clock, size: 18, color: Theme.of(context).colorScheme.error),
                   const SizedBox(width: 8),
-                  const Expanded(child: Text('Consultation session has ended.')),
+                  const Expanded(child: Text('Consultation done. This chat has ended.')),
                 ],
               ),
             ),
@@ -384,7 +430,11 @@ class _ConversationScreenState extends State<ConversationScreen> with MessagePol
                       minLines: 1,
                       maxLines: 4,
                       decoration: InputDecoration(
-                        hintText: chatLocked ? 'Session ended' : 'Type a message…',
+                        hintText: _sessionWaiting
+                            ? 'Opens at scheduled time'
+                            : chatLocked
+                                ? 'Session ended'
+                                : 'Type a message…',
                         border: const OutlineInputBorder(),
                       ),
                       onSubmitted: chatLocked ? null : (_) => _send(),

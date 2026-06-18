@@ -19,14 +19,26 @@ from app.routers.social import (
     _title_company,
 )
 from app.services.consultation_helpers import (
+    EGYPT_TZ,
     approved_lawyer_rate,
+    as_utc,
+    consultation_for_conversation,
     create_or_get_direct_for_consultation,
     ensure_consultation_session_valid,
+    expire_consultation_if_due,
+    format_scheduled_egypt,
+    maybe_activate_scheduled_consultation,
+    utc_naive,
 )
+from app.services import paymob as paymob_service
 
 router = APIRouter(prefix="/api", tags=["consultations"])
 
 MIN_CONSULTATION_MINUTES = 15
+
+
+def _format_scheduled_egypt(dt: datetime) -> str:
+    return format_scheduled_egypt(dt)
 
 
 class ConsultationRequestBody(BaseModel):
@@ -52,7 +64,7 @@ def _parse_scheduled_at(raw: str) -> datetime:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid scheduled date/time") from exc
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=EGYPT_TZ)
     return dt.astimezone(timezone.utc)
 
 
@@ -80,7 +92,7 @@ def _serialize_consultation(db: Session, row: ConsultationRequest) -> Dict[str, 
         "hourly_rate": row.hourly_rate,
         "estimated_total": total,
         "notes": row.notes or "",
-        "scheduled_at": row.scheduled_at.isoformat() + "Z" if row.scheduled_at else None,
+        "scheduled_at": (as_utc(row.scheduled_at).isoformat().replace("+00:00", "Z") if row.scheduled_at else None),
         "payment_status": row.payment_status,
         "status": row.status,
         "conversation_id": row.conversation_id,
@@ -171,12 +183,12 @@ def create_consultation_request(
         duration_minutes=body.duration_minutes,
         hourly_rate=rate,
         notes=(body.notes or "").strip() or None,
-        scheduled_at=scheduled_at,
+        scheduled_at=utc_naive(scheduled_at),
         status="pending",
     )
     db.add(row)
     db.flush()
-    sched_label = scheduled_at.strftime("%Y-%m-%d %H:%M UTC")
+    sched_label = _format_scheduled_egypt(scheduled_at)
     db.add(
         UserNotification(
             recipient_id=body.lawyer_id,
@@ -184,7 +196,7 @@ def create_consultation_request(
             type="consultation_request",
             reference_id=row.id,
             message=(
-                f"New consultation request: {body.duration_minutes} min on {sched_label}"
+                f"New consultation request: {body.duration_minutes} min at {sched_label}"
                 f"{f' — {body.notes.strip()[:60]}' if body.notes and body.notes.strip() else ''}"
             ),
             read=False,
@@ -248,7 +260,7 @@ def respond_consultation(
     row.responded_at = now
     db.add(row)
     total = round((row.hourly_rate or 0) * (row.duration_minutes / 60.0), 2)
-    sched_label = row.scheduled_at.strftime("%Y-%m-%d %H:%M UTC") if row.scheduled_at else "scheduled time"
+    sched_label = _format_scheduled_egypt(row.scheduled_at) if row.scheduled_at else "scheduled time"
     db.add(
         UserNotification(
             recipient_id=row.requester_id,
@@ -256,7 +268,7 @@ def respond_consultation(
             type="consultation_payment_due",
             reference_id=row.id,
             message=(
-                f"Consultation accepted — pay {total:.0f} EGP for {row.duration_minutes} min on {sched_label}."
+                f"Consultation accepted — pay {total:.0f} EGP for {row.duration_minutes} min at {sched_label}."
             ),
             read=False,
         )
@@ -272,7 +284,7 @@ def consultation_payment_checkout(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Prepare payment for an accepted consultation. Paymob gateway hooks in next step."""
+    """Prepare Paymob hosted checkout (test or live, controlled by PAYMOB_MODE and keys)."""
     row = db.query(ConsultationRequest).filter(ConsultationRequest.id == consultation_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Consultation not found")
@@ -284,28 +296,69 @@ def consultation_payment_checkout(
         raise HTTPException(status_code=400, detail="Consultation is already paid")
 
     total = round((row.hourly_rate or 0) * (row.duration_minutes / 60.0), 2)
-    return {
+    base = {
         "consultation_id": row.id,
         "amount": total,
         "currency": "EGP",
         "provider": "paymob",
+        "mode": paymob_service.paymob_mode(),
         "checkout_ready": False,
-        "message": "Paymob payment gateway will be connected in the next step.",
         "consultation": _serialize_consultation(db, row),
     }
 
+    if not paymob_service.paymob_configured():
+        base["message"] = (
+            "Paymob test keys are not configured on the server. "
+            "Sign up at accept.paymob.com, switch dashboard to Test mode, and add "
+            "PAYMOB_SECRET_KEY, PAYMOB_PUBLIC_KEY, PAYMOB_INTEGRATION_ID, and PAYMOB_HMAC_SECRET to .env."
+        )
+        return base
 
-def _activate_consultation_after_payment(db: Session, row: ConsultationRequest) -> UserConversation:
-    """Start timed session once payment is confirmed (Paymob webhook / future step)."""
-    now = datetime.now(timezone.utc)
+    from app.db.models import LegatoProfile
+
+    req_row = db.query(LegatoProfile).filter(LegatoProfile.user_id == row.requester_id).first()
+    req_prof = _parse_profile_row(req_row)
+    customer_name = _display_name(current_user, req_prof)
+
+    try:
+        checkout = paymob_service.create_consultation_checkout(
+            consultation_id=row.id,
+            amount_egp=total,
+            customer_email=current_user.email,
+            customer_name=customer_name,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Paymob checkout failed: {exc}") from exc
+
+    if checkout.get("intention_id") is not None:
+        row.paymob_intention_id = str(checkout["intention_id"])
+        db.add(row)
+        db.commit()
+
+    base.update(checkout)
+    base["message"] = (
+        "Redirect to Paymob secure checkout."
+        if paymob_service.paymob_mode() == "live"
+        else "Redirect to Paymob test checkout — use test card 5123456789012346 (exp 01/39, CVV 123)."
+    )
+    return base
+
+
+def _confirm_consultation_after_payment(db: Session, row: ConsultationRequest) -> UserConversation:
+    """Mark consultation paid and link chat; messaging opens at scheduled_at."""
     conv = create_or_get_direct_for_consultation(db, row.requester_id, row.lawyer_id)
     row.conversation_id = conv.id
-    row.status = "active"
+    row.status = "confirmed"
     row.payment_status = "paid"
-    row.session_started_at = now
-    row.session_ends_at = now + timedelta(minutes=row.duration_minutes)
+    row.session_started_at = None
+    row.session_ends_at = None
     db.add(row)
     return conv
+
+
+def _activate_consultation_after_payment(db: Session, row: ConsultationRequest) -> UserConversation:
+    """Legacy name — payment confirms booking; timed session starts at scheduled_at."""
+    return _confirm_consultation_after_payment(db, row)
 
 
 @router.get("/consultations/session/conversation/{conversation_id}")
@@ -317,16 +370,45 @@ def consultation_session_for_conversation(
     from app.routers.messaging import _require_member
 
     _require_member(db, conversation_id, current_user.id)
+    row = consultation_for_conversation(db, conversation_id)
+    if row is None:
+        return {"active": False}
+    row = expire_consultation_if_due(db, row)
+    if row.status == "expired":
+        return {
+            "active": False,
+            "expired": True,
+            "status": "expired",
+            "consultation_id": row.id,
+            "message": "Consultation done. This chat has ended.",
+        }
+    sched = as_utc(row.scheduled_at)
+    now = datetime.now(timezone.utc)
+    if row.status == "confirmed" and sched is not None and sched > now:
+        return {
+            "active": False,
+            "waiting": True,
+            "status": row.status,
+            "consultation_id": row.id,
+            "scheduled_at": sched.isoformat().replace("+00:00", "Z"),
+            "starts_at_label": format_scheduled_egypt(row.scheduled_at),
+            "message": f"Consultation starts at {format_scheduled_egypt(row.scheduled_at)}. Messaging opens then.",
+        }
+    maybe_activate_scheduled_consultation(db, row)
     row, err = ensure_consultation_session_valid(db, conversation_id)
     if row is None:
         return {"active": False}
     if err:
-        return {
+        payload: Dict[str, Any] = {
             "active": False,
             "status": row.status,
             "message": err,
             "consultation_id": row.id,
         }
+        if row.scheduled_at:
+            payload["scheduled_at"] = row.scheduled_at.isoformat() + "Z"
+            payload["starts_at_label"] = format_scheduled_egypt(row.scheduled_at)
+        return payload
     remaining_sec = None
     if row.session_ends_at:
         ends = row.session_ends_at

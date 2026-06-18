@@ -332,6 +332,9 @@ class LegatoApi {
 
   Future<Map<String, dynamic>> listConversations() => _api.getJson('/api/messages/conversations');
 
+  Future<Map<String, dynamic>> deleteConversation(int conversationId) =>
+      _api.deleteJson('/api/messages/conversations/$conversationId');
+
   Future<Map<String, dynamic>> getConversation(int conversationId) =>
       _api.getJson('/api/messages/conversations/$conversationId');
 

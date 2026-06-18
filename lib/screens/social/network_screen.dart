@@ -6,6 +6,7 @@ import 'package:legato_mobile/app_services.dart';
 import 'package:legato_mobile/screens/messaging/conversation_screen.dart';
 import 'package:legato_mobile/screens/social/member_profile_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/utils/egypt_time.dart';
 import 'package:legato_mobile/widgets/user_avatar.dart';
 
 class NetworkScreen extends StatefulWidget {
@@ -142,12 +143,11 @@ class NetworkScreenState extends State<NetworkScreen> {
     final durationCtrl = TextEditingController(text: '30');
     final notesCtrl = TextEditingController();
     final rateLabel = hourlyRate != null ? '${hourlyRate.toStringAsFixed(0)}/hr' : '—';
-    var selectedDate = DateTime.now().add(const Duration(days: 1));
-    var selectedTime = const TimeOfDay(hour: 10, minute: 0);
+    var selectedDate = nowInEgypt().add(const Duration(days: 1));
+    var selectedTime = TimeOfDay(hour: nowInEgypt().hour, minute: 0);
 
-    String formatDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
-    String formatTime(TimeOfDay t) =>
-        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    String formatDate(DateTime d) => formatEgyptDate(d);
+    String formatTime(TimeOfDay t) => formatEgyptTimeOfDay(t.hour, t.minute);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -160,6 +160,13 @@ class NetworkScreenState extends State<NetworkScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Rate: $rateLabel', style: Theme.of(ctx).textTheme.bodyMedium),
+                const SizedBox(height: 8),
+                Text(
+                  'All times are Egypt (Cairo) local time.',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: LegatoLinkedInTheme.textSecondaryAdaptive(ctx),
+                      ),
+                ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: durationCtrl,
@@ -176,15 +183,15 @@ class NetworkScreenState extends State<NetworkScreen> {
                     final picked = await showDatePicker(
                       context: ctx,
                       initialDate: selectedDate,
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      firstDate: nowInEgypt(),
+                      lastDate: nowInEgypt().add(const Duration(days: 365)),
                     );
                     if (picked != null) setDialogState(() => selectedDate = picked);
                   },
                   icon: const Icon(Icons.calendar_today_outlined, size: 18),
                   label: Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('Day: ${formatDate(selectedDate)}'),
+                    child: Text('Day (Egypt): ${formatDate(selectedDate)}'),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -196,7 +203,7 @@ class NetworkScreenState extends State<NetworkScreen> {
                   icon: const Icon(Icons.access_time, size: 18),
                   label: Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('Time: ${formatTime(selectedTime)}'),
+                    child: Text('Time (Egypt): ${formatTime(selectedTime)}'),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -227,20 +234,25 @@ class NetworkScreenState extends State<NetworkScreen> {
       );
       return;
     }
-    final scheduledLocal = DateTime(
-      selectedDate.year,
-      selectedDate.month,
-      selectedDate.day,
-      selectedTime.hour,
-      selectedTime.minute,
-    );
-    if (scheduledLocal.isBefore(DateTime.now())) {
+    if (!isEgyptLocalDateTimeInFuture(
+      year: selectedDate.year,
+      month: selectedDate.month,
+      day: selectedDate.day,
+      hour: selectedTime.hour,
+      minute: selectedTime.minute,
+    )) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please choose a future date and time.')),
+        const SnackBar(content: Text('Please choose a future date and time (Egypt time).')),
       );
       return;
     }
-    final scheduledAt = scheduledLocal.toUtc().toIso8601String();
+    final scheduledAt = egyptLocalDateTimeToUtcIso(
+      year: selectedDate.year,
+      month: selectedDate.month,
+      day: selectedDate.day,
+      hour: selectedTime.hour,
+      minute: selectedTime.minute,
+    );
     try {
       await context.read<AppServices>().legato.requestConsultation(
             lawyerId: lawyerId,

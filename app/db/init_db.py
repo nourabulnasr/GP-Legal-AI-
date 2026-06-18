@@ -201,6 +201,14 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE consultation_requests ADD COLUMN scheduled_at DATETIME;"))
             if "payment_status" not in col_names:
                 conn.execute(text("ALTER TABLE consultation_requests ADD COLUMN payment_status VARCHAR(32);"))
+            if "paymob_order_id" not in col_names:
+                conn.execute(text("ALTER TABLE consultation_requests ADD COLUMN paymob_order_id VARCHAR(64);"))
+            if "paymob_intention_id" not in col_names:
+                conn.execute(text("ALTER TABLE consultation_requests ADD COLUMN paymob_intention_id VARCHAR(64);"))
+            if "paymob_transaction_id" not in col_names:
+                conn.execute(text("ALTER TABLE consultation_requests ADD COLUMN paymob_transaction_id VARCHAR(64);"))
+            if "paid_at" not in col_names:
+                conn.execute(text("ALTER TABLE consultation_requests ADD COLUMN paid_at DATETIME;"))
     except Exception:
         pass
 

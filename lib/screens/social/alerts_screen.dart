@@ -9,6 +9,7 @@ import 'package:legato_mobile/screens/lawyer/lawyer_application_screen.dart';
 import 'package:legato_mobile/screens/messaging/conversation_screen.dart';
 import 'package:legato_mobile/screens/payments/consultation_payment_screen.dart';
 import 'package:legato_mobile/theme/linkedin_theme.dart';
+import 'package:legato_mobile/utils/egypt_time.dart';
 import 'package:legato_mobile/widgets/legato_app_bar.dart';
 import 'package:legato_mobile/widgets/user_avatar.dart';
 
@@ -151,12 +152,7 @@ class AlertsScreenState extends State<AlertsScreen> {
     final sched = data['scheduled_at']?.toString();
     var schedText = '';
     if (sched != null && sched.isNotEmpty) {
-      try {
-        final dt = DateTime.parse(sched).toLocal();
-        schedText = '\nWhen: ${dt.day}/${dt.month}/${dt.year} · ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-      } catch (_) {
-        schedText = '\nWhen: $sched';
-      }
+      schedText = '\nWhen: ${formatConsultationTimeEgypt(sched)}';
     }
     final accept = await showDialog<bool>(
       context: context,
@@ -448,7 +444,7 @@ class AlertsScreenState extends State<AlertsScreen> {
                               ],
                               Flexible(
                                 child: Text(
-                                  m['message']?.toString() ?? 'Activity',
+                                  formatActivityMessage(m['message']?.toString()),
                                   style: TextStyle(fontWeight: unread ? FontWeight.w600 : FontWeight.normal),
                                 ),
                               ),

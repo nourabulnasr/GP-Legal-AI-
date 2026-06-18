@@ -22,7 +22,15 @@ from app.db.models import (
     UserMessage,
 )
 from app.db.session import get_db
-from app.services.consultation_helpers import can_message_users, consultation_for_conversation, ensure_consultation_session_valid
+from app.services.consultation_helpers import (
+    can_message_users,
+    confirmed_consultation_waiting_between,
+    consultation_for_conversation,
+    consultation_payload_for_list,
+    ensure_consultation_session_valid,
+    expire_consultation_if_due,
+    format_scheduled_egypt,
+)
 
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
@@ -132,17 +140,8 @@ def _conversation_payload(
         "last_message_at": last.created_at.isoformat() + "Z" if last else None,
     }
     consult = consultation_for_conversation(db, conv.id)
-    if consult and consult.status == "active" and consult.session_ends_at:
-        ends = consult.session_ends_at
-        if ends.tzinfo is None:
-            ends = ends.replace(tzinfo=timezone.utc)
-        remaining = max(0, int((ends - datetime.now(timezone.utc)).total_seconds()))
-        payload["consultation"] = {
-            "id": consult.id,
-            "duration_minutes": consult.duration_minutes,
-            "session_ends_at": consult.session_ends_at.isoformat() + "Z",
-            "remaining_seconds": remaining,
-        }
+    if consult:
+        payload["consultation"] = consultation_payload_for_list(db, consult)
     return payload
 
 
@@ -227,6 +226,35 @@ def get_conversation(
 ):
     conv = _require_member(db, conversation_id, current_user.id)
     return _conversation_payload(db, conv, current_user.id)
+
+
+@router.delete("/conversations/{conversation_id}")
+def remove_conversation_for_user(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove an ended consultation chat from the user's Messages list."""
+    _require_member(db, conversation_id, current_user.id)
+    consult = consultation_for_conversation(db, conversation_id)
+    if consult is None:
+        raise HTTPException(status_code=400, detail="Only consultation chats can be removed")
+    consult = expire_consultation_if_due(db, consult)
+    if consult.status != "expired":
+        raise HTTPException(status_code=400, detail="Only completed consultations can be removed")
+    mem = (
+        db.query(UserConversationMember)
+        .filter(
+            UserConversationMember.conversation_id == conversation_id,
+            UserConversationMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not mem:
+        raise HTTPException(status_code=404, detail="Not a member of this conversation")
+    db.delete(mem)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/conversations/direct")
@@ -335,6 +363,34 @@ def _require_member(db: Session, conversation_id: int, user_id: int) -> UserConv
     if not mem:
         raise HTTPException(status_code=403, detail="Not a member of this conversation")
     return conv
+
+
+def _assert_consultation_messaging_allowed(db: Session, conversation_id: int, user_id: int) -> None:
+    """Block sends until a paid consultation's scheduled start time."""
+    _, session_err = ensure_consultation_session_valid(db, conversation_id)
+    if session_err:
+        raise HTTPException(status_code=403, detail=session_err)
+    if consultation_for_conversation(db, conversation_id):
+        return
+    conv = db.query(UserConversation).filter(UserConversation.id == conversation_id).first()
+    if not conv or conv.kind != "direct":
+        return
+    members = [
+        r[0]
+        for r in db.query(UserConversationMember.user_id)
+        .filter(UserConversationMember.conversation_id == conversation_id)
+        .all()
+    ]
+    peers = [m for m in members if m != user_id]
+    if len(peers) != 1:
+        return
+    waiting = confirmed_consultation_waiting_between(db, user_id, peers[0])
+    if waiting:
+        label = format_scheduled_egypt(waiting.scheduled_at)
+        raise HTTPException(
+            status_code=403,
+            detail=f"Consultation starts at {label}. Messaging opens then.",
+        )
 
 
 def _message_status(
@@ -476,9 +532,7 @@ def post_message(
     current_user: User = Depends(get_current_user),
 ):
     _require_member(db, conversation_id, current_user.id)
-    _, session_err = ensure_consultation_session_valid(db, conversation_id)
-    if session_err:
-        raise HTTPException(status_code=403, detail=session_err)
+    _assert_consultation_messaging_allowed(db, conversation_id, current_user.id)
     msg = UserMessage(
         conversation_id=conversation_id,
         author_id=current_user.id,
@@ -529,6 +583,7 @@ def post_lawyer_offer(
     if not is_vl:
         raise HTTPException(status_code=403, detail="Only verified lawyers can send offers")
     conv = _require_member(db, conversation_id, current_user.id)
+    _assert_consultation_messaging_allowed(db, conversation_id, current_user.id)
     if conv.kind != "direct":
         raise HTTPException(status_code=400, detail="Offers can only be sent in direct conversations")
     offer_payload = {

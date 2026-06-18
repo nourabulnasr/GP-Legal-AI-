@@ -51,14 +51,7 @@ class ProfileScreenState extends State<ProfileScreen> {
     try {
       final email = context.read<AuthProvider>().user?.email ?? '';
       final legato = context.read<AppServices>().legato;
-      final results = await Future.wait<dynamic>([
-        legato.getSocialProfileResilient(uid, email),
-        _loadConnectionCount(legato),
-      ]);
-      var d = Map<String, dynamic>.from(results[0] as Map);
-      final stats = Map<String, dynamic>.from((d['stats'] as Map?) ?? {});
-      stats['connections'] = results[1] as int;
-      d['stats'] = stats;
+      final d = Map<String, dynamic>.from(await legato.getSocialProfileResilient(uid, email) as Map);
       if (!mounted) return;
       context.read<UserProfileProvider>().applyFromProfile(
             d,
@@ -82,27 +75,6 @@ class ProfileScreenState extends State<ProfileScreen> {
           _loading = false;
         });
       }
-    }
-  }
-
-  Future<int> _loadConnectionCount(dynamic api) async {
-    try {
-      final connRes = await api.getNetworkConnections();
-      final raw = (connRes['items'] as List<dynamic>?) ??
-          (connRes['connections'] as List<dynamic>?) ??
-          <dynamic>[];
-      final seen = <int>{};
-      for (final item in raw) {
-        final uid =
-            (Map<String, dynamic>.from(item as Map)['user_id'] as num?)?.toInt() ?? 0;
-        if (uid > 0) seen.add(uid);
-      }
-      return seen.length;
-    } on ApiException catch (e) {
-      if (e.statusCode != 404) rethrow;
-      return 0;
-    } catch (_) {
-      return 0;
     }
   }
 
@@ -215,7 +187,6 @@ class ProfileScreenState extends State<ProfileScreen> {
 
     final d = _data!;
     final profile = context.watch<UserProfileProvider>();
-    final stats = (d['stats'] as Map<String, dynamic>?) ?? {};
     final skills = (d['skills'] as List<dynamic>?) ?? [];
     final experience = (d['experience'] as List<dynamic>?) ?? [];
     final education = (d['education'] as List<dynamic>?) ?? [];
@@ -297,16 +268,6 @@ class ProfileScreenState extends State<ProfileScreen> {
                                 ],
                               ),
                             ],
-                            const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                Expanded(child: _StatPill(value: '${stats['connections'] ?? 0}', label: 'Connections')),
-                                const SizedBox(width: 8),
-                                Expanded(child: _StatPill(value: '${stats['endorsements'] ?? 0}', label: 'Endorsements')),
-                                const SizedBox(width: 8),
-                                Expanded(child: _StatPill(value: '${stats['profile_views'] ?? 0}', label: 'Views')),
-                              ],
-                            ),
                             const SizedBox(height: 16),
                             Row(
                               children: [
@@ -1130,43 +1091,6 @@ class _ProfileAvatarTile extends StatelessWidget {
           child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         );
       },
-    );
-  }
-}
-
-class _StatPill extends StatelessWidget {
-  const _StatPill({required this.value, required this.label});
-
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Color(0xFF8B7318)),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 10, color: LegatoLinkedInTheme.textSecondaryAdaptive(context)),
-          ),
-        ],
-      ),
     );
   }
 }
