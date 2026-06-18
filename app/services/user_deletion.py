@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     Analysis,
+    ConsultationRequest,
     LegatoDealMessage,
     LegatoDealThread,
     LegatoDealThreadMember,
@@ -12,6 +13,7 @@ from app.db.models import (
     LegatoShare,
     LegatoSignature,
     LegatoTimelineEvent,
+    LawyerApplication,
     NetworkInvite,
     ProfileRecommendation,
     ProfileUserDocument,
@@ -127,6 +129,15 @@ def delete_user_account(db: Session, user_id: int) -> User:
         synchronize_session=False
     )
     db.query(LegatoProfile).filter(LegatoProfile.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.query(ConsultationRequest).filter(
+        or_(
+            ConsultationRequest.requester_id == user_id,
+            ConsultationRequest.lawyer_id == user_id,
+        )
+    ).delete(synchronize_session=False)
+    db.query(LawyerApplication).filter(LawyerApplication.user_id == user_id).delete(
         synchronize_session=False
     )
 

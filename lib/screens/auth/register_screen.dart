@@ -119,6 +119,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() => _err = 'Please upload your CV and both sides of your ID card to register as a lawyer.');
       return;
     }
+    if (_userType == 'lawyer') {
+      final years = int.tryParse(_years.text.trim());
+      final rate = double.tryParse(_hourlyRate.text.trim());
+      if (years == null || years < 0) {
+        setState(() => _err = 'Please enter your years of experience.');
+        return;
+      }
+      if (rate == null || rate <= 0) {
+        setState(() => _err = 'Please enter your hourly rate.');
+        return;
+      }
+    }
 
     setState(() {
       _busy = true;
@@ -255,21 +267,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         controller: _years,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'Years of Experience (optional)',
+                          labelText: 'Years of Experience *',
                           border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.work_history_outlined),
                         ),
+                        validator: (v) {
+                          if (_userType != 'lawyer') return null;
+                          final n = int.tryParse((v ?? '').trim());
+                          if (n == null || n < 0) return 'Enter years of experience';
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _hourlyRate,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(
-                          labelText: 'Pricing per hour (optional)',
+                          labelText: 'Pricing per hour *',
                           border: OutlineInputBorder(),
                           prefixIcon: Icon(Icons.payments_outlined),
                           hintText: 'e.g. 500',
                         ),
+                        validator: (v) {
+                          if (_userType != 'lawyer') return null;
+                          final n = double.tryParse((v ?? '').trim());
+                          if (n == null || n <= 0) return 'Enter hourly rate';
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 8),
                       Container(

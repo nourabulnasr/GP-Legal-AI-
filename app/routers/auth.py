@@ -14,6 +14,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from app.core.limiter import limiter
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import get_db
 from app.db.models import LawyerApplication, User, UserNotification
@@ -34,6 +35,8 @@ from app.core.deps import get_current_user
 from app.email_templates import verification_email_html, reset_link_email_html
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_MAX_LAWYER_DOC_BYTES = 10 * 1024 * 1024  # 10 MB
 
 RESET_TOKEN_EXPIRE_HOURS = 24
 VERIFICATION_CODE_EXPIRE_MINUTES = int(os.getenv("VERIFICATION_CODE_EXPIRE_MINUTES", "30"))
@@ -258,6 +261,17 @@ def register(request: Request, payload: RegisterRequest, db: Session = Depends(g
     )
 
 
+async def _read_required_lawyer_upload(file: _Optional[UploadFile], label: str) -> tuple[bytes, str, str]:
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail=f"{label} is required")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail=f"{label} is required")
+    if len(raw) > _MAX_LAWYER_DOC_BYTES:
+        raise HTTPException(status_code=413, detail=f"{label} too large (max 10 MB)")
+    return raw, file.content_type or "application/octet-stream", file.filename
+
+
 @router.post("/register-lawyer", response_model=MeResponse)
 @limiter.limit("5/minute")
 async def register_as_lawyer(
@@ -276,104 +290,112 @@ async def register_as_lawyer(
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
+    if years_of_experience is None:
+        raise HTTPException(status_code=400, detail="Years of experience is required")
+    if years_of_experience < 0:
+        raise HTTPException(status_code=400, detail="Years of experience must be 0 or greater")
+    if hourly_rate is None or hourly_rate <= 0:
+        raise HTTPException(status_code=400, detail="Hourly rate is required and must be greater than 0")
+
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    cv_bytes_data, cv_mime_data, cv_fn_data = await _read_required_lawyer_upload(cv, "CV")
+    id_card_bytes_data, id_card_mime_data, id_card_fn_data = await _read_required_lawyer_upload(
+        id_card, "ID card (front)"
+    )
+    id_card_back_bytes_data, id_card_back_mime_data, id_card_back_fn_data = await _read_required_lawyer_upload(
+        id_card_back, "ID card (back)"
+    )
+
     auto_verify = _allow_dev_auto_verify() and not _smtp_configured()
+    code: str | None = None
 
-    u = User(
-        email=email,
-        password_hash=hash_password(password),
-        role="user",
-        user_type="lawyer",
-        email_verified=bool(auto_verify),
-    )
-    db.add(u)
-    db.commit()
-    db.refresh(u)
+    try:
+        u = User(
+            email=email,
+            password_hash=hash_password(password),
+            role="user",
+            user_type="lawyer",
+            email_verified=bool(auto_verify),
+        )
+        db.add(u)
+        db.flush()
 
-    cv_bytes_data = cv_mime_data = cv_fn_data = None
-    id_card_bytes_data = id_card_mime_data = id_card_fn_data = None
-    id_card_back_bytes_data = id_card_back_mime_data = id_card_back_fn_data = None
+        orphaned = db.query(LawyerApplication).filter(LawyerApplication.user_id == u.id).first()
+        if orphaned:
+            db.delete(orphaned)
+            db.flush()
 
-    if cv and cv.filename:
-        raw = await cv.read()
-        if raw:
-            cv_bytes_data = raw
-            cv_mime_data = cv.content_type or "application/octet-stream"
-            cv_fn_data = cv.filename
+        app_record = LawyerApplication(
+            user_id=u.id,
+            years_of_experience=years_of_experience,
+            hourly_rate=hourly_rate,
+            cv_bytes=cv_bytes_data,
+            cv_mime_type=cv_mime_data,
+            cv_filename=cv_fn_data,
+            id_card_bytes=id_card_bytes_data,
+            id_card_mime_type=id_card_mime_data,
+            id_card_filename=id_card_fn_data,
+            id_card_back_bytes=id_card_back_bytes_data,
+            id_card_back_mime_type=id_card_back_mime_data,
+            id_card_back_filename=id_card_back_fn_data,
+            status="pending",
+        )
+        db.add(app_record)
 
-    if id_card and id_card.filename:
-        raw = await id_card.read()
-        if raw:
-            id_card_bytes_data = raw
-            id_card_mime_data = id_card.content_type or "application/octet-stream"
-            id_card_fn_data = id_card.filename
+        admins = db.query(User).filter(User.role == "admin").all()
+        for admin in admins:
+            db.add(UserNotification(
+                recipient_id=admin.id,
+                actor_id=u.id,
+                type="lawyer_application",
+                message=f"{u.email} submitted a new lawyer application.",
+                read=False,
+            ))
 
-    if id_card_back and id_card_back.filename:
-        raw = await id_card_back.read()
-        if raw:
-            id_card_back_bytes_data = raw
-            id_card_back_mime_data = id_card_back.content_type or "application/octet-stream"
-            id_card_back_fn_data = id_card_back.filename
+        if not auto_verify:
+            code = _generate_verification_code()
+            code_hash_val = _code_hash(code)
+            expires_at = datetime.now(timezone.utc) + timedelta(minutes=VERIFICATION_CODE_EXPIRE_MINUTES)
+            _ensure_verification_codes_table(db)
+            db.execute(
+                text("DELETE FROM verification_codes WHERE email = :email AND purpose = 'signup'"),
+                {"email": email},
+            )
+            db.execute(
+                text("""
+                    INSERT INTO verification_codes (email, user_id, code_hash, purpose, expires_at)
+                    VALUES (:email, :uid, :ch, 'signup', :exp)
+                """),
+                {"email": email, "uid": u.id, "ch": code_hash_val, "exp": expires_at.isoformat()},
+            )
 
-    app_record = LawyerApplication(
-        user_id=u.id,
-        years_of_experience=years_of_experience,
-        hourly_rate=hourly_rate,
-        cv_bytes=cv_bytes_data,
-        cv_mime_type=cv_mime_data,
-        cv_filename=cv_fn_data,
-        id_card_bytes=id_card_bytes_data,
-        id_card_mime_type=id_card_mime_data,
-        id_card_filename=id_card_fn_data,
-        id_card_back_bytes=id_card_back_bytes_data,
-        id_card_back_mime_type=id_card_back_mime_data,
-        id_card_back_filename=id_card_back_fn_data,
-        status="pending",
-    )
-    db.add(app_record)
-    db.commit()
-
-    admins = db.query(User).filter(User.role == "admin").all()
-    for admin in admins:
-        db.add(UserNotification(
-            recipient_id=admin.id,
-            actor_id=u.id,
-            type="lawyer_application",
-            message=f"{u.email} submitted a new lawyer application.",
-            read=False,
-        ))
-    if admins:
         db.commit()
+        db.refresh(u)
+    except IntegrityError as exc:
+        db.rollback()
+        err = str(getattr(exc, "orig", exc))
+        if "users.email" in err:
+            raise HTTPException(status_code=400, detail="Email already registered") from exc
+        if "lawyer_applications.user_id" in err:
+            raise HTTPException(
+                status_code=400,
+                detail="A lawyer application already exists for this account. Try signing in instead.",
+            ) from exc
+        raise HTTPException(status_code=500, detail="Registration failed. Please try again.") from exc
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Registration failed. Please try again.")
 
     if auto_verify:
         return MeResponse(id=u.id, email=u.email, role="user", user_type="lawyer", lawyer_status="pending")
 
-    code = _generate_verification_code()
-    code_hash_val = _code_hash(code)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=VERIFICATION_CODE_EXPIRE_MINUTES)
-    _ensure_verification_codes_table(db)
-    try:
-        db.execute(
-            text("DELETE FROM verification_codes WHERE email = :email AND purpose = 'signup'"),
-            {"email": email},
-        )
-        db.execute(
-            text("""
-                INSERT INTO verification_codes (email, user_id, code_hash, purpose, expires_at)
-                VALUES (:email, :uid, :ch, 'signup', :exp)
-            """),
-            {"email": email, "uid": u.id, "ch": code_hash_val, "exp": expires_at.isoformat()},
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to create verification code")
-
     _send_verification_email(email, code, "signup")
     return MeResponse(id=u.id, email=u.email, role="user", user_type="lawyer", lawyer_status="pending")
-
 
 # ✅ JSON login (زي ما انت بتستخدمه في curl حاليا)
 @router.post("/login", response_model=TokenResponse)
