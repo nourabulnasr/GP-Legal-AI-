@@ -724,6 +724,10 @@ class LegatoApi {
 
   Future<Map<String, dynamic>> lawyerStatus() => _api.getJson('/lawyer/status');
 
+  Future<Uint8List> myLawyerCv() => _api.getBytes('/lawyer/cv');
+
+  Future<Uint8List> myLawyerIdCard() => _api.getBytes('/lawyer/id-card');
+
   Future<Uint8List> adminDownloadLawyerCv(int applicationId) =>
       _api.getBytes('/admin/lawyers/cv/$applicationId');
 

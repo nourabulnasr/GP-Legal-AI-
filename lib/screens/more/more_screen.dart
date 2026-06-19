@@ -30,17 +30,18 @@ class MoreScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             _SectionLabel(title: 'Legal workspace'),
-            Card(
-              child: ListTile(
-                leading: Icon(Icons.apps_outlined, color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95)),
-                title: Text(FeaturesHubScreen.allToolsLabel),
-                subtitle: Text('${FeaturesHubScreen.toolCount} Legato tools — compare, explain, share, and more'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
+            if (user?.isLawyerAccount != true)
+              Card(
+                child: ListTile(
+                  leading: Icon(Icons.apps_outlined, color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95)),
+                  title: Text(FeaturesHubScreen.allToolsLabel),
+                  subtitle: Text('${FeaturesHubScreen.toolCount} Legato tools — compare, explain, share, and more'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
+                  ),
                 ),
               ),
-            ),
             Card(
               child: ListTile(
                 leading: Icon(Icons.flag_outlined, color: LegatoLinkedInTheme.navActiveGold.withValues(alpha: 0.95)),

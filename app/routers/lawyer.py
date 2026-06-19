@@ -212,6 +212,48 @@ def download_own_lawyer_document(
     )
 
 
+@router.get("/cv")
+def download_my_cv(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the current user's own uploaded CV."""
+    app_record = db.query(LawyerApplication).filter(LawyerApplication.user_id == current_user.id).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="No application found")
+    cv_bytes = getattr(app_record, "cv_bytes", None)
+    if not cv_bytes:
+        raise HTTPException(status_code=404, detail="No CV uploaded")
+    return Response(
+        content=cv_bytes,
+        media_type=getattr(app_record, "cv_mime_type", None) or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{getattr(app_record, "cv_filename", None) or "cv"}"'
+        },
+    )
+
+
+@router.get("/id-card")
+def download_my_id_card(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the current user's own uploaded ID card (front)."""
+    app_record = db.query(LawyerApplication).filter(LawyerApplication.user_id == current_user.id).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="No application found")
+    id_card_bytes = getattr(app_record, "id_card_bytes", None)
+    if not id_card_bytes:
+        raise HTTPException(status_code=404, detail="No ID card uploaded")
+    return Response(
+        content=id_card_bytes,
+        media_type=getattr(app_record, "id_card_mime_type", None) or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{getattr(app_record, "id_card_filename", None) or "id_card"}"'
+        },
+    )
+
+
 class RateResponseBody(BaseModel):
     accept: bool
 

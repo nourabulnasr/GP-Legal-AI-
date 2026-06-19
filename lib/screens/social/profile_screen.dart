@@ -326,19 +326,21 @@ class ProfileScreenState extends State<ProfileScreen> {
                                     label: const Text('Edit Profile'),
                                   ),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: OutlinedButton(
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                      side: const BorderSide(color: Color(0xFF8B7318)),
+                                if (auth.user?.isLawyerAccount != true) ...[
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        side: const BorderSide(color: Color(0xFF8B7318)),
+                                      ),
+                                      onPressed: () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
+                                      ),
+                                      child: Text(FeaturesHubScreen.allToolsLabel),
                                     ),
-                                    onPressed: () => Navigator.of(context).push(
-                                      MaterialPageRoute<void>(builder: (_) => const FeaturesHubScreen()),
-                                    ),
-                                    child: Text(FeaturesHubScreen.allToolsLabel),
                                   ),
-                                ),
+                                ],
                               ],
                             ),
                           ],
