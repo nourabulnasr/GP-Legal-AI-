@@ -136,9 +136,11 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     Uint8List bytes;
     try {
-      bytes = fileType == 'cv'
-          ? await legato.myLawyerCv()
-          : await legato.myLawyerIdCard();
+      bytes = switch (fileType) {
+        'cv'           => await legato.myLawyerCv(),
+        'id-card-back' => await legato.myLawyerIdCardBack(),
+        _              => await legato.myLawyerIdCard(),
+      };
     } on ApiException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
       return;
@@ -196,12 +198,16 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
     final status = _lawyerStatus ?? const <String, dynamic>{};
     final hasCv = status['has_cv'] == true;
     final hasIdCard = status['has_id_card'] == true;
+    final hasIdCardBack = status['has_id_card_back'] == true;
     final cvFilename = status['cv_filename']?.toString().isNotEmpty == true
         ? status['cv_filename'].toString()
         : 'cv';
     final idFilename = status['id_card_filename']?.toString().isNotEmpty == true
         ? status['id_card_filename'].toString()
         : 'id_card';
+    final idBackFilename = status['id_card_back_filename']?.toString().isNotEmpty == true
+        ? status['id_card_back_filename'].toString()
+        : 'id_card_back';
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -211,7 +217,7 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
           style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
-        if (!hasCv && !hasIdCard)
+        if (!hasCv && !hasIdCard && !hasIdCardBack)
           Text(
             'No verification documents on file.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -232,10 +238,20 @@ class _ProfileDocumentsScreenState extends State<ProfileDocumentsScreen> {
           Card(
             child: ListTile(
               leading: const Icon(Icons.badge_outlined, color: LegatoLinkedInTheme.navActiveGold),
-              title: const Text('ID Card'),
+              title: const Text('ID Card (Front)'),
               subtitle: Text(idFilename, maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _viewLawyerOwnFile('id-card', idFilename),
+            ),
+          ),
+        if (hasIdCardBack)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.badge_outlined, color: LegatoLinkedInTheme.navActiveGold),
+              title: const Text('ID Card (Back)'),
+              subtitle: Text(idBackFilename, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _viewLawyerOwnFile('id-card-back', idBackFilename),
             ),
           ),
       ],

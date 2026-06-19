@@ -728,6 +728,8 @@ class LegatoApi {
 
   Future<Uint8List> myLawyerIdCard() => _api.getBytes('/lawyer/id-card');
 
+  Future<Uint8List> myLawyerIdCardBack() => _api.getBytes('/lawyer/id-card-back');
+
   Future<Uint8List> adminDownloadLawyerCv(int applicationId) =>
       _api.getBytes('/admin/lawyers/cv/$applicationId');
 

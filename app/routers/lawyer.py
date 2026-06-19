@@ -254,6 +254,27 @@ def download_my_id_card(
     )
 
 
+@router.get("/id-card-back")
+def download_my_id_card_back(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the current user's own uploaded ID card (back)."""
+    app_record = db.query(LawyerApplication).filter(LawyerApplication.user_id == current_user.id).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="No application found")
+    id_card_back_bytes = getattr(app_record, "id_card_back_bytes", None)
+    if not id_card_back_bytes:
+        raise HTTPException(status_code=404, detail="No ID card back uploaded")
+    return Response(
+        content=id_card_back_bytes,
+        media_type=getattr(app_record, "id_card_back_mime_type", None) or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{getattr(app_record, "id_card_back_filename", None) or "id_card_back"}"'
+        },
+    )
+
+
 class RateResponseBody(BaseModel):
     accept: bool
 
